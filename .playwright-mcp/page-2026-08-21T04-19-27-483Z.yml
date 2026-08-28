@@ -1,0 +1,44 @@
+- generic:
+  - generic:
+    - banner:
+      - generic:
+        - link:
+          - /url: /inbox
+          - generic: Prestige
+        - generic: /
+        - generic: contrato-real.pdf
+      - generic: MG
+    - main:
+      - generic: contrato-real.pdf
+      - generic:
+        - generic:
+          - generic:
+            - heading [level=2]: Detalles del flujo
+            - generic: Pendiente de tu firma
+          - link:
+            - /url: /documents/ffaaa8f3-f772-4d46-9bc3-da92a4180dff/fields
+            - text: Colocar campos de firma
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - paragraph: Maria Gonzalez (Tú)
+                  - paragraph: Firmante
+                - generic: MG
+          - button: Firmar documento ahora
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f10e33] [cursor=pointer]
+  - alert
+  - dialog [ref=f10e55]:
+    - generic [ref=f10e56]:
+      - heading "¿Cómo quieres firmar?" [level=2] [ref=f10e57]
+      - paragraph [ref=f10e58]: Elige la opción que te resulte más cómoda.
+    - generic [ref=f10e59]:
+      - button "Digital Usa tu certificado digital para validación oficial." [active] [ref=f10e60]:
+        - generic [ref=f10e65]: Digital
+        - generic [ref=f10e66]: Usa tu certificado digital para validación oficial.
+      - button "Autógrafa Dibuja tu firma a mano sobre la pantalla." [ref=f10e67]:
+        - generic [ref=f10e74]: Autógrafa
+        - generic [ref=f10e75]: Dibuja tu firma a mano sobre la pantalla.
+    - button "Confirmar y firmar" [disabled]
+    - button "Cerrar" [ref=f10e76]

@@ -1,0 +1,39 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e79]:
+    - banner [ref=f6e80]:
+      - generic [ref=f6e81]:
+        - link "Prestige" [ref=f6e82] [cursor=pointer]:
+          - /url: /inbox
+        - generic [ref=f6e87]: /
+        - generic [ref=f6e88]: contrato-real.pdf
+      - generic [ref=f6e89]: MG
+    - main [ref=f6e92]:
+      - generic [ref=f6e94]:
+        - generic [ref=f6e95]: contrato-real.pdf
+        - generic "Vista previa del documento" [ref=f6e100]
+      - generic [ref=f6e102]:
+        - generic [ref=f6e103]:
+          - heading "Detalles del flujo" [level=2] [ref=f6e104]
+          - generic [ref=f6e105]: Pendiente de tu firma
+        - link "Colocar campos de firma" [ref=f6e106] [cursor=pointer]:
+          - /url: /documents/ffaaa8f3-f772-4d46-9bc3-da92a4180dff/fields
+        - generic [ref=f6e113]:
+          - generic [ref=f6e114]:
+            - paragraph [ref=f6e115]: Maria Gonzalez (Tú)
+            - paragraph [ref=f6e116]: Firmante
+          - generic [ref=f6e117]: MG
+        - button "Firmar documento ahora" [ref=f6e119]
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=f6e120]:
+        - generic [ref=f6e124]: Campos de firma guardados.
+  - generic [ref=f6e61] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=f6e62]
+    - generic [ref=f6e126]:
+      - button "Open issues overlay" [ref=f6e127]:
+        - generic [ref=f6e128]:
+          - generic [ref=f6e129]: "0"
+          - generic [ref=f6e130]: "1"
+        - generic [ref=f6e131]: Issue
+      - button "Collapse issues badge" [ref=f6e132]
+  - alert [ref=f6e78]

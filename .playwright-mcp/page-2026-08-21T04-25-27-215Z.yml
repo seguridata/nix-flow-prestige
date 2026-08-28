@@ -1,0 +1,15 @@
+- generic [active] [ref=f35e1]:
+  - generic [ref=f35e2]:
+    - banner [ref=f35e3]:
+      - link "Prestige" [ref=f35e5] [cursor=pointer]:
+        - /url: /inbox
+      - generic [ref=f35e10]: MG
+    - main [ref=f35e13]:
+      - generic [ref=f35e14]:
+        - generic [ref=f35e15]:
+          - heading "Hola, María. No tienes documentos pendientes." [level=1] [ref=f35e16]
+          - paragraph [ref=f35e17]: Revisa y firma tus documentos en un par de clics.
+        - link "Nuevo envío" [ref=f35e18] [cursor=pointer]:
+          - /url: /new
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f35e27] [cursor=pointer]

@@ -1,0 +1,373 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.js
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+pnpm-lock.yaml
+
+# package manager files
+.npm/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun.lockb
+
+# output
+out/
+dist/
+build/
+lib/
+/docs/
+tmp/
+temp/
+*.tgz
+*.tar.gz
+
+# code coverage
+coverage/
+*.lcov
+*.nyc_output/
+
+# logs
+logs/
+*.log
+*.log.*
+report.*.json
+
+# dotenv environment variable files
+.env
+.env.*
+!.env.example
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache/
+.parcel-cache/
+.turbo/
+.next/
+.nuxt/
+.vite/
+.vercel/
+.serverless/
+*.tsbuildinfo
+
+# test artifacts
+.nyc_output/
+playwright-report/
+test-results/
+
+# local databases and secrets
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key
+*.crt
+
+# IntelliJ based IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Other editors
+.fleet/
+.zed/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local environment and tooling
+.history/
+.direnv/
+.python-version
+.ruby-version
+
+# TypeScript build info and generated declarations
+*.d.ts.map
+*.tsbuildinfo
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# Generic binaries and archives
+*.7z
+*.bz2
+*.gz
+*.rar
+*.zip
+*.iso
+*.img
+*.dmg
+*.msi
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+*~
+.#*
+.#*
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python environments and tooling
+.venv/
+venv/
+env/
+ENV/
+.envrc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+htmlcov/
+site/
+pip-wheel-metadata/
+*.egg
+*.egg-info/
+develop-eggs/
+eggs/
+sdist/
+wheels/
+MANIFEST
+poetry.lock
+Pipfile.lock
+
+# JavaScript and frontend tooling
+.node-gyp/
+.node_repl_history
+.yarn-integrity
+.eslintcache
+.stylelintcache
+.cache-loader/
+.sass-cache/
+.storybook-out/
+storybook-static/
+*.map
+*.min.js
+*.min.css
+
+# Build systems and generated metadata
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+*.o
+*.obj
+*.a
+*.lib
+*.class
+*.jar
+target/
+bin/
+obj/
+GeneratedFiles/
+
+# Rust
+Cargo.lock
+target/
+
+# Go
+go.work.sum
+vendor/
+
+# Java and Gradle
+.gradle/
+build.gradle.kts
+*.war
+hs_err_pid*
+
+# .NET and Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.ncb
+*.sln.docstates
+TestResults/
+[Bb]in/
+[Oo]bj/
+packages/
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Android
+.cxx/
+.externalNativeBuild/
+captures/
+*.apk
+*.aab
+local.properties
+
+# Xcode and Swift
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+Pods/
+.swiftpm/
+.build/
+
+# Databases and database tooling
+*.dump
+*.sql.gz
+*.mdb
+*.accdb
+*.redis
+*.rdb
+*.pgdump
+docker-data/
+data/
+
+# Containers and infrastructure state
+.docker/
+docker-compose.override.yml
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Cloud credentials and deployment output
+.aws/
+.azure/
+.gcloud/
+.kube/
+.terraform.d/
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+service-account*.json
+secrets.json
+secret.*
+
+# Jupyter and notebooks
+.ipynb_checkpoints/
+*.nbgrader.db
+.jupyter/
+
+# Documentation and static-site output
+.docusaurus/
+.vuepress/dist/
+.jekyll-cache/
+.jekyll-metadata
+_site/
+.sass-cache/
+
+# Profiling and diagnostics
+*.prof
+*.profraw
+*.gcda
+*.gcno
+*.trace
+*.stackdump
+core
+core.*
+
+# Package and tool caches
+.bun/
+.npm/
+.pnpm-store/
+.yarn/cache/
+.gradle/
+.m2/repository/
+.cargo/registry/
+.cargo/git/
+.go-build/
+
+# Operating system metadata
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100/
+.Trashes/
+ehthumbs.db
+ehthumbs_vista.db
+*.lnk
+
+# Local project configuration
+.local/
+.config.local/
+*.local.json
+*.local.yml
+*.local.yaml
+*.secret
+*.secrets
+!.env.example
+
+# Generated API and schema files
+openapi.generated.*
+swagger.generated.*
+graphql.generated.*
+schema.generated.*
+*.generated.cs
+*.designer.cs
+
+# Documentation files (except README)
+*.pdf
+*.md
+!README.md
+
+# Test snapshots and reports
+test-report/
+test-reports/
+reports/
+results/
+snapshots/
+*.snap
+*.junit.xml
+*.trx
+*.testlog
+
+# Scratch files
+scratch/
+playground/
+experiments/
+notes.local/
+

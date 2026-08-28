@@ -1,0 +1,52 @@
+- generic [active] [ref=f17e1]:
+  - generic [ref=f17e2]:
+    - complementary [ref=f17e3]:
+      - link "SeguriData SeguriData Prestige" [ref=f17e5] [cursor=pointer]:
+        - /url: /inbox
+        - img "SeguriData" [ref=f17e6]
+        - generic [ref=f17e7]:
+          - generic [ref=f17e8]: SeguriData
+          - generic [ref=f17e9]: Prestige
+      - navigation [ref=f17e10]:
+        - link "Overview" [ref=f17e11] [cursor=pointer]:
+          - /url: /overview
+        - link "Bandeja" [ref=f17e17] [cursor=pointer]:
+          - /url: /inbox
+        - link "Enviados" [ref=f17e21] [cursor=pointer]:
+          - /url: /sent
+        - link "Enviar" [ref=f17e25] [cursor=pointer]:
+          - /url: /new
+        - link "Onboarding" [ref=f17e29] [cursor=pointer]:
+          - /url: /onboarding
+        - link "Tareas" [ref=f17e33] [cursor=pointer]:
+          - /url: /tasks
+        - link "Proceso" [ref=f17e37] [cursor=pointer]:
+          - /url: /process
+        - link "Operación" [ref=f17e43] [cursor=pointer]:
+          - /url: /operations
+      - button "Buscar ⌘K" [ref=f17e47]:
+        - text: Buscar
+        - generic [ref=f17e51]: ⌘K
+    - generic [ref=f17e52]:
+      - banner [ref=f17e53]:
+        - generic [ref=f17e54]: Proceso BPM
+        - generic [ref=f17e55]:
+          - button "Recorrido" [ref=f17e57]
+          - button "Notificaciones" [ref=f17e59]
+          - generic [ref=f17e63]: MG
+      - main [ref=f17e65]:
+        - generic [ref=f17e66]:
+          - generic [ref=f17e67]:
+            - generic [ref=f17e68]:
+              - heading "Proceso" [level=1] [ref=f17e69]
+              - paragraph [ref=f17e70]: Modeler bpmn-js + simulación de tokens. El motor de ejecución es Temporal; este diagrama es el contrato de negocio. Workflow no firma.
+            - generic [ref=f17e71]:
+              - combobox [ref=f17e72]
+              - button "Publicar versión" [disabled]
+          - generic [ref=f17e73]:
+            - button "Diagrama BPMN" [ref=f17e74]
+            - button "Decisiones DMN" [ref=f17e75]
+            - button "Instancias" [ref=f17e76]
+            - button "Catálogo" [ref=f17e77]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f17e85] [cursor=pointer]

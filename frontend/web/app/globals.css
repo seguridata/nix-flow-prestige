@@ -1,0 +1,193 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  SeguriData corporate design tokens — sourced from /branding.md.
+  Composition MUST stay light-dominant: white/mist as base canvas,
+  carbon black (#191919) reserved for strategic blocks (topbar, footer,
+  key panels), verde corporativo (#84BD00) used ONLY as accent — never
+  as a large fill. No glow, no neon, no heavy shadows.
+*/
+:root {
+  --radius: 0.625rem;
+
+  /* Brand primitives */
+  --brand-carbon: #191919;
+  --brand-carbon-soft: #2b2b2b;
+  --brand-green: #84bd00;
+  --brand-green-deep: #6a9900;
+  --brand-slate: #5b6770;
+  --brand-mist: #f3f3f3;
+  --brand-white: #ffffff;
+
+  --background: var(--brand-white);
+  --foreground: var(--brand-carbon);
+
+  --card: var(--brand-white);
+  --card-foreground: var(--brand-carbon);
+
+  --popover: var(--brand-white);
+  --popover-foreground: var(--brand-carbon);
+
+  --primary: var(--brand-green);
+  --primary-foreground: var(--brand-carbon);
+
+  --secondary: var(--brand-carbon);
+  --secondary-foreground: var(--brand-white);
+
+  --muted: var(--brand-mist);
+  --muted-foreground: var(--brand-slate);
+
+  --accent: #eaf3d6;
+  --accent-foreground: var(--brand-carbon);
+
+  --destructive: #b3261e;
+  --destructive-foreground: var(--brand-white);
+
+  --success: var(--brand-green);
+  --success-foreground: var(--brand-carbon);
+  --warning: #a15c00;
+  --warning-foreground: var(--brand-white);
+
+  --border: #e3e3e3;
+  --input: #e3e3e3;
+  --ring: var(--brand-green);
+
+  --sidebar: var(--brand-carbon);
+  --sidebar-foreground: var(--brand-white);
+  --sidebar-primary: var(--brand-green);
+  --sidebar-primary-foreground: var(--brand-carbon);
+  --sidebar-accent: var(--brand-carbon-soft);
+  --sidebar-accent-foreground: var(--brand-white);
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: var(--brand-green);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-brand-carbon: var(--brand-carbon);
+  --color-brand-green: var(--brand-green);
+  --color-brand-slate: var(--brand-slate);
+  --color-brand-mist: var(--brand-mist);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-plex-mono);
+
+  --shadow-subtle: 0 1px 2px 0 rgb(25 25 25 / 0.04);
+  --shadow-elevated: 0 8px 24px -8px rgb(25 25 25 / 0.12);
+  --shadow-neu: 6px 6px 14px #e6e6e6, -6px -6px 14px #ffffff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(1200px 400px at 100% -10%, rgb(132 189 0 / 0.06), transparent 55%),
+      linear-gradient(#ffffff, var(--brand-mist));
+    background-attachment: fixed;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: rgb(255 255 255 / 0.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .neu {
+    background: var(--brand-mist);
+    box-shadow: var(--shadow-neu);
+  }
+}
+
+.bpmn-studio .djs-palette,
+.bpmn-studio .djs-container {
+  font-family: var(--font-sans), sans-serif;
+}
+.bpmn-studio .djs-palette {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.bpmn-studio .bts-toggle-mode {
+  font-family: var(--font-sans), sans-serif;
+}
+.dmn-studio .tjs-container {
+  font-family: var(--font-sans), sans-serif;
+}
+
+.bezel {
+  padding: 5px;
+  border-radius: 14px;
+  background: rgb(25 25 25 / 0.035);
+  border: 1px solid rgb(25 25 25 / 0.06);
+}
+
+.prestige-tour.driver-popover {
+  background: #ffffff;
+  color: #191919;
+  border: 1px solid #e3e3e3;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px -8px rgb(25 25 25 / 0.12);
+  font-family: var(--font-sans), sans-serif;
+}
+.prestige-tour .driver-popover-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.prestige-tour .driver-popover-next-btn,
+.prestige-tour .driver-popover-done-btn {
+  background: #84bd00;
+  color: #191919;
+  border: 0;
+  text-shadow: none;
+}

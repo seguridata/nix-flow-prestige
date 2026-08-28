@@ -1,0 +1,84 @@
+- generic [ref=f8e1]:
+  - generic [ref=f8e2]:
+    - complementary [ref=f8e3]:
+      - link "SeguriData SeguriData Prestige" [ref=f8e5] [cursor=pointer]:
+        - /url: /inbox
+        - img "SeguriData" [ref=f8e6]
+        - generic [ref=f8e7]:
+          - generic [ref=f8e8]: SeguriData
+          - generic [ref=f8e9]: Prestige
+      - navigation [ref=f8e10]:
+        - link "Bandeja" [ref=f8e11] [cursor=pointer]:
+          - /url: /inbox
+        - link "Enviados" [ref=f8e15] [cursor=pointer]:
+          - /url: /sent
+        - link "Enviar" [ref=f8e19] [cursor=pointer]:
+          - /url: /new
+        - link "Onboarding" [ref=f8e23] [cursor=pointer]:
+          - /url: /onboarding
+        - link "Tareas" [ref=f8e27] [cursor=pointer]:
+          - /url: /tasks
+        - link "Proceso" [ref=f8e31] [cursor=pointer]:
+          - /url: /process
+        - link "Operación" [ref=f8e36] [cursor=pointer]:
+          - /url: /operations
+      - button "Buscar ⌘K" [ref=f8e42]:
+        - text: Buscar
+        - generic [ref=f8e46]: ⌘K
+    - generic [ref=f8e47]:
+      - banner [ref=f8e48]:
+        - generic [ref=f8e49]: contrato-prueba.pdf
+        - generic [ref=f8e50]:
+          - generic [ref=f8e51]:
+            - button "Notificaciones" [active] [ref=f8e52]
+            - generic [ref=f8e112]:
+              - generic [ref=f8e113]:
+                - paragraph [ref=f8e114]: Avisos
+                - button "Marcar leídos" [ref=f8e115]
+              - list [ref=f8e116]:
+                - listitem [ref=f8e117]:
+                  - link [ref=f8e118] [cursor=pointer]:
+                    - /url: /onboarding/f1c02141-7053-4484-a5e2-876605dab325
+                    - paragraph [ref=f8e119]: Onboarding en revisión
+                    - paragraph [ref=f8e120]: Ana Torres ya tiene INE y prueba de vida. Falta habilitar la firma.
+                - listitem [ref=f8e121]:
+                  - link [ref=f8e122] [cursor=pointer]:
+                    - /url: /documents/3d21c5a4-28d0-4c3b-991d-228a7e8b0c4e
+                    - paragraph [ref=f8e123]: Documento por firmar
+                    - paragraph [ref=f8e124]: Maria Gonzalez te envió un documento.
+          - generic [ref=f8e56]: MG
+      - main [ref=f8e58]:
+        - generic [ref=f8e59]:
+          - generic [ref=f8e61]:
+            - generic [ref=f8e62]: contrato-prueba.pdf
+            - generic "Vista previa del documento" [ref=f8e88]
+          - generic [ref=f8e69]:
+            - generic [ref=f8e70]:
+              - heading "Detalles del flujo" [level=2] [ref=f8e71]
+              - generic [ref=f8e89]: Completado
+            - link "Colocar campos de firma" [ref=f8e90] [cursor=pointer]:
+              - /url: /documents/3d21c5a4-28d0-4c3b-991d-228a7e8b0c4e/fields
+            - link "Ver evidencia" [ref=f8e91] [cursor=pointer]:
+              - /url: /documents/3d21c5a4-28d0-4c3b-991d-228a7e8b0c4e/evidence
+            - paragraph [ref=f8e92]: Todos firmaron.
+            - generic [ref=f8e99]:
+              - generic [ref=f8e100]:
+                - paragraph [ref=f8e101]: Maria Gonzalez (Tú)
+                - paragraph [ref=f8e102]: Firmante · firmó 21/8/2026, 2:19:01 a.m.
+              - generic [ref=f8e103]: MG
+            - paragraph [ref=f8e105]: "Ya firmaste este documento · método: autografa."
+            - generic [ref=f8e106]:
+              - heading "Bitácora del proceso" [level=3] [ref=f8e107]
+              - list [ref=f8e108]:
+                - listitem [ref=f8e109]: REQUEST_CREATED · 21/8/2026, 2:15:03 a.m.
+                - listitem [ref=f8e110]: SIGNATURE_APPLIED · 21/8/2026, 2:19:01 a.m.
+            - generic [ref=f8e72]:
+              - heading "Comentarios del expediente" [level=3] [ref=f8e73]
+              - list [ref=f8e74]:
+                - listitem [ref=f8e75]: Sin comentarios todavía.
+              - generic [ref=f8e76]:
+                - textbox "Nota para el expediente…" [ref=f8e77]
+                - button "Publicar" [disabled]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f8e83] [cursor=pointer]
+  - alert [ref=f8e111]

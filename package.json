@@ -1,0 +1,24 @@
+{
+  "name": "prestige",
+  "private": true,
+  "workspaces": [
+    "frontend/*",
+    "backend/*"
+  ],
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "down": "bun scripts/dev.ts down",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

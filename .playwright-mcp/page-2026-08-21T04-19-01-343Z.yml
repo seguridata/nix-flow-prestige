@@ -1,0 +1,14 @@
+- generic [active] [ref=f10e1]:
+  - generic [ref=f10e2]:
+    - banner [ref=f10e3]:
+      - generic [ref=f10e4]:
+        - link "Prestige" [ref=f10e5] [cursor=pointer]:
+          - /url: /inbox
+        - generic [ref=f10e10]: /
+        - generic [ref=f10e11]: Documento
+      - generic [ref=f10e12]: MG
+    - main [ref=f10e15]:
+      - generic [ref=f10e16]: Cargando documento…
+      - heading "Detalles del flujo" [level=2] [ref=f10e27]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f10e33] [cursor=pointer]

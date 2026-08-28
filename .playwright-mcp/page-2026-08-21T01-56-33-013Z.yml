@@ -1,0 +1,11 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - link "Prestige" [ref=e5] [cursor=pointer]:
+        - /url: /inbox
+      - generic [ref=e10]: MG
+    - main [ref=e13]:
+      - generic [ref=e14]:
+        - heading "Hola, María. No tienes documentos pendientes." [level=1] [ref=e15]
+        - paragraph [ref=e16]: Revisa y firma tus documentos en un par de clics.
+  - region "Notifications alt+T"

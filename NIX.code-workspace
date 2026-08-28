@@ -1,0 +1,44 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.colorCustomizations": {
+		 "titleBar.activeBackground": "#101",
+      "activityBar.inactiveForeground": "#4c3dab",
+      "modernActivityBar.hoverForeground": "#e8c9ff",
+      "titleBar.activeForeground": "#ddb0ff",
+      "activityBar.foreground": "#4c3dab",
+      "modernActivityBar.activeBackground": "#0000",
+      "modernActivityBar.inactiveBackground": "#00000000",
+      "modernActivityBar.activeForeground": "#e8c9ff",
+      "activityBar.activeBackground": "#0000",
+      "activityBarBadge.background": "#4c3dab",
+      "modernTab.hoverForeground": "#cc88ff",
+      "list.hoverForeground": "#cc88ff",
+      "textLink.foreground": "#cc88ff",
+      "settings.modifiedItemIndicator": "#8472fa",
+      "settings.settingsHeaderHoverForeground":"#c0b6ff",
+      "settings.headerForeground": "#8472fa",
+      "checkbox.border": "#8472fa",
+      "settings.dropdownBorder": "#4c3dab",
+      "menu.selectionBackground": "#4c3dab",
+      "button.background": "#4c3dab",
+      "button.hoverBackground": "#4c3dab",
+      "button.foreground": "#ddd",
+      "checkbox.foreground": "#8472fa",
+      "menu.selectionForeground": "#4c3dab",
+      "menubar.selectionBackground": "#cc88ff",
+      "menubar.selectionForeground": "#101",
+      "commandCenter.foreground": "#fff",
+      "commandCenter.activeForeground": "#cc88ff",
+      "sideBarTitle.foreground": "#4c3dab",
+      "sideBarSectionHeader.foreground": "#4c3dab",
+      "statusBar.background": "#101",
+      "modernActivityBar.background": "#0000",
+    },
+		}
+	}
+}

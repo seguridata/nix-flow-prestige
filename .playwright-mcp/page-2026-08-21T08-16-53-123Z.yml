@@ -1,0 +1,79 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e92]:
+    - complementary [ref=e93]:
+      - link "SeguriData SeguriData Prestige" [ref=e95] [cursor=pointer]:
+        - /url: /inbox
+        - img "SeguriData" [ref=e96]
+        - generic [ref=e97]:
+          - generic [ref=e98]: SeguriData
+          - generic [ref=e99]: Prestige
+      - navigation [ref=e100]:
+        - link "Bandeja" [ref=e101] [cursor=pointer]:
+          - /url: /inbox
+        - link "Enviados" [ref=e105] [cursor=pointer]:
+          - /url: /sent
+        - link "Enviar" [ref=e109] [cursor=pointer]:
+          - /url: /new
+        - link "Onboarding" [ref=e113] [cursor=pointer]:
+          - /url: /onboarding
+        - link "Tareas" [ref=e118] [cursor=pointer]:
+          - /url: /tasks
+        - link "Proceso" [ref=e122] [cursor=pointer]:
+          - /url: /process
+        - link "Operación" [ref=e127] [cursor=pointer]:
+          - /url: /operations
+      - button "Buscar ⌘K" [ref=e133]:
+        - text: Buscar
+        - generic [ref=e137]: ⌘K
+    - generic [ref=e138]:
+      - banner [ref=e139]:
+        - generic [ref=e140]: Ana Torres
+        - generic [ref=e141]:
+          - button "Notificaciones" [ref=e143]
+          - generic [ref=e148]: MG
+      - main [ref=e150]:
+        - generic [ref=e151]:
+          - generic [ref=e152]:
+            - generic [ref=e153]:
+              - generic [ref=e154]:
+                - paragraph [ref=e155]: M16 · EMPLEADO
+                - heading "Ana Torres" [level=1] [ref=e156]
+                - paragraph [ref=e157]: ana.torres@seguridata.mx
+              - generic [ref=e158]: Datos capturados
+            - generic [ref=e159]:
+              - heading "1. INE — frente y reverso" [level=2] [ref=e160]
+              - paragraph [ref=e161]: Se guarda el hash SHA-256. La validación contra INE/RENAPO es revisión de RH hasta conectar el servicio oficial.
+              - generic [ref=e162]:
+                - generic [ref=e163]:
+                  - text: Frente
+                  - button "Frente" [ref=e164]
+                - generic [ref=e165]:
+                  - text: Reverso
+                  - button "Reverso" [ref=e166]
+            - generic [ref=e167]:
+              - heading "2. Prueba de vida" [level=2] [ref=e168]
+              - paragraph [ref=e169]: Cámara del navegador. Si hay proveedor biométrico se llama; si no, queda en revisión de RH.
+              - button "Encender cámara" [ref=e172]
+          - generic [ref=e173]:
+            - generic [ref=e174]:
+              - heading "Revisión RH" [level=2] [ref=e175]
+              - list [ref=e176]:
+                - listitem [ref=e177]: CURP TOAA900101MDFRRN01
+                - listitem [ref=e178]: RFC TOAA900101XXX
+                - listitem [ref=e179]: "INE verificada: no"
+                - listitem [ref=e180]: "Liveness: captura / pendiente de motor"
+                - listitem [ref=e181]: "Face-match: pendiente de motor"
+              - generic [ref=e182]:
+                - button "Verificar INE" [ref=e183]
+                - button "Habilitar firma" [ref=e184]
+                - button "Rechazar" [ref=e185]
+            - generic [ref=e186]:
+              - heading "Auditoría" [level=2] [ref=e187]
+              - list [ref=e188]:
+                - listitem [ref=e189]: ONBOARDING_CREATED21/8/2026, 2:16:51 a.m.
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e190]:
+        - generic [ref=e194]: Alta creada. Continúa con INE y prueba de vida.
+  - button "Open Next.js Dev Tools" [ref=e87] [cursor=pointer]
+  - alert [ref=e91]: Cargando…

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_PrestigeContrato" targetNamespace="mx.seguridata.prestige" exporter="Prestige" exporterVersion="0.2.0">
+  <bpmn:process id="contrato-dos-partes" name="Contrato corporativo de dos partes" isExecutable="true">
+    <bpmn:startEvent id="Start" name="Solicitud creada"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:userTask id="Task_Legal" name="Revisión legal"><bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing></bpmn:userTask>
+    <bpmn:userTask id="Task_FirmaA" name="Firma — Parte A"><bpmn:incoming>Flow_2</bpmn:incoming><bpmn:outgoing>Flow_3</bpmn:outgoing></bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gw_A" name="¿Aceptó A?"><bpmn:incoming>Flow_3</bpmn:incoming><bpmn:outgoing>Flow_A_Yes</bpmn:outgoing><bpmn:outgoing>Flow_A_No</bpmn:outgoing></bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_FirmaB" name="Firma — Parte B"><bpmn:incoming>Flow_A_Yes</bpmn:incoming><bpmn:outgoing>Flow_4</bpmn:outgoing></bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gw_B" name="¿Aceptó B?"><bpmn:incoming>Flow_4</bpmn:incoming><bpmn:outgoing>Flow_B_Yes</bpmn:outgoing><bpmn:outgoing>Flow_B_No</bpmn:outgoing></bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_Validar" name="Validar confianza"><bpmn:incoming>Flow_B_Yes</bpmn:incoming><bpmn:outgoing>Flow_5</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Evidencia" name="Construir evidencia"><bpmn:incoming>Flow_5</bpmn:incoming><bpmn:outgoing>Flow_6</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:endEvent id="End_Ok" name="Contrato cerrado"><bpmn:incoming>Flow_6</bpmn:incoming></bpmn:endEvent>
+    <bpmn:endEvent id="End_Reject" name="Rechazado"><bpmn:incoming>Flow_A_No</bpmn:incoming><bpmn:incoming>Flow_B_No</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="Task_Legal" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Legal" targetRef="Task_FirmaA" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_FirmaA" targetRef="Gw_A" />
+    <bpmn:sequenceFlow id="Flow_A_Yes" name="Sí" sourceRef="Gw_A" targetRef="Task_FirmaB" />
+    <bpmn:sequenceFlow id="Flow_A_No" name="No" sourceRef="Gw_A" targetRef="End_Reject" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_FirmaB" targetRef="Gw_B" />
+    <bpmn:sequenceFlow id="Flow_B_Yes" name="Sí" sourceRef="Gw_B" targetRef="Task_Validar" />
+    <bpmn:sequenceFlow id="Flow_B_No" name="No" sourceRef="Gw_B" targetRef="End_Reject" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Validar" targetRef="Task_Evidencia" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_Evidencia" targetRef="End_Ok" />
+  </bpmn:process>
+</bpmn:definitions>

@@ -1,0 +1,121 @@
+- generic:
+  - generic:
+    - complementary:
+      - generic:
+        - link:
+          - /url: /inbox
+          - generic:
+            - generic: SeguriData
+            - generic: Prestige
+      - navigation:
+        - link:
+          - /url: /overview
+          - text: Overview
+        - link:
+          - /url: /inbox
+          - text: Bandeja
+        - link:
+          - /url: /sent
+          - text: Enviados
+        - link:
+          - /url: /new
+          - text: Enviar
+        - link:
+          - /url: /onboarding
+          - text: Onboarding
+        - link:
+          - /url: /tasks
+          - text: Tareas
+        - link:
+          - /url: /process
+          - text: Proceso
+        - link:
+          - /url: /operations
+          - text: Operación
+      - button:
+        - text: Buscar
+        - generic: ⌘K
+    - generic:
+      - banner:
+        - generic: Bandeja
+        - generic:
+          - generic:
+            - button: Prueba para firmar
+            - link:
+              - /url: /new
+              - text: Nuevo envío
+          - generic:
+            - button: Recorrido
+          - generic:
+            - button
+          - generic: MG
+      - main:
+        - generic:
+          - generic:
+            - paragraph: Bandeja de firma
+            - heading [level=1]: Hola, María. Nada pendiente.
+          - generic:
+            - generic:
+              - generic:
+                - generic: Firmado
+                - heading [level=2]: Prueba de firma — Maria Gonzalez
+                - paragraph: contrato-prueba.pdf
+                - generic:
+                  - generic: MG
+                  - text: Maria Gonzalez
+                - generic:
+                  - link:
+                    - /url: /documents/3d21c5a4-28d0-4c3b-991d-228a7e8b0c4e
+                    - text: Ver expediente
+                  - button [expanded] [active]: Vista
+            - generic:
+              - generic:
+                - generic: Firmado
+                - heading [level=2]: Prueba de firma — Maria Gonzalez
+                - paragraph: contrato-prueba.pdf
+                - generic:
+                  - generic: MG
+                  - text: Maria Gonzalez
+                - generic:
+                  - link:
+                    - /url: /documents/4d95f88e-ba1b-4321-986f-2286538d2d71
+                    - text: Ver expediente
+                  - button: Vista
+            - generic:
+              - generic:
+                - generic: Firmado
+                - heading [level=2]: Prueba de campos de firma
+                - paragraph: contrato-real.pdf
+                - generic:
+                  - generic: RP
+                  - text: Roberto Perez
+                - generic:
+                  - link:
+                    - /url: /documents/ffaaa8f3-f772-4d46-9bc3-da92a4180dff
+                    - text: Ver expediente
+                  - button: Vista
+            - generic:
+              - generic:
+                - generic: Firmado
+                - heading [level=2]: Acuerdo de Confidencialidad NDA-2026
+                - paragraph: nda.pdf
+                - generic:
+                  - generic: RP
+                  - text: Roberto Perez
+                - generic:
+                  - link:
+                    - /url: /documents/c09b01b8-db59-451c-a400-eaf7376f4a58
+                    - text: Ver expediente
+                  - button: Vista
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f19e81] [cursor=pointer]
+  - alert
+  - dialog [ref=f19e152]:
+    - heading "contrato-prueba.pdf" [level=2] [ref=f19e153]
+    - paragraph [ref=f19e154]: Inspección
+    - heading "Prueba de firma — Maria Gonzalez" [level=2] [ref=f19e155]
+    - paragraph [ref=f19e156]: contrato-prueba.pdf
+    - paragraph [ref=f19e157]: De Maria Gonzalez
+    - paragraph [ref=f19e158]: Estado FIRMADO
+    - link "Abrir expediente" [ref=f19e159] [cursor=pointer]:
+      - /url: /documents/3d21c5a4-28d0-4c3b-991d-228a7e8b0c4e

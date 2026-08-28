@@ -1,0 +1,47 @@
+- generic [active] [ref=f18e1]:
+  - generic [ref=f18e2]:
+    - complementary [ref=f18e3]:
+      - link "SeguriData SeguriData Prestige" [ref=f18e5] [cursor=pointer]:
+        - /url: /inbox
+        - img "SeguriData" [ref=f18e6]
+        - generic [ref=f18e7]:
+          - generic [ref=f18e8]: SeguriData
+          - generic [ref=f18e9]: Prestige
+      - navigation [ref=f18e10]:
+        - link "Overview" [ref=f18e11] [cursor=pointer]:
+          - /url: /overview
+        - link "Bandeja" [ref=f18e17] [cursor=pointer]:
+          - /url: /inbox
+        - link "Enviados" [ref=f18e21] [cursor=pointer]:
+          - /url: /sent
+        - link "Enviar" [ref=f18e25] [cursor=pointer]:
+          - /url: /new
+        - link "Onboarding" [ref=f18e29] [cursor=pointer]:
+          - /url: /onboarding
+        - link "Tareas" [ref=f18e33] [cursor=pointer]:
+          - /url: /tasks
+        - link "Proceso" [ref=f18e38] [cursor=pointer]:
+          - /url: /process
+        - link "Operación" [ref=f18e43] [cursor=pointer]:
+          - /url: /operations
+      - button "Buscar ⌘K" [ref=f18e47]:
+        - text: Buscar
+        - generic [ref=f18e51]: ⌘K
+    - generic [ref=f18e52]:
+      - banner [ref=f18e53]:
+        - generic [ref=f18e54]: Tareas humanas
+        - generic [ref=f18e55]:
+          - button "Recorrido" [ref=f18e57]
+          - button "Notificaciones" [ref=f18e59]
+          - generic [ref=f18e63]: MG
+      - main [ref=f18e65]:
+        - generic [ref=f18e66]:
+          - generic [ref=f18e67]:
+            - generic [ref=f18e68]:
+              - heading "Tablero de tareas" [level=1] [ref=f18e69]
+              - paragraph [ref=f18e70]: Arrastra entre columnas (dnd-kit). Completar dispara el API real, no un mock.
+            - link "Bandeja de firma" [ref=f18e71] [cursor=pointer]:
+              - /url: /inbox
+          - generic [ref=f18e72]: No hay tareas asignadas.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f18e78] [cursor=pointer]

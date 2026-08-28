@@ -1,0 +1,343 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CaseStatus {
+  ABIERTO
+  EN_PROCESO
+  CERRADO
+}
+
+model Case {
+  id        String     @id @default(uuid())
+  tenantId  String
+  title     String
+  status    CaseStatus @default(ABIERTO)
+  createdAt DateTime   @default(now())
+
+  documents Document[]
+
+  @@index([tenantId])
+}
+
+model Document {
+  id            String   @id @default(uuid())
+  caseId        String
+  filename      String
+  version       Int      @default(1)
+  hash          String
+  locked        Boolean  @default(false)
+  contentBase64 String   @db.Text
+  objectKey     String?
+  mimeType      String   @default("application/pdf")
+  createdAt     DateTime @default(now())
+
+  case              Case               @relation(fields: [caseId], references: [id])
+  signatureRequests SignatureRequest[]
+  signatureFields   SignatureField[]
+
+  @@index([caseId])
+}
+
+enum SignatureMethod {
+  DIGITAL
+  AUTOGRAFA
+  BIOMETRICA
+}
+
+enum SigningOrder {
+  SECUENCIAL
+  PARALELO
+}
+
+enum RequestStatus {
+  PENDIENTE
+  EN_FIRMA
+  COMPLETADA
+  RECHAZADA
+  EXPIRADA
+}
+
+model SignatureRequest {
+  id              String            @id @default(uuid())
+  documentId      String
+  methods         SignatureMethod[]
+  order           SigningOrder      @default(SECUENCIAL)
+  status          RequestStatus     @default(PENDIENTE)
+  requestedBy     String?
+  requestedByName String?
+  slaHours        Int               @default(72)
+  expiresAt       DateTime?
+  createdAt       DateTime          @default(now())
+
+  document         Document            @relation(fields: [documentId], references: [id])
+  signers          Signer[]
+  evidenceManifest EvidenceManifest?
+  humanTasks       HumanTask[]
+  consents         ConsentAcceptance[]
+  workflowRun      WorkflowRun?
+
+  @@index([documentId])
+  @@index([status])
+}
+
+enum SignerStatus {
+  PENDIENTE
+  FIRMADO
+  RECHAZADO
+}
+
+enum SignerRole {
+  FIRMANTE
+  REVISOR
+}
+
+model Signer {
+  id                  String           @id @default(uuid())
+  signatureRequestId  String
+  signerId            String
+  name                String?
+  email               String?
+  role                SignerRole       @default(FIRMANTE)
+  status              SignerStatus     @default(PENDIENTE)
+  signedAt            DateTime?
+  usedMethod          SignatureMethod?
+  sortOrder           Int              @default(0)
+  delegatedTo         String?
+  delegatedToName     String?
+
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
+
+  @@unique([signatureRequestId, signerId])
+  @@index([signerId])
+}
+
+enum SignatureFieldType {
+  SIGNATURE
+  INITIALS
+  DATE
+  TEXT
+}
+
+/// Feature: colocación interactiva de campos de firma sobre el PDF.
+model SignatureField {
+  id         String             @id @default(uuid())
+  documentId String
+  signerId   String
+  type       SignatureFieldType
+  page       Int
+  xPct       Float
+  yPct       Float
+  widthPct   Float
+  heightPct  Float
+  required   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+}
+
+/// Feature: evidencia y verificación criptográfica del expediente de firma.
+/// Formaliza el prototipo `seguriflow-preservation-demo` (docs/evidencia_bpn.json).
+model EvidenceManifest {
+  id                   String   @id @default(uuid())
+  signatureRequestId   String   @unique
+  manifestId           String   @unique
+  documentId           String
+  documentVersion      Int
+  tenantId             String
+  originalHash         String
+  presentedHash        String
+  signedHash           String
+  packageHash          String
+  signingOrder         SigningOrder
+  chainOfCustody       Json
+  consentRecords       Json
+  signatures           Json
+  timestampProvider    String
+  timestampIssuedAt    DateTime
+  timestampTokenHash   String
+  validationConclusion String
+  validationReasons    Json
+  createdAt            DateTime @default(now())
+
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
+}
+
+enum HumanTaskStatus {
+  CREADA
+  ASIGNADA
+  COMPLETADA
+  CANCELADA
+  EXPIRADA
+}
+
+model HumanTask {
+  id                 String          @id @default(uuid())
+  signatureRequestId String
+  signerId           String
+  name               String
+  status             HumanTaskStatus @default(CREADA)
+  dueAt              DateTime?
+  completedAt        DateTime?
+  workflowId         String?
+  claimedBy          String?
+  claimedAt          DateTime?
+  outcome            String?
+  createdAt          DateTime        @default(now())
+
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
+
+  @@index([signerId, status])
+  @@index([signatureRequestId])
+}
+
+model ConsentAcceptance {
+  id                 String   @id @default(uuid())
+  signatureRequestId String
+  signerId           String
+  textVersion        String
+  ipHash             String
+  userAgentHash      String?
+  acceptedAt         DateTime @default(now())
+
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
+
+  @@unique([signatureRequestId, signerId, textVersion])
+}
+
+model WorkflowRun {
+  id                 String   @id @default(uuid())
+  signatureRequestId String   @unique
+  workflowId         String
+  runId              String?
+  taskQueue          String
+  processKey         String
+  status             String
+  lastError          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
+
+  @@index([workflowId])
+}
+
+model DocumentComment {
+  id         String   @id @default(uuid())
+  documentId String
+  authorId   String
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([documentId, createdAt])
+}
+
+model UserNotification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  href      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+}
+
+model ProcessDefinition {
+  id          String   @id @default(uuid())
+  key         String
+  name        String
+  description String?
+  version     Int      @default(1)
+  bpmnXml     String   @db.Text
+  dmnXml      String?  @db.Text
+  decisionRules Json?
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([key, version])
+  @@index([key])
+}
+
+model ProcessAuditEvent {
+  id                 String   @id @default(uuid())
+  signatureRequestId String?
+  documentId         String?
+  onboardingId       String?
+  actorId            String
+  actorName          String?
+  action             String
+  payload            Json?
+  createdAt          DateTime @default(now())
+
+  @@index([signatureRequestId, createdAt])
+  @@index([documentId, createdAt])
+  @@index([onboardingId, createdAt])
+}
+
+model ProcessWatcher {
+  id                 String   @id @default(uuid())
+  signatureRequestId String
+  userId             String
+  name               String?
+  createdAt          DateTime @default(now())
+
+  @@unique([signatureRequestId, userId])
+}
+
+enum OnboardingKind {
+  EMPLEADO
+  PROVEEDOR
+  CLIENTE
+}
+
+enum OnboardingStatus {
+  BORRADOR
+  DATOS
+  INE
+  PRUEBA_VIDA
+  EN_REVISION
+  HABILITADO
+  RECHAZADO
+}
+
+/// M16 — alta de empleados, proveedores o clientes antes de habilitar firma.
+model OnboardingCase {
+  id                 String           @id @default(uuid())
+  tenantId           String
+  kind               OnboardingKind   @default(EMPLEADO)
+  status             OnboardingStatus @default(BORRADOR)
+  fullName           String
+  email              String
+  curp               String?
+  rfc                String?
+  ineFrontBase64     String?          @db.Text
+  ineBackBase64      String?          @db.Text
+  ineHash            String?
+  ineVerified        Boolean          @default(false)
+  selfieBase64       String?          @db.Text
+  livenessHash       String?
+  livenessScore      Float?
+  livenessOk         Boolean          @default(false)
+  faceMatchOk        Boolean          @default(false)
+  biometricSessionId String?
+  enabledSignerId    String?
+  notes              String?
+  requestedBy        String
+  requestedByName    String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([tenantId, status])
+  @@index([email])
+}

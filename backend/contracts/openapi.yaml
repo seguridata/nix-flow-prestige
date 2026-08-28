@@ -1,0 +1,351 @@
+openapi: 3.1.0
+info:
+  title: Prestige - API del caso ancla
+  version: 0.1.0
+  description: >
+    Contratos minimos para probar de punta a punta el caso ancla (contrato
+    corporativo de dos partes) descrito en la propuesta de arquitectura.
+    El navegador nunca habla directo con Flowable, Postgres o el HSM: todo
+    pasa por este BFF. Ver seccion 8.1 "Contratos minimos del MVP" del
+    documento de arquitectura para el detalle completo por dominio.
+servers:
+  - url: http://localhost:3000
+    description: BFF local (docker compose)
+
+paths:
+  /cases:
+    get:
+      summary: Listar casos
+      operationId: listCases
+      parameters:
+        - name: tenantId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de casos
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Case' } }
+    post:
+      summary: Crear expediente/caso
+      operationId: createCase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCaseRequest' }
+      responses:
+        '201':
+          description: Caso creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Case' }
+
+  /cases/{id}:
+    get:
+      summary: Consultar caso
+      operationId: getCase
+      parameters:
+        - $ref: '#/components/parameters/CaseId'
+      responses:
+        '200':
+          description: Caso encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Case' }
+        '404': { description: No encontrado }
+
+  /documents:
+    get:
+      summary: Listar documentos
+      operationId: listDocuments
+      parameters:
+        - name: caseId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de documentos (sin contenido)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Document' } }
+    post:
+      summary: Registrar documento (metadatos + version inicial)
+      operationId: createDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDocumentRequest' }
+      responses:
+        '201':
+          description: Documento creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+
+  /documents/{id}/content:
+    get:
+      summary: Descargar contenido (URL autorizada de corta duracion)
+      operationId: getDocumentContent
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200': { description: Contenido o URL prefirmada }
+
+  /workflows/{key}/instances:
+    post:
+      summary: Iniciar instancia de proceso (via Workflow Port -> Flowable)
+      operationId: startWorkflowInstance
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string, example: contrato-dos-partes }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartInstanceRequest' }
+      responses:
+        '201':
+          description: Instancia iniciada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowInstance' }
+
+  /tasks:
+    get:
+      summary: Bandeja de tareas humanas (candidato o asignado)
+      operationId: listTasks
+      parameters:
+        - name: assignee
+          in: query
+          schema: { type: string }
+        - name: candidateGroup
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de tareas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HumanTask' }
+
+  /tasks/{id}/complete:
+    post:
+      summary: Completar tarea humana (idempotente)
+      operationId: completeTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tarea completada }
+
+  /signature-requests:
+    get:
+      summary: Listar solicitudes de firma (bandeja de un firmante)
+      operationId: listSignatureRequests
+      parameters:
+        - name: signerId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDIENTE, EN_FIRMA, COMPLETADA, RECHAZADA, EXPIRADA] }
+      responses:
+        '200':
+          description: Lista de solicitudes
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SignatureRequest' } }
+    post:
+      summary: Crear solicitud de firma independiente del workflow
+      operationId: createSignatureRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSignatureRequest' }
+      responses:
+        '201':
+          description: Solicitud creada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureRequest' }
+
+  /signature-requests/{id}/actions/sign:
+    post:
+      summary: Aplicar firma (digital, autografa o biometrica segun politica)
+      operationId: signRequest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignAction' }
+      responses:
+        '200':
+          description: Firma aplicada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureRequest' }
+
+  /signature-requests/{id}/status:
+    get:
+      summary: Consultar estatus de una solicitud de firma
+      operationId: getSignatureRequestStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Estatus actual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureRequest' }
+
+components:
+  parameters:
+    CaseId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    DocumentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  schemas:
+    CreateCaseRequest:
+      type: object
+      required: [tenantId, title]
+      properties:
+        tenantId: { type: string }
+        title: { type: string, example: "Contrato de arrendamiento - Sucursal Polanco" }
+
+    Case:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [ABIERTO, EN_PROCESO, CERRADO] }
+        createdAt: { type: string, format: date-time }
+
+    CreateDocumentRequest:
+      type: object
+      required: [caseId, filename, contentBase64]
+      properties:
+        caseId: { type: string }
+        filename: { type: string }
+        contentBase64: { type: string, description: "Contenido del PDF en base64 (MVP; en Fase 1 se sube a object storage)." }
+
+    Document:
+      type: object
+      properties:
+        id: { type: string }
+        caseId: { type: string }
+        version: { type: integer }
+        hash: { type: string, description: "SHA-256 del contenido" }
+        locked: { type: boolean }
+
+    StartInstanceRequest:
+      type: object
+      required: [caseId]
+      properties:
+        caseId: { type: string }
+        variables: { type: object, additionalProperties: true }
+
+    WorkflowInstance:
+      type: object
+      properties:
+        id: { type: string }
+        processDefinitionKey: { type: string }
+        caseId: { type: string }
+        status: { type: string, enum: [ACTIVO, COMPLETADO, CANCELADO] }
+
+    HumanTask:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        processInstanceId: { type: string }
+        candidateGroups: { type: array, items: { type: string } }
+        dueDate: { type: string, format: date-time, nullable: true }
+
+    CreateSignatureRequest:
+      type: object
+      required: [documentId, signers, method]
+      properties:
+        documentId: { type: string }
+        methods:
+          type: array
+          description: Métodos de firma autorizados para esta solicitud; cada firmante elige uno de estos al firmar.
+          items: { type: string, enum: [DIGITAL, AUTOGRAFA, BIOMETRICA] }
+        order: { type: string, enum: [SECUENCIAL, PARALELO] }
+        requestedBy: { type: string }
+        requestedByName: { type: string }
+        signers:
+          type: array
+          items:
+            type: object
+            properties:
+              signerId: { type: string }
+              name: { type: string }
+              email: { type: string }
+              role: { type: string, enum: [FIRMANTE, REVISOR] }
+
+    SignAction:
+      type: object
+      required: [signerId, method]
+      properties:
+        signerId: { type: string }
+        method: { type: string, enum: [DIGITAL, AUTOGRAFA, BIOMETRICA] }
+        consentVersion: { type: string }
+
+    SignatureRequest:
+      type: object
+      properties:
+        id: { type: string }
+        documentId: { type: string }
+        status: { type: string, enum: [PENDIENTE, EN_FIRMA, COMPLETADA, RECHAZADA, EXPIRADA] }
+        methods:
+          type: array
+          items: { type: string, enum: [DIGITAL, AUTOGRAFA, BIOMETRICA] }
+        requestedBy: { type: string }
+        requestedByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        signers:
+          type: array
+          items:
+            type: object
+            properties:
+              signerId: { type: string }
+              name: { type: string }
+              email: { type: string }
+              role: { type: string, enum: [FIRMANTE, REVISOR] }
+              status: { type: string, enum: [PENDIENTE, FIRMADO, RECHAZADO] }
+              signedAt: { type: string, format: date-time, nullable: true }
+              usedMethod: { type: string, enum: [DIGITAL, AUTOGRAFA, BIOMETRICA] }

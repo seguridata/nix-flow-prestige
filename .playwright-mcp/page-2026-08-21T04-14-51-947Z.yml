@@ -1,0 +1,17 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - banner [ref=f2e3]:
+      - generic [ref=f2e4]:
+        - link "Prestige" [ref=f2e5] [cursor=pointer]:
+          - /url: /inbox
+        - generic [ref=f2e10]: /
+        - generic [ref=f2e11]: Evidencia · Documento
+      - generic [ref=f2e13]: MG
+    - main [ref=f2e16]:
+      - link "Volver al documento" [ref=f2e17] [cursor=pointer]:
+        - /url: /documents/a411fb25-7d2c-44e0-ad5e-eda1a1a8352d
+      - generic [ref=f2e20]:
+        - heading "Verificar autenticidad" [level=1] [ref=f2e21]
+        - paragraph [ref=f2e22]: Este expediente conserva un manifiesto de evidencia con la cadena de custodia y los hashes criptográficos de cada paso del proceso de firma, para que puedas comprobar su integridad en cualquier momento.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f2e30] [cursor=pointer]

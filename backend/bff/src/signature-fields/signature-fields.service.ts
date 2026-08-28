@@ -1,0 +1,119 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { SignatureField, SignatureFieldType } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+
+export type { SignatureField, SignatureFieldType };
+
+export interface SignatureFieldInput {
+  documentId: string;
+  signerId: string;
+  type: SignatureFieldType;
+  page: number;
+  /** Coordenadas normalizadas 0..1 relativas a la página renderizada, para
+   *  que el campo sobreviva a zoom/re-render del visor de PDF. */
+  xPct: number;
+  yPct: number;
+  widthPct: number;
+  heightPct: number;
+  required?: boolean;
+}
+
+const PCT_FIELDS: (keyof SignatureFieldInput)[] = ['xPct', 'yPct', 'widthPct', 'heightPct'];
+
+function assertValid(field: SignatureFieldInput) {
+  if (!field.documentId) throw new BadRequestException('documentId es requerido');
+  if (!field.signerId) throw new BadRequestException('signerId es requerido');
+  if (!field.type) throw new BadRequestException('type es requerido');
+  if (!Number.isInteger(field.page) || field.page < 1) {
+    throw new BadRequestException('page debe ser un entero >= 1');
+  }
+  for (const key of PCT_FIELDS) {
+    const value = field[key] as number;
+    if (typeof value !== 'number' || Number.isNaN(value) || value < 0 || value > 1) {
+      throw new BadRequestException(`${key} debe ser un número entre 0 y 1`);
+    }
+  }
+}
+
+/**
+ * Colocación de campos de firma (M-fields): permite a quien envía un
+ * documento marcar exactamente dónde debe firmar/rubricar/fechar cada
+ * firmante, guardando coordenadas normalizadas (0..1) para que el campo
+ * se mantenga alineado sin importar el zoom o el tamaño del visor.
+ */
+@Injectable()
+export class SignatureFieldsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  create(body: SignatureFieldInput) {
+    assertValid(body);
+    return this.prisma.signatureField.create({
+      data: {
+        documentId: body.documentId,
+        signerId: body.signerId,
+        type: body.type,
+        page: body.page,
+        xPct: body.xPct,
+        yPct: body.yPct,
+        widthPct: body.widthPct,
+        heightPct: body.heightPct,
+        required: body.required ?? true,
+      },
+    });
+  }
+
+  listByDocument(documentId: string) {
+    if (!documentId) throw new BadRequestException('documentId es requerido');
+    return this.prisma.signatureField.findMany({
+      where: { documentId },
+      orderBy: [{ page: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async remove(id: string) {
+    const found = await this.prisma.signatureField.findUnique({ where: { id } });
+    if (!found) throw new NotFoundException(`Campo de firma ${id} no encontrado`);
+    await this.prisma.signatureField.delete({ where: { id } });
+    return { id };
+  }
+
+  /**
+   * Reemplaza de forma atómica todos los campos de un documento por el
+   * conjunto enviado — así el remitente puede agregar, mover y borrar
+   * campos libremente en el editor y guardar el resultado final en un
+   * solo POST idempotente.
+   */
+  async createMany(documentId: string, fields: SignatureFieldInput[]) {
+    if (!documentId) throw new BadRequestException('documentId es requerido');
+    const mismatched = fields.some((f) => f.documentId && f.documentId !== documentId);
+    if (mismatched) {
+      throw new BadRequestException('Todos los campos deben pertenecer al mismo documentId');
+    }
+    // El caller manda documentId una sola vez a nivel del bulk request; se
+    // inyecta en cada campo aquí para no obligar a repetirlo por elemento.
+    fields = fields.map((f) => ({ ...f, documentId }));
+    fields.forEach(assertValid);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.signatureField.deleteMany({ where: { documentId } });
+      if (fields.length === 0) return [];
+      await tx.signatureField.createMany({
+        data: fields.map((f) => ({
+          documentId,
+          signerId: f.signerId,
+          type: f.type,
+          page: f.page,
+          xPct: f.xPct,
+          yPct: f.yPct,
+          widthPct: f.widthPct,
+          heightPct: f.heightPct,
+          required: f.required ?? true,
+        })),
+      });
+      return tx.signatureField.findMany({
+        where: { documentId },
+        orderBy: [{ page: 'asc' }, { createdAt: 'asc' }],
+      });
+    });
+  }
+}

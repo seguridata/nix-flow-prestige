@@ -1,0 +1,28 @@
+- generic [active] [ref=f8e1]:
+  - generic [ref=f8e113]:
+    - banner [ref=f8e114]:
+      - generic [ref=f8e115]:
+        - link "Prestige" [ref=f8e116] [cursor=pointer]:
+          - /url: /inbox
+        - generic [ref=f8e121]: /
+        - generic [ref=f8e122]: test.pdf
+      - generic [ref=f8e123]: MG
+    - main [ref=f8e126]:
+      - generic [ref=f8e128]:
+        - generic [ref=f8e129]: test.pdf
+        - generic "Vista previa del documento" [ref=f8e134]
+      - generic [ref=f8e136]:
+        - generic [ref=f8e137]:
+          - heading "Detalles del flujo" [level=2] [ref=f8e138]
+          - generic [ref=f8e139]: Pendiente de tu firma
+        - generic [ref=f8e146]:
+          - generic [ref=f8e147]:
+            - paragraph [ref=f8e148]: Carlos Mendoza
+            - paragraph [ref=f8e149]: Firmante
+          - generic [ref=f8e150]: CM
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=f8e152]:
+        - generic [ref=f8e156]: Solicitud de firma enviada.
+  - button "Open Next.js Dev Tools" [ref=f8e50] [cursor=pointer]
+  - alert [ref=f8e54]

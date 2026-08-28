@@ -1,0 +1,58 @@
+{
+  "realm": "prestige",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      { "name": "signer", "description": "Puede firmar y revisar documentos" },
+      { "name": "sender", "description": "Puede crear casos y enviar solicitudes de firma" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "prestige-web",
+      "name": "Prestige Web",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:3001/*", "http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3001", "http://localhost:3000"]
+    }
+  ],
+  "users": [
+    {
+      "username": "maria",
+      "email": "maria@demo.local",
+      "firstName": "María",
+      "lastName": "González",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "maria123", "temporary": false }],
+      "realmRoles": ["signer"]
+    },
+    {
+      "username": "carlos",
+      "email": "carlos.mendoza@empresa.com",
+      "firstName": "Carlos",
+      "lastName": "Mendoza",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "carlos123", "temporary": false }],
+      "realmRoles": ["signer"]
+    },
+    {
+      "username": "roberto",
+      "email": "roberto@empresa.com",
+      "firstName": "Roberto",
+      "lastName": "Gómez",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "roberto123", "temporary": false }],
+      "realmRoles": ["signer", "sender"]
+    }
+  ]
+}
