@@ -31,13 +31,26 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   headers.set("authorization", `Bearer ${session.accessToken}`);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
-  const upstream = await fetch(target, {
-    method: req.method,
-    headers,
-    body: hasBody ? await req.arrayBuffer() : undefined,
-    redirect: "manual",
-    cache: "no-store",
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body: hasBody ? await req.arrayBuffer() : undefined,
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch (err) {
+    // El BFF no está escuchando todavía (arranque en frío) o se cayó.
+    // Devolvemos 502 con un mensaje claro en vez de un 500 opaco.
+    const cause =
+      err instanceof Error && "cause" in err ? String((err as { cause?: unknown }).cause) : String(err);
+    console.error(`[bff-proxy] ${req.method} ${target} → sin respuesta: ${cause}`);
+    return NextResponse.json(
+      { message: "El BFF no está disponible. ¿Terminó de arrancar en :3000?", target },
+      { status: 502 },
+    );
+  }
 
   const resHeaders = new Headers();
   upstream.headers.forEach((v, k) => {

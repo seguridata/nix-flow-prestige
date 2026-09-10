@@ -41,10 +41,11 @@ function fail(msg: string): never {
 
 async function run(
   cmd: string[],
-  opts: { cwd?: string; quiet?: boolean } = {},
+  opts: { cwd?: string; quiet?: boolean; env?: Record<string, string> } = {},
 ): Promise<number> {
   const proc = Bun.spawn(cmd, {
     cwd: opts.cwd ?? ROOT,
+    env: opts.env ? { ...process.env, ...opts.env } : undefined,
     stdin: "ignore",
     stdout: opts.quiet ? "pipe" : "inherit",
     stderr: opts.quiet ? "pipe" : "inherit",
@@ -164,22 +165,54 @@ function printUrls() {
 async function seedDemo() {
   // Espera a que el BFF y Keycloak estén listos (el front/BFF acaban de
   // arrancar en paralelo) y siembra el escenario de demostración. Best-effort:
-  // no tumba `bun run dev` si algo falla.
+  // no tumba `bun run dev` si algo falla, pero espera de verdad y avisa fuerte.
+  //
+  // El BFF hace un `tsc` completo en frío antes de escuchar; en Windows eso
+  // puede pasar de 2 min. Por eso el margen es amplio (5 min) y el seed
+  // reintenta: aunque `/operations/health` ya responda, Temporal/Prisma pueden
+  // tardar unos segundos más en aceptar escrituras.
   const bffUp = await waitFor(
     "BFF (para la demo)",
     () => probeHttp("http://127.0.0.1:3000/operations/health"),
-    120_000,
+    300_000,
     false,
   );
-  const kcUp = await probeHttp(
-    "http://127.0.0.1:8081/realms/prestige/.well-known/openid-configuration",
+  const kcUp = await waitFor(
+    "Keycloak (para la demo)",
+    () =>
+      probeHttp(
+        "http://127.0.0.1:8081/realms/prestige/.well-known/openid-configuration",
+      ),
+    60_000,
+    false,
   );
   if (!bffUp || !kcUp) {
-    log("Demo omitida: BFF o Keycloak no respondieron a tiempo. Ejecuta `bun run demo` cuando estén arriba.");
+    console.log("");
+    log("\x1b[33mDemo NO sembrada:\x1b[0m el BFF o Keycloak no respondieron a tiempo.");
+    log("Cuando veas `Prestige BFF escuchando en http://localhost:3000`, corre:  \x1b[1mbun run demo\x1b[0m");
     return;
   }
-  log("Sembrando escenario de demostración…");
-  await run(["bun", "prisma/scripts/demo-seed.ts"], { cwd: BFF_DIR });
+
+  const MAX = 3;
+  for (let intento = 1; intento <= MAX; intento++) {
+    log(`Sembrando escenario de demostración… (intento ${intento}/${MAX})`);
+    const code = await run(["bun", "prisma/scripts/demo-seed.ts"], {
+      cwd: BFF_DIR,
+      // El seed habla IPv4 explícito: evita el cuelgue de `localhost` → ::1
+      // cuando IPv6 no enruta al proceso Node en Windows.
+      env: { DEMO_BFF_URL: "http://127.0.0.1:3000" },
+    });
+    if (code === 0) {
+      log("Demo sembrada. Recarga el front.");
+      return;
+    }
+    if (intento < MAX) {
+      log(`El seed falló (code ${code}). Reintento en 10 s…`);
+      await Bun.sleep(10_000);
+    }
+  }
+  console.log("");
+  log("\x1b[33mDemo NO sembrada tras 3 intentos.\x1b[0m Revisa el error de arriba y reintenta con:  \x1b[1mbun run demo\x1b[0m");
 }
 
 async function down() {

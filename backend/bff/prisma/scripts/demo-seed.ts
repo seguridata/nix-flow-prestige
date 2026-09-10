@@ -13,7 +13,9 @@ import { PrismaClient } from '@prisma/client';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import jpeg from 'jpeg-js';
 
-const BFF = process.env.DEMO_BFF_URL ?? 'http://localhost:3000';
+// IPv4 explícito: en Windows `localhost` resuelve a ::1 primero y `fetch`
+// puede colgarse 10 s (UND_ERR_CONNECT_TIMEOUT) contra el BFF de Node.
+const BFF = process.env.DEMO_BFF_URL ?? 'http://127.0.0.1:3000';
 const KC =
   (process.env.KEYCLOAK_ISSUER ?? 'http://localhost:8081/realms/prestige') +
   '/protocol/openid-connect/token';
