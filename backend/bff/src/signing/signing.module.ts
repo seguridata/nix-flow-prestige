@@ -4,6 +4,7 @@ import { BiometricSignerAdapter } from './biometric.adapter';
 import { DigitalSignerAdapter } from './digital.adapter';
 import { SigningRouter } from './signing.router';
 import { PdfStampService } from './pdf-stamp.service';
+import { SignaturePolicyService } from './signature-policy';
 import { KEY_CUSTODIAN } from './pki/key-custodian';
 import { Pkcs11KeyCustodian, SoftwareKeyCustodian } from './pki/software-key-custodian';
 
@@ -25,7 +26,8 @@ const keyCustodianProvider = {
     BiometricSignerAdapter,
     SigningRouter,
     PdfStampService,
+    SignaturePolicyService,
   ],
-  exports: [SigningRouter, PdfStampService, BiometricSignerAdapter, KEY_CUSTODIAN],
+  exports: [SigningRouter, PdfStampService, BiometricSignerAdapter, SignaturePolicyService, KEY_CUSTODIAN],
 })
 export class SigningModule {}

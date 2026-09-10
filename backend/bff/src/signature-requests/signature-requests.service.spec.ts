@@ -203,6 +203,13 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     sendCompleted: vi.fn().mockResolvedValue(undefined),
     sendReminder: vi.fn().mockResolvedValue(undefined),
   };
+  const policyService = {
+    resolve: vi.fn().mockResolvedValue({ version: 0, source: 'default', allowedMethods: ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA'] }),
+    enforce: vi.fn((_p: unknown, r: { order?: string; slaHours?: number }) => ({
+      order: r.order ?? 'SECUENCIAL',
+      slaHours: r.slaHours ?? 72,
+    })),
+  };
 
   const service = new SignatureRequestsService(
     prisma,
@@ -214,6 +221,7 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     storage as never,
     collab as never,
     mail as never,
+    policyService as never,
   );
   return { service, requests, signers, realtime, evidence };
 }

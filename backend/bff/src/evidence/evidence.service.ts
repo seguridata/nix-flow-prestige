@@ -190,6 +190,10 @@ export class EvidenceService {
 
     // Cuerpo canónico del manifiesto: es lo que se firma y lo que el
     // verificador offline recompone.
+    // M10 — política de firma pinada en la solicitud (si la hay, va DENTRO del
+    // cuerpo firmado; si no, se omite para no cambiar el hash de manifiestos previos).
+    const pinnedPolicy = request.policySnapshot ?? null;
+
     const manifestBody = {
       manifestId,
       signatureRequestId: request.id,
@@ -209,6 +213,7 @@ export class EvidenceService {
         issuedAt: timestampIssuedAt.toISOString(),
         tokenHash: timestampTokenHash,
       },
+      ...(pinnedPolicy ? { signaturePolicy: pinnedPolicy } : {}),
     };
     const signedManifest = this.manifestSigner.sign(manifestBody);
 
@@ -236,6 +241,7 @@ export class EvidenceService {
           manifestHash: signedManifest.manifestHash,
           manifestSignature: signedManifest.signature,
           manifestSigningKeyId: signedManifest.keyId,
+          signaturePolicy: pinnedPolicy === null ? undefined : (pinnedPolicy as object),
           validationConclusion: 'VALID',
           validationReasons: [
             'Todos los firmantes completaron la firma',
@@ -318,6 +324,7 @@ export class EvidenceService {
         issuedAt: m.timestampIssuedAt.toISOString(),
         tokenHash: m.timestampTokenHash,
       },
+      ...(m.signaturePolicy ? { signaturePolicy: m.signaturePolicy } : {}),
     };
   }
 

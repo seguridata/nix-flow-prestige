@@ -13,6 +13,7 @@ import { CONSENT_TEXT, CONSENT_VERSION } from '../consent/consent';
 import { CONTRATO_DOS_PARTES } from '../temporal/shared';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SignerMailService } from '../notifications/signer-mail.service';
+import { SignaturePolicyService } from '../signing/signature-policy';
 
 export type { SignatureMethod, SigningOrder, SignerRole };
 
@@ -30,6 +31,7 @@ export class SignatureRequestsService {
     private readonly storage: StorageService,
     private readonly collab: CollaborationService,
     private readonly mail: SignerMailService,
+    private readonly policyService: SignaturePolicyService,
   ) {}
 
   consentText() {
@@ -38,6 +40,10 @@ export class SignatureRequestsService {
 
   capabilities() {
     return this.signing.capabilities();
+  }
+
+  signaturePolicy(tenantId: string) {
+    return this.policyService.resolve(tenantId);
   }
 
   async create(body: {
@@ -60,18 +66,27 @@ export class SignatureRequestsService {
     });
     if (!doc) throw new NotFoundException(`Documento ${body.documentId} no encontrado`);
 
-    const slaHours = body.slaHours ?? 72;
+    // M10 — política de firma del tenant: valida los métodos y aplica defaults.
+    const policy = await this.policyService.resolve(body.tenantId);
+    const enforced = this.policyService.enforce(policy, {
+      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA')[],
+      order: body.order,
+      slaHours: body.slaHours,
+    });
+    const slaHours = enforced.slaHours;
     const expiresAt = new Date(Date.now() + slaHours * 3600_000);
     const created = await this.prisma.signatureRequest.create({
       data: {
         documentId: body.documentId,
         tenantId: doc.tenantId,
         methods: body.methods,
-        order: body.order ?? 'SECUENCIAL',
+        order: enforced.order,
         requestedBy: body.requestedBy,
         requestedByName: body.requestedByName,
         slaHours,
         expiresAt,
+        policyVersion: policy.version,
+        policySnapshot: policy as unknown as object,
         signers: {
           create: body.signers.map((s, index) => ({
             signerId: s.signerId,
@@ -107,7 +122,13 @@ export class SignatureRequestsService {
       actorId: body.requestedBy ?? 'system',
       actorName: body.requestedByName,
       action: 'REQUEST_CREATED',
-      payload: { methods: body.methods, order: created.order, slaHours },
+      payload: {
+        methods: body.methods,
+        order: created.order,
+        slaHours,
+        policyVersion: policy.version,
+        policySource: policy.source,
+      },
     });
     for (const signer of created.signers) {
       await this.collab.notify(

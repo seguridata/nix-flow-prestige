@@ -80,6 +80,9 @@ model SignatureRequest {
   requestedByName String?
   slaHours        Int               @default(72)
   expiresAt       DateTime?
+  /// M10 — política de firma efectiva al crear la solicitud (versión + snapshot).
+  policyVersion   Int?
+  policySnapshot  Json?
   createdAt       DateTime          @default(now())
 
   document         Document            @relation(fields: [documentId], references: [id])
@@ -177,6 +180,9 @@ model EvidenceManifest {
   manifestHash         String?
   manifestSignature    String?
   manifestSigningKeyId String?
+  /// M10 — política de firma vigente al crear la solicitud (queda dentro del
+  /// manifiesto firmado, así el verificador sabe qué reglas se aplicaron).
+  signaturePolicy      Json?
   validationConclusion String
   validationReasons    Json
   createdAt            DateTime @default(now())

@@ -72,6 +72,12 @@ export class SignatureRequestsController {
     return this.signatureRequests.capabilities();
   }
 
+  /** M10 — política de firma efectiva para el tenant del usuario. */
+  @Get('policy')
+  policy(@CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.signaturePolicy(user.tenantId);
+  }
+
   @Get(':id/status')
   status(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.signatureRequests.getOrThrow(id, user.tenantId);
