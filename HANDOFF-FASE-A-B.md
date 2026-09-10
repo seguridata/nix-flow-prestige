@@ -179,7 +179,9 @@ Puertos libres: `3000` BFF · `3001` app · `5432` Postgres · `6379` Redis ·
 | `6766848` | Handoff al día. | n/a |
 | `83ba942` | **FASE A — identidad OIDC real + cierre de superficie pública.** Backend: `@Public()` fuera salvo health/consent/capabilities/verify/internal; `RolesGuard`+`@Roles()` (roles `signer/sender/rh/auditor/admin` en el realm + claim `tenant`); `CurrentUser` da `actorId`/`tenantId` a todos los controllers; `WorkerGuard` HMAC en `/internal/*`; handshake WS autenticado; DTOs `class-validator` en 8 controllers. Frontend Next 16: OIDC Auth Code + PKCE (`libs/auth.ts`), cookie httpOnly firmada (jose), `/api/auth/*`, proxy `/api/bff/[...path]` (adjunta Bearer), `proxy.ts` (ex-middleware) protege rutas, `/login`, logout, `useSession()` real, fuera `maria`. | **e2e WSL**: sin token 401; maria→403 / roberto→200 (roles); `tenantId` del claim; worker HMAC 201 / viejo 401; `next build` OK; `GET /`→307 `/login`; `/api/auth/login`→307 authorize PKCE S256. `tsc` bff+web limpio; 11+18 tests. |
 | `f8d70ff` | Handoff — Fase A completa. | n/a |
-| `8af449b` | **FASE B (núcleo) — firma DIGITAL real PAdES.** `KeyCustodian` port + `SoftwareKeyCustodian` (PKCS#12 por firmante, CA X.509 interna node-forge, `bun run pki:init`) + `Pkcs11KeyCustodian` (esqueleto HSM). `DigitalSignerAdapter`: apariencia visible + placeholder PAdES (`ETSI.CAdES.detached`) + PKCS#7 con `@signpdf`. `SignerAdapter` ampliado (`pdfBytes`/`field`/`signerName` → `signedPdf`/`certificate` + `verify()`). `sign()` para todos los métodos descifra del storage, firma y sube la versión firmada cifrada; audit con `algorithm/provider/cert`. **Sustituye el HMAC de desarrollo.** | **e2e WSL**: sign DIGITAL → PDF con `/ByteRange` `/ETSI.CAdES.detached` `/Type /Sig`; `openssl` lee la cadena `Roberto Gomez ← Prestige Issuing CA ← Prestige Root CA`; **`openssl verify` del cert del firmante contra la CA del proyecto → OK**. `tsc` limpio; 13 tests bff (2 nuevos PAdES) + 18 web. |
+| `8af449b` | **FASE B — firma DIGITAL real PAdES.** `KeyCustodian` port + `SoftwareKeyCustodian` (PKCS#12 por firmante, CA X.509 interna, `bun run pki:init`) + `Pkcs11KeyCustodian` (esqueleto HSM). `DigitalSignerAdapter`: apariencia visible + PKCS#7 `ETSI.CAdES.detached` con `@signpdf`. `sign()` de todos los métodos firma y sube la versión firmada cifrada. **Sustituye el HMAC.** | **e2e WSL**: `openssl verify` del cert del firmante contra la CA → OK. 13 tests. |
+| `189a300` | Handoff — Fase B núcleo. | n/a |
+| `fc97cee` | **FASE B — TSA RFC 3161 real + manifiesto firmado + verificador offline + ZIP.** Cliente RFC 3161 a mano (`rfc3161.ts`, `TSA_URL` → freeTSA por defecto). `ManifestSigner` Ed25519 firma el JSON canónico del manifiesto (append-only). Columnas `timestampToken`/`manifestHash`/`manifestSignature`/`manifestSigningKeyId` (migr. `20260910050000`). `verify()` con `checks{}` granular. **`verifier/verify.mjs`**: verificador OFFLINE (solo node-forge) sin BFF/BD. `GET /evidence/:id/dossier` → ZIP con todo + el verificador. | **e2e WSL**: firmar DIGITAL → manifiesto con token de freeTSA + firma Ed25519 → `/verify` 6/6 checks → ZIP 16 KB → **verificador OFFLINE: «expediente VÁLIDO» 7/7** (incl. cadena PAdES y sello RFC 3161). 14 tests bff + 18 web. |
 
 ### Verificación e2e disponible
 
@@ -272,6 +274,17 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - [x] `SignerAdapter` ampliado: `sign` + `verify` + `capabilities` (`prepare`/`reconcile` quedan para firma asíncrona)
 - [x] `DigitalSignerAdapter`: firma **PAdES** real (`@signpdf` + `node-forge`), reemplaza el HMAC — verificada con openssl
 - [x] Firma visible en el PDF por `SignatureField` para DIGITAL y AUTÓGRAFA (BIOMÉTRICA: pendiente, requiere proveedor)
+- [~] Validación de certificado: cadena y vigencia sí (verificador); **OCSP/CRL** no aplica a la CA de software — lo cablea el adaptador PKCS#11 contra el PKI de SeguriData
+- [ ] Manejar firma `pending` (asíncrona / 2Fo) en solicitud y workflow + job de reconciliación
+- [x] Cliente **RFC 3161** real (`TSA_URL`) — token en el manifiesto; falta incluirlo también dentro del CMS como atributo (PAdES-T)
+- [x] `EvidenceService`: `timestampProvider`/`timestampToken`/`timestampTokenHash` con el token TSA real
+- [x] Manifiesto de evidencia **firmado** (Ed25519, append-only) + cert/algorithm por firmante
+- [x] **Verificador offline** independiente (`verifier/`, sin BFF ni Temporal)
+- [ ] Sello de tiempo por cada evento `SIGNATURE_APPLIED` (hoy: sello del `packageHash` al cerrar)
+- [ ] Política de firma versionada por caso (M10) — simple / reforzada OTP / biométrica previa
+- [x] Exportar expediente probatorio (ZIP: `GET /evidence/:id/dossier`)
+- [ ] Pruebas de interoperabilidad en Adobe Acrobat (validado con openssl + verificador forge)
+- [ ] Auditoría inmutable encadenada para `ProcessAuditEvent` (M11)
 - [ ] Validación de certificado: cadena, vigencia, **OCSP/CRL** (servicio reutilizable)
 - [ ] Manejo de firma `pending` (asíncrona / segundo factor) en solicitud y workflow
 - [ ] Job de reconciliación de firmas iniciadas y no confirmadas
@@ -452,8 +465,11 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
   - Realm reimportado con `down -v` + `up` (roles `rh/auditor/admin`, claim `tenant`). El token debe pedirse al MISMO host que `KEYCLOAK_ISSUER` (`localhost`, no `127.0.0.1`) o el guard rechaza por `iss` mismatch.
 - `8af449b` **FASE B núcleo — firma DIGITAL PAdES real.** `KeyCustodian` + CA interna + PKCS#7 con `@signpdf`. Verificado e2e con openssl (cadena del firmante → CA del proyecto → `OK`). El HMAC de desarrollo **desaparece**.
   - Notas: `@signpdf/placeholder-plain` necesita tabla xref clásica → el adaptador normaliza el PDF con `useObjectStreams:false`. `@signpdf/utils` tuvo que añadirse como dep directa (era transitiva).
-- **Retomar en:** OLA 2 (resto de Fase B) → (1) cliente **TSA RFC 3161** real (`TSA_URL` → `uts-server` en compose + fallback público) e incluir el token en el CMS (PAdES-T) y en el manifiesto; (2) **manifiesto de evidencia firmado** (append-only) + registrar cert/algorithm por firmante; (3) **verificador offline** (paquete/CLI independiente del BFF); (4) sello por evento `SIGNATURE_APPLIED`; (5) política de firma versionada por caso (M10); (6) export del expediente probatorio (ZIP). Luego: DTOs/excepciones/paginación restantes, Redis (D10), ceremonia a pantalla completa, y OLA 3 (M05/M07/M13/M14/M15/M16).
-- Verificación pendiente: login OIDC **completo en navegador** (el `curl` llega hasta el redirect a Keycloak; falta rellenar el form y volver por `/api/auth/callback`). Playwright o manual al retomar.
+- `fc97cee` **FASE B completa (núcleo M10/M11)** — TSA RFC 3161 real (freeTSA por defecto), manifiesto firmado Ed25519 (append-only), verificador **offline** (`verifier/`), export ZIP `GET /evidence/:id/dossier`. Verificado e2e: el verificador offline dice «expediente VÁLIDO» 7/7 sin tocar el BFF.
+  - Notas: `archiver` v8 es **ESM puro** → `new ZipArchive()` (no la forma llamable). `compression` en `main.ts` excluye `application/zip|pdf`. El token TSA se pide al host de `TSA_URL`; freeTSA.org respondió en la prueba real.
+- **Fase A y Fase B: núcleos DONE y verificados e2e.** Pendientes acotados (ver checklist §7 OLA 2): firma `pending`/reconciliación (firma asíncrona), sello por evento, política de firma M10, auditoría inmutable encadenada, interop Adobe, y `A-07`/`A-11`/`A-12`.
+- **Retomar en:** (1) cerrar los pendientes de Fase B de arriba; (2) **OLA 3** — M05 (motor DMN `dmn-eval-js`), M07 (recordatorios/escalamiento/delegación), M13 (correo real + Mailpit + enlaces de un uso), M14 (webhooks firmados + idempotencia + DLQ + OpenAPI), M15 (control plane + OTel), M16 (OCR `tesseract` + face-match `face-api`); (3) transversal: DTOs/excepciones/paginación restantes, Redis (D10), ceremonia a pantalla completa, CI.
+- Verificación pendiente: login OIDC **completo en navegador** (el `curl` llega al redirect a Keycloak; falta rellenar el form y volver por `/api/auth/callback`). Playwright o manual.
 
 ### Sesión 2 — (pendiente)
 - ...
