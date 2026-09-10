@@ -34,10 +34,7 @@ export class ProcessController {
 
   @Public()
   @Put('process-definitions/:key')
-  save(
-    @Param('key') key: string,
-    @Body() body: { bpmnXml?: string; dmnXml?: string; name?: string },
-  ) {
+  save(@Param('key') key: string, @Body() body: { bpmnXml?: string; dmnXml?: string; name?: string }) {
     return this.process.saveXml(key, body);
   }
 
@@ -49,11 +46,7 @@ export class ProcessController {
 
   @Public()
   @Get('process-audit')
-  audit(
-    @Query('signatureRequestId') signatureRequestId?: string,
-    @Query('documentId') documentId?: string,
-    @Query('onboardingId') onboardingId?: string,
-  ) {
+  audit(@Query('signatureRequestId') signatureRequestId?: string, @Query('documentId') documentId?: string, @Query('onboardingId') onboardingId?: string) {
     return this.process.listAudit({ signatureRequestId, documentId, onboardingId });
   }
 }
