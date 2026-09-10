@@ -170,14 +170,20 @@ Puertos libres: `3000` BFF · `3001` app · `5432` Postgres · `6379` Redis ·
 | Commit | Qué | Verificado |
 |---|---|---|
 | `3968bf2` | Limpieza: fuera `.playwright-mcp/`, PNGs sueltos de raíz, `prestige-document-signed.png`; `.gitignore` + material PKI local; añade `PLAN-FASE-A-B.md` | `tsc` bff OK |
-| `b7c91c6` | Endurecimiento BFF: `helmet`, CORS por lista (`CORS_ORIGINS`), body 2 MB, `ValidationPipe` global (whitelist+forbidNonWhitelisted+transform), `compression`, `trust proxy`, shutdown hooks, logger `pino` (`nestjs-pino`) con redacción de secretos, `ThrottlerModule`. **Elimina `DemoModule`** (`/demo/self-sign`) y los botones «prueba para firmar» de `inbox`/`sent` + `createSelfSignDemo`. Deps nuevas: helmet, compression, @nestjs/throttler, nestjs-pino, pino*, ioredis, @socket.io/redis-adapter, class-validator, class-transformer | `tsc` bff OK; `tsc` web OK (errores solo en `.next/dev/types` generados) |
+| `b7c91c6` | Endurecimiento BFF: `helmet`, CORS por lista (`CORS_ORIGINS`), body 2 MB, `ValidationPipe` global (whitelist+forbidNonWhitelisted+transform), `compression`, `trust proxy`, shutdown hooks, logger `pino` (`nestjs-pino`) con redacción de secretos, `ThrottlerModule`. **Elimina `DemoModule`** (`/demo/self-sign`) y los botones «prueba para firmar» de `inbox`/`sent` + `createSelfSignDemo`. Deps nuevas: helmet, compression, @nestjs/throttler, nestjs-pino, pino*, ioredis, @socket.io/redis-adapter, class-validator, class-transformer | **e2e vía WSL**: infra up + `prisma migrate deploy` + `nest start`. `GET /operations/health` → `postgres:true`, `objectStorage:true`. Cabeceras `helmet` presentes (CSP, HSTS, X-Frame-Options, sin `X-Powered-By`). `X-RateLimit-*` presentes (throttler activo). **`ValidationPipe` instalado pero sin efecto aún**: los controllers usan tipos inline, no clases DTO con `class-validator` → un `POST /cases` con campo extra pasa (201). Es el siguiente ítem del checklist. |
+| `d3693ef` | `.gitignore` dejaba de versionar todo `.md` salvo README → corregido; se versionan `branding.md`, `AGENTS.md`, `CLAUDE.md`, planes y ADRs. Añade `HANDOFF-FASE-A-B.md`. | n/a |
 
-### No verificado end-to-end todavía
+### Verificación e2e disponible
 
-Nada de lo anterior se ejerció con el stack arriba en la sesión de origen porque
-Docker Desktop no estaba disponible desde Windows. **Con WSL sí se puede** —
-primera tarea al retomar: `bun run dev` en WSL y confirmar que el BFF arranca
-con los cambios de `b7c91c6` (pino como logger, throttler, validation pipe).
+Docker corre en WSL/Ubuntu. Los contenedores `kronos-*` que ya estaban usan
+`5433`/`6380`, **no** chocan con los puertos de prestige. Flujo probado:
+
+```bash
+wsl -d Ubuntu -- bash -lc "cd /mnt/c/.../Nix-flow-prestige && docker compose --env-file backend/.env -f backend/docker-compose.yml up -d"
+wsl -d Ubuntu -- bash -lc "cd .../backend/bff && bunx prisma migrate deploy && bunx prisma generate"
+wsl -d Ubuntu -- bash -lc "cd .../backend/bff && bunx nest start"   # o 'bun run dev' desde la raíz para todo
+# bajar:  docker compose ... down   (los volúmenes se conservan)
+```
 
 ---
 
@@ -217,7 +223,7 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - [ ] Redis real: cliente `ioredis` + `@socket.io/redis-adapter` + caché de lecturas calientes (D10)
 - [ ] Verificar arranque del BFF con `bun run dev` tras `b7c91c6` (pino/throttler/pipe)
 
-**De-base64 → storage real (D2)**
+**De-base64 → storage real (D2)** — nota: `objectStorage:true` en health, MinIO alcanzable, bucket `prestige-docs` creado por `minio-init`
 - [ ] `StorageService`: obligatorio; `putObject`/`getObject`/`deleteObject` con AES-256-GCM envelope; quitar fallback silencioso a base64; script `scripts/gen-keys`
 - [ ] Prisma: `Document` — quitar `contentBase64`; `objectKey String` requerido; `+ sizeBytes Int`, `+ enc Json?`
 - [ ] Prisma: `OnboardingCase` — quitar `ineFrontBase64`/`ineBackBase64`/`selfieBase64`; `+ ineFront/ineBack/selfie Json?` (`{key,iv,tag,sha256,size}`)
@@ -426,14 +432,13 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 
 ## 9. Bitácora de sesiones
 
-### Sesión 1 — 2026-09-09 · `session_011dcPJsWMoFEARdPd7kcBiQ`
-- Revisión completa del repo; generados 2 PDF de diagnóstico en `docs/reportes/revision-2026-09/` (fuera de control de versiones por `.gitignore` de `/docs/`).
+### Sesión 1 — 2026-09-09/10 · `session_011dcPJsWMoFEARdPd7kcBiQ`
+- Revisión completa del repo; generados 2 PDF de diagnóstico en `docs/reportes/revision-2026-09/` (fuera de control de versiones por `.gitignore` de `/docs/` y `*.pdf`).
 - Rama `feat/fase-a-b-produccion` creada.
-- `3968bf2` limpieza del repo.
-- `b7c91c6` endurecimiento del BFF + eliminación de `DemoModule`.
-- Bloqueo detectado y resuelto: Docker no corría desde Windows; **sí funciona vía WSL/Ubuntu** (`docker 29.1.3`, repo en `/mnt/c/...`, `bun run dev` levanta todo).
-- Creado este `HANDOFF-FASE-A-B.md`.
-- **Retomar en:** OLA 1 → verificar arranque del BFF con `bun run dev`, luego DTOs `class-validator`, luego de-base64 → storage.
+- `3968bf2` limpieza del repo · `b7c91c6` endurecimiento BFF + fuera `DemoModule` · `d3693ef` versionar markdown + handoff.
+- Bloqueo detectado y resuelto: Docker no corre desde Windows; **sí vía WSL/Ubuntu** (`docker 29.1.3`, repo en `/mnt/c/...`).
+- **Verificado e2e vía WSL:** infra up (postgres healthy, keycloak/temporal/minio/redis), `prisma migrate deploy` (sin migraciones pendientes), `nest start`. `GET /operations/health` → `postgres:true objectStorage:true`. `helmet` + `throttler` activos en cabeceras. `ValidationPipe` instalado pero inerte sin clases DTO. Infra bajada al terminar (volúmenes conservados).
+- **Retomar en:** OLA 1 → (1) DTOs `class-validator` en todos los controllers (hoy la `ValidationPipe` no valida nada), (2) filtro de excepciones + paginación por cursor, (3) de-base64 → `StorageService` con AES-256-GCM + esquema Prisma + backfill, (4) Redis real, (5) Fase A backend (`@Public()` fuera + `CurrentUser`/roles/tenant + guard worker/WS), (6) Fase A frontend OIDC.
 
 ### Sesión 2 — (pendiente)
 - ...
