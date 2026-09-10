@@ -1,29 +1,32 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
-import type { OnboardingKind } from '@prisma/client';
+import type { OnboardingCase, OnboardingKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SigningRouter } from '../signing/signing.router';
+import { StorageService } from '../storage/storage.service';
+import type { EncMeta } from '../storage/object-crypto';
 
-function stripDataUrl(value: string) {
-  return value.replace(/^data:[\w/+.-]+;base64,/, '');
+/** Referencia a un objeto cifrado en storage (lo que se guarda en las columnas Json). */
+interface StoredRef {
+  key: string;
+  sha256: string;
+  size: number;
+  enc: EncMeta;
 }
 
-function hashBytes(base64: string) {
-  return createHash('sha256').update(stripDataUrl(base64), 'base64').digest('hex');
+function sha256(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex');
 }
 
-function publicView<T extends { ineFrontBase64?: string | null; ineBackBase64?: string | null; selfieBase64?: string | null }>(
-  row: T,
-) {
+/** Oculta las referencias de storage y expone banderas `has*`. */
+function publicView(row: OnboardingCase) {
+  const { ineFront, ineBack, selfie, ...rest } = row;
   return {
-    ...row,
-    ineFrontBase64: row.ineFrontBase64 ? 'present' : null,
-    ineBackBase64: row.ineBackBase64 ? 'present' : null,
-    selfieBase64: row.selfieBase64 ? 'present' : null,
-    hasIneFront: Boolean(row.ineFrontBase64),
-    hasIneBack: Boolean(row.ineBackBase64),
-    hasSelfie: Boolean(row.selfieBase64),
+    ...rest,
+    hasIneFront: ineFront != null,
+    hasIneBack: ineBack != null,
+    hasSelfie: selfie != null,
   };
 }
 
@@ -33,6 +36,7 @@ export class OnboardingService {
     private readonly prisma: PrismaService,
     private readonly collab: CollaborationService,
     private readonly signing: SigningRouter,
+    private readonly storage: StorageService,
   ) {}
 
   list(tenantId = 'seguridata') {
@@ -40,11 +44,6 @@ export class OnboardingService {
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
       take: 80,
-      omit: {
-        ineFrontBase64: true,
-        ineBackBase64: true,
-        selfieBase64: true,
-      },
     });
   }
 
@@ -90,26 +89,42 @@ export class OnboardingService {
     return publicView(created);
   }
 
-  async attachIne(id: string, body: { frontBase64?: string; backBase64?: string; actorId: string; actorName?: string }) {
+  private async store(prefix: string, filename: string, bytes: Buffer, contentType: string): Promise<StoredRef> {
+    const s = await this.storage.putObject({ prefix, filename, bytes, contentType });
+    return { key: s.objectKey, sha256: s.sha256, size: s.sizeBytes, enc: s.enc };
+  }
+
+  async attachIne(
+    id: string,
+    body: { front?: Buffer; back?: Buffer; actorId: string; actorName?: string },
+  ) {
     const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
     if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
     if (['HABILITADO', 'RECHAZADO'].includes(current.status)) {
       throw new BadRequestException('Este alta ya está cerrada');
     }
-    if (!body.frontBase64 && !body.backBase64) {
+    if (!body.front?.length && !body.back?.length) {
       throw new BadRequestException('Adjunta el frente o el reverso de la INE');
     }
-    const front = body.frontBase64 ?? current.ineFrontBase64;
-    const back = body.backBase64 ?? current.ineBackBase64;
-    const combined = `${front ?? ''}${back ?? ''}`;
-    const ineHash = combined ? hashBytes(combined) : current.ineHash;
+
+    const ineFront: StoredRef | null = body.front?.length
+      ? await this.store('onboarding/ine', `${id}-frente.jpg`, body.front, 'image/jpeg')
+      : (current.ineFront as unknown as StoredRef | null);
+    const ineBack: StoredRef | null = body.back?.length
+      ? await this.store('onboarding/ine', `${id}-reverso.jpg`, body.back, 'image/jpeg')
+      : (current.ineBack as unknown as StoredRef | null);
+
+    // ineHash: SHA-256 del conjunto ordenado de hashes de frente+reverso presentes.
+    const parts = [ineFront?.sha256, ineBack?.sha256].filter(Boolean) as string[];
+    const ineHash = parts.length ? sha256(Buffer.from(parts.join(':'))) : current.ineHash;
+
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
       data: {
-        ineFrontBase64: front,
-        ineBackBase64: back,
+        ineFront: ineFront as unknown as object,
+        ineBack: ineBack as unknown as object,
         ineHash,
-        status: front && back ? 'INE' : current.status,
+        status: ineFront && ineBack ? 'INE' : current.status,
       },
     });
     await this.collab.audit({
@@ -117,22 +132,23 @@ export class OnboardingService {
       actorId: body.actorId,
       actorName: body.actorName,
       action: 'INE_CAPTURED',
-      payload: { ineHash, hasFront: Boolean(front), hasBack: Boolean(back) },
+      payload: { ineHash, hasFront: Boolean(ineFront), hasBack: Boolean(ineBack) },
     });
     return publicView(updated);
   }
 
   async captureLiveness(
     id: string,
-    body: { selfieBase64: string; actorId: string; actorName?: string },
+    body: { selfie: Buffer; actorId: string; actorName?: string },
   ) {
     const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
     if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
-    if (!body.selfieBase64) throw new BadRequestException('Se requiere una captura de prueba de vida');
-    const bytes = Buffer.from(stripDataUrl(body.selfieBase64), 'base64');
-    if (bytes.length < 2_000) throw new BadRequestException('La captura es demasiado pequeña');
+    if (!body.selfie?.length) throw new BadRequestException('Se requiere una captura de prueba de vida');
+    if (body.selfie.length < 2_000) throw new BadRequestException('La captura es demasiado pequeña');
 
-    const livenessHash = hashBytes(body.selfieBase64);
+    const selfie = await this.store('onboarding/selfie', `${id}-selfie.jpg`, body.selfie, 'image/jpeg');
+    const livenessHash = selfie.sha256;
+
     const biometric = this.signing.capabilities().find((c) => c.method === 'BIOMETRICA');
     let livenessOk = false;
     let livenessScore: number | null = null;
@@ -164,11 +180,11 @@ export class OnboardingService {
       biometricSessionId = payload.sessionId ?? null;
     }
 
-    const readyForReview = Boolean(current.ineFrontBase64 && current.ineBackBase64);
+    const readyForReview = Boolean(current.ineFront && current.ineBack);
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
       data: {
-        selfieBase64: body.selfieBase64,
+        selfie: selfie as unknown as object,
         livenessHash,
         livenessScore,
         livenessOk,
@@ -182,11 +198,7 @@ export class OnboardingService {
       actorId: body.actorId,
       actorName: body.actorName,
       action: 'LIVENESS_CAPTURED',
-      payload: {
-        livenessHash,
-        livenessOk,
-        vendor: Boolean(biometric?.configured),
-      },
+      payload: { livenessHash, livenessOk, vendor: Boolean(biometric?.configured) },
     });
     if (readyForReview) {
       await this.collab.notify(
@@ -202,7 +214,7 @@ export class OnboardingService {
   async verifyIne(id: string, body: { actorId: string; actorName?: string; notes?: string }) {
     const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
     if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
-    if (!current.ineFrontBase64 || !current.ineBackBase64) {
+    if (!current.ineFront || !current.ineBack) {
       throw new BadRequestException('Faltan frente y reverso de la INE');
     }
     const updated = await this.prisma.onboardingCase.update({
@@ -210,7 +222,7 @@ export class OnboardingService {
       data: {
         ineVerified: true,
         notes: body.notes ?? current.notes,
-        status: current.selfieBase64 ? 'EN_REVISION' : 'INE',
+        status: current.selfie ? 'EN_REVISION' : 'INE',
       },
     });
     await this.collab.audit({
@@ -228,17 +240,13 @@ export class OnboardingService {
     if (!current.ineVerified) {
       throw new BadRequestException('RH debe verificar la INE antes de habilitar la firma');
     }
-    if (!current.selfieBase64) {
+    if (!current.selfie) {
       throw new BadRequestException('Falta la prueba de vida');
     }
     const signerId = current.email.split('@')[0].replace(/[^a-z0-9._-]/gi, '') || current.id.slice(0, 8);
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
-      data: {
-        status: 'HABILITADO',
-        enabledSignerId: signerId,
-        livenessOk: true,
-      },
+      data: { status: 'HABILITADO', enabledSignerId: signerId, livenessOk: true },
     });
     await this.collab.audit({
       onboardingId: id,

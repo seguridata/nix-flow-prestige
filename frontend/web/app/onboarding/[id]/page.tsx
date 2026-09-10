@@ -11,7 +11,6 @@ import { Stepper } from "@/components/ui/stepper";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSession } from "@/store/session-store";
 import { apiClient } from "@/services/api-client";
-import { fileToBase64 } from "@/libs/file";
 
 interface OnboardingDetail {
   id: string;
@@ -56,14 +55,13 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   }
 
   const ine = useMutation({
-    mutationFn: async (payload: { part: "front" | "back"; file: File }) => {
-      const base64 = await fileToBase64(payload.file);
-      return apiClient.post(`/onboarding/${id}/ine`, {
-        actorId: signerId,
-        actorName: name,
-        frontBase64: payload.part === "front" ? base64 : undefined,
-        backBase64: payload.part === "back" ? base64 : undefined,
-      });
+    mutationFn: (payload: { part: "front" | "back"; file: File }) => {
+      const form = new FormData();
+      form.append("file", payload.file, payload.file.name);
+      form.append("part", payload.part);
+      form.append("actorId", signerId);
+      form.append("actorName", name);
+      return apiClient.post(`/onboarding/${id}/ine`, form);
     },
     onSuccess: () => {
       toast.success("INE guardada.");
@@ -73,8 +71,13 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   });
 
   const liveness = useMutation({
-    mutationFn: (selfieBase64: string) =>
-      apiClient.post(`/onboarding/${id}/liveness`, { selfieBase64, actorId: signerId, actorName: name }),
+    mutationFn: (selfie: Blob) => {
+      const form = new FormData();
+      form.append("file", selfie, "selfie.jpg");
+      form.append("actorId", signerId);
+      form.append("actorName", name);
+      return apiClient.post(`/onboarding/${id}/liveness`, form);
+    },
     onSuccess: () => {
       toast.success("Prueba de vida capturada.");
       stopCamera();
@@ -130,7 +133,14 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
-    liveness.mutate(canvas.toDataURL("image/jpeg", 0.85));
+    canvas.toBlob(
+      (blob) => {
+        if (blob) liveness.mutate(blob);
+        else toast.error("No se pudo capturar el cuadro");
+      },
+      "image/jpeg",
+      0.85,
+    );
   }
 
   const row = query.data;

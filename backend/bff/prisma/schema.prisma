@@ -322,11 +322,12 @@ model OnboardingCase {
   email              String
   curp               String?
   rfc                String?
-  ineFrontBase64     String?          @db.Text
-  ineBackBase64      String?          @db.Text
+  // Objetos cifrados en storage: { key, sha256, size, enc }. Nunca base64 en BD.
+  ineFront           Json?
+  ineBack            Json?
   ineHash            String?
   ineVerified        Boolean          @default(false)
-  selfieBase64       String?          @db.Text
+  selfie             Json?
   livenessHash       String?
   livenessScore      Float?
   livenessOk         Boolean          @default(false)
