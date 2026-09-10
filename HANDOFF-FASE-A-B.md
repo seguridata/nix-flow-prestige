@@ -228,11 +228,11 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 **De-base64 → storage real (D2)** — nota: `objectStorage:true` en health, MinIO alcanzable, bucket `prestige-docs` creado por `minio-init`
 - [x] `StorageService`: obligatorio; `putObject`/`getObject`/`deleteObject` con AES-256-GCM envelope; sin fallback a base64; `bun run gen-keys`
 - [x] Prisma: `Document` — quitar `contentBase64`; `objectKey String` requerido; `+ sizeBytes Int`, `+ enc Json`
-- [ ] Prisma: `OnboardingCase` — quitar `ineFrontBase64`/`ineBackBase64`/`selfieBase64`; `+ ineFront/ineBack/selfie Json?` (`{key,iv,tag,sha256,size}`) — **SIGUIENTE**. `frontend/web/libs/file.ts` sigue con `fileToBase64` (deprecado) solo por `onboarding/[id]/page.tsx`; se elimina al cerrar esto.
+- [x] Prisma: `OnboardingCase` — quitar `ineFrontBase64`/`ineBackBase64`/`selfieBase64`; `+ ineFront/ineBack/selfie Json?` (`{key,sha256,size,enc}`). `libs/file.ts` eliminado. Migración `20260910040000`.
 - [x] Firma autógrafa: el PNG de `signature_pad` sube por multipart; `POST /actions/sign` recibe `file`, no base64
 - [x] Migración Prisma (`20260910030000`) + `prisma/scripts/backfill-storage.ts` (raw SQL, cifra filas legacy)
 - [x] `documents.service`/`controller`: alta por `multipart/form-data` (`FileInterceptor`); `GET /documents/:id/content` sirve el PDF descifrado (`application/pdf`) — falta exigir auth (llega en Fase A)
-- [ ] `onboarding.service`: INE/selfie a storage cifrado; quitar `omit` de columnas base64
+- [x] `onboarding.service`: INE/selfie a storage cifrado; `/ine` y `/liveness` a multipart; DTOs; frontend `canvas.toBlob` + FormData
 - [x] Frontend: `/new` sube el PDF por multipart; visor y editor de campos consumen `/documents/:id/content` como blob URL
 - [x] `evidence.service`: solo usa `document.hash` — confirmado, sin cambios
 - [x] `BODY_LIMIT` en 2 MB; documentos y trazos ya no viajan en JSON
@@ -441,8 +441,9 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - Bloqueo detectado y resuelto: Docker no corre desde Windows; **sí vía WSL/Ubuntu** (`docker 29.1.3`, repo en `/mnt/c/...`).
 - **Verificado e2e vía WSL:** infra up (postgres healthy, keycloak/temporal/minio/redis), `prisma migrate deploy` (sin migraciones pendientes), `nest start`. `GET /operations/health` → `postgres:true objectStorage:true`. `helmet` + `throttler` activos en cabeceras. `ValidationPipe` instalado pero inerte sin clases DTO. Infra bajada al terminar (volúmenes conservados).
 - `36058a7` **de-base64 de documentos** → object storage cifrado (envelope AES-256-GCM), multipart, trazo autógrafo por multipart, migración + backfill, DTOs, frontend blob URLs. Verificado e2e por ROUNDTRIP en WSL. También arreglé bugs latentes que ocultaba `.next/dev/types` corrupto (`.next` borrado; `SheetContent direction`; shims de tipos; `dev.ts` merge de `.env`).
-- Nota entorno: `prisma generate` en Windows da `EPERM` al renombrar `query_engine-windows.dll.node` (lock de archivo); **no es bloqueante** — los tipos TS sí se regeneran (`index.d.ts` tiene `enc`/`sizeBytes`) y el engine binario no cambia entre esquemas para la misma versión de Prisma. Si molesta: cerrar procesos `node` de sesiones viejas antes de `generate`.
-- **Retomar en:** OLA 1 → (1) **de-base64 de onboarding** (INE/selfie de `OnboardingCase` → storage cifrado; eliminar `libs/file.ts`), (2) DTOs `class-validator` en el resto de controllers + filtro de excepciones + paginación por cursor, (3) Redis real (D10), (4) Fase A backend (`@Public()` fuera + `CurrentUser`/roles/tenant + guard worker/WS), (5) Fase A frontend OIDC (D3), (6) ceremonia a pantalla completa.
+- `1f5869a` **de-base64 de onboarding** (INE frente/reverso + selfie) → object storage cifrado; `/ine` y `/liveness` a multipart; DTOs; `canvas.toBlob` en el frontend; `libs/file.ts` eliminado. Verificado e2e en WSL: 3 objetos cifrados en MinIO, `GET` sin campos crudos. **Base64 de documentos/imágenes: eliminado de la BD.**
+- Nota entorno: `prisma generate` en Windows da `EPERM` al renombrar `query_engine-windows.dll.node` si hay un `nest`/BFF de una sesión previa vivo. **Fix:** matar los procesos `node` cuyo command line contenga `Nix-flow-prestige` antes de `generate` (PowerShell: `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where CommandLine -match 'Nix-flow-prestige' | ForEach Stop-Process -Id $_.ProcessId -Force`).
+- **Retomar en:** OLA 1 → (1) DTOs `class-validator` en el resto de controllers (cases, evidence, signature-fields, collaboration, workflow, process, operations) + filtro de excepciones global + paginación por cursor, (2) Redis real (D10), (3) **Fase A backend** (`@Public()` fuera salvo health/consent/verify + `CurrentUser`/roles/tenant + guard worker `/internal/*` + handshake WS), (4) **Fase A frontend OIDC** (D3: `openid-client`, cookie httpOnly, middleware, quitar `session-store`), (5) ceremonia de firma a pantalla completa.
 
 ### Sesión 2 — (pendiente)
 - ...
