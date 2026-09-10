@@ -4,12 +4,15 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { Server, Socket } from 'socket.io';
+import { RedisService } from '../redis/redis.service';
 
 const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
   .split(',')
@@ -59,11 +62,27 @@ function roomFor(documentId: string) {
     credentials: true,
   },
 })
-export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
+
+  constructor(private readonly redis: RedisService) {}
+
+  /**
+   * D10 — con `REDIS_URL`, el servidor Socket.IO usa el adaptador Redis: las
+   * salas y los `emit` se propagan entre réplicas del BFF. Sin Redis, cada
+   * instancia funciona aislada (suficiente en single-node).
+   */
+  afterInit(server: Server): void {
+    const pub = this.redis.duplicate();
+    const sub = this.redis.duplicate();
+    if (pub && sub) {
+      server.adapter(createAdapter(pub, sub));
+      this.logger.log('Socket.IO usando el adaptador Redis (multi-réplica)');
+    }
+  }
 
   // documentId -> (actorId -> presence info)
   private readonly presence = new Map<string, Map<string, PresenceEntry>>();

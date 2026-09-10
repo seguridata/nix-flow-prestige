@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { CasesModule } from './cases/cases.module';
@@ -43,6 +44,7 @@ import { ControlPlaneModule } from './control-plane/control-plane.module';
     ]),
     ScheduleModule.forRoot(),
     PrismaModule,
+    RedisModule,
     StorageModule,
     AuthModule,
     RealtimeModule,

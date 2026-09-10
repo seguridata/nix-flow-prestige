@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { evaluateDmn } from './dmn-engine';
 import {
   CONTRATO_BPMN,
@@ -29,10 +30,17 @@ const SEEDS = [
 
 @Injectable()
 export class ProcessService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   async onModuleInit() {
     await this.ensureSeeds();
+  }
+
+  private async invalidateProcessCache(key?: string) {
+    await this.redis.del('process:list', ...(key ? [`process:latest:${key}`] : []));
   }
 
   async ensureSeeds() {
@@ -48,16 +56,21 @@ export class ProcessService implements OnModuleInit {
   }
 
   list() {
-    return this.prisma.processDefinition.findMany({
-      orderBy: [{ key: 'asc' }, { version: 'desc' }],
-    });
+    // D10 — lectura caliente: el diseñador la pide seguido y cambia poco.
+    return this.redis.withCache('process:list', 60, () =>
+      this.prisma.processDefinition.findMany({
+        orderBy: [{ key: 'asc' }, { version: 'desc' }],
+      }),
+    );
   }
 
   async getLatest(key: string) {
-    const found = await this.prisma.processDefinition.findFirst({
-      where: { key },
-      orderBy: { version: 'desc' },
-    });
+    const found = await this.redis.withCache(`process:latest:${key}`, 60, () =>
+      this.prisma.processDefinition.findFirst({
+        where: { key },
+        orderBy: { version: 'desc' },
+      }),
+    );
     if (!found) throw new NotFoundException(`Proceso ${key} no encontrado`);
     return found;
   }
@@ -68,7 +81,7 @@ export class ProcessService implements OnModuleInit {
       orderBy: { version: 'desc' },
     });
     if (!latest) throw new NotFoundException(`Proceso ${key} no encontrado`);
-    return this.prisma.processDefinition.create({
+    const created = await this.prisma.processDefinition.create({
       data: {
         key,
         name: body.name ?? latest.name,
@@ -80,6 +93,8 @@ export class ProcessService implements OnModuleInit {
         published: true,
       },
     });
+    await this.invalidateProcessCache(key);
+    return created;
   }
 
   private readonly log = new Logger(ProcessService.name);
