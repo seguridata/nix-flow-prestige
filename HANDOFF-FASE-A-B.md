@@ -178,6 +178,8 @@ Puertos libres: `3000` BFF · `3001` app · `5432` Postgres · `6379` Redis ·
 | `1f5869a` | **De-base64 de onboarding** (INE + selfie) → storage cifrado; `/ine` y `/liveness` a multipart; `libs/file.ts` eliminado. Migración `20260910040000`. | **e2e WSL**: 3 objetos cifrados, `GET` sin campos crudos. |
 | `6766848` | Handoff al día. | n/a |
 | `83ba942` | **FASE A — identidad OIDC real + cierre de superficie pública.** Backend: `@Public()` fuera salvo health/consent/capabilities/verify/internal; `RolesGuard`+`@Roles()` (roles `signer/sender/rh/auditor/admin` en el realm + claim `tenant`); `CurrentUser` da `actorId`/`tenantId` a todos los controllers; `WorkerGuard` HMAC en `/internal/*`; handshake WS autenticado; DTOs `class-validator` en 8 controllers. Frontend Next 16: OIDC Auth Code + PKCE (`libs/auth.ts`), cookie httpOnly firmada (jose), `/api/auth/*`, proxy `/api/bff/[...path]` (adjunta Bearer), `proxy.ts` (ex-middleware) protege rutas, `/login`, logout, `useSession()` real, fuera `maria`. | **e2e WSL**: sin token 401; maria→403 / roberto→200 (roles); `tenantId` del claim; worker HMAC 201 / viejo 401; `next build` OK; `GET /`→307 `/login`; `/api/auth/login`→307 authorize PKCE S256. `tsc` bff+web limpio; 11+18 tests. |
+| `f8d70ff` | Handoff — Fase A completa. | n/a |
+| `8af449b` | **FASE B (núcleo) — firma DIGITAL real PAdES.** `KeyCustodian` port + `SoftwareKeyCustodian` (PKCS#12 por firmante, CA X.509 interna node-forge, `bun run pki:init`) + `Pkcs11KeyCustodian` (esqueleto HSM). `DigitalSignerAdapter`: apariencia visible + placeholder PAdES (`ETSI.CAdES.detached`) + PKCS#7 con `@signpdf`. `SignerAdapter` ampliado (`pdfBytes`/`field`/`signerName` → `signedPdf`/`certificate` + `verify()`). `sign()` para todos los métodos descifra del storage, firma y sube la versión firmada cifrada; audit con `algorithm/provider/cert`. **Sustituye el HMAC de desarrollo.** | **e2e WSL**: sign DIGITAL → PDF con `/ByteRange` `/ETSI.CAdES.detached` `/Type /Sig`; `openssl` lee la cadena `Roberto Gomez ← Prestige Issuing CA ← Prestige Root CA`; **`openssl verify` del cert del firmante contra la CA del proyecto → OK**. `tsc` limpio; 13 tests bff (2 nuevos PAdES) + 18 web. |
 
 ### Verificación e2e disponible
 
@@ -265,11 +267,11 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 
 ### OLA 2 — Fase B (firma criptográfica real · M09 / M10 / M11)
 
-- [ ] `KeyCustodian` port + `SoftwareKeyCustodian` (PKCS#12 cifrado) + `Pkcs11KeyCustodian` (esqueleto real para HSM) (D1)
-- [ ] Script `bun run pki:init`: CA X.509 raíz + intermedia del proyecto; emisión de certificado por firmante
-- [ ] `SignerAdapter` completo: `prepare → sign → verify → capabilities → reconcile` (hoy solo `sign`/`capabilities`)
-- [ ] `DigitalSignerAdapter`: firma **PAdES** real (`@signpdf/signpdf` + placeholder + `pkijs`), reemplaza el HMAC
-- [ ] Firma visible en el PDF por `SignatureField` (page/x/y) para **los tres** métodos
+- [x] `KeyCustodian` port + `SoftwareKeyCustodian` (PKCS#12 por firmante) + `Pkcs11KeyCustodian` (esqueleto HSM) — `8af449b`
+- [x] Script `bun run pki:init`: CA X.509 raíz + intermedia; emisión de certificado por firmante (lazy, CN = nombre humano)
+- [x] `SignerAdapter` ampliado: `sign` + `verify` + `capabilities` (`prepare`/`reconcile` quedan para firma asíncrona)
+- [x] `DigitalSignerAdapter`: firma **PAdES** real (`@signpdf` + `node-forge`), reemplaza el HMAC — verificada con openssl
+- [x] Firma visible en el PDF por `SignatureField` para DIGITAL y AUTÓGRAFA (BIOMÉTRICA: pendiente, requiere proveedor)
 - [ ] Validación de certificado: cadena, vigencia, **OCSP/CRL** (servicio reutilizable)
 - [ ] Manejo de firma `pending` (asíncrona / segundo factor) en solicitud y workflow
 - [ ] Job de reconciliación de firmas iniciadas y no confirmadas
@@ -448,8 +450,10 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - `83ba942` **FASE A completa** (identidad OIDC + cierre de superficie), backend y frontend, verificada e2e en WSL (roles, tenant del claim, worker HMAC, redirect a `/login`, PKCE). Pendientes menores de Fase A: `A-07` scoping fino por recurso, `A-11` step-up auth, `A-12` enlaces de un uso (va con M13).
   - Frontend Next 16: `middleware` se llama **`proxy.ts`** ahora; `cookies()` es async. Patrón BFF: todo el tráfico va por `/api/bff/[...path]` (route handler que adjunta el Bearer server-side); el WS usa `/api/auth/session-token`.
   - Realm reimportado con `down -v` + `up` (roles `rh/auditor/admin`, claim `tenant`). El token debe pedirse al MISMO host que `KEYCLOAK_ISSUER` (`localhost`, no `127.0.0.1`) o el guard rechaza por `iss` mismatch.
-- **Retomar en:** (1) **DTOs + filtro de excepciones global + paginación por cursor** en el resto de listados; (2) **Redis real** (D10); (3) **ceremonia de firma a pantalla completa** (TP-16); (4) **OLA 2 — Fase B** (cripto real: `KeyCustodian` port + PAdES `@signpdf/signpdf` + TSA RFC 3161 `uts-server` + manifiesto firmado + verificador offline).
-- Verificación pendiente: login OIDC **completo en navegador** (el `curl` llega hasta el redirect a Keycloak; falta rellenar el form y volver por `/api/auth/callback`). Hacerlo con Playwright o a mano al retomar.
+- `8af449b` **FASE B núcleo — firma DIGITAL PAdES real.** `KeyCustodian` + CA interna + PKCS#7 con `@signpdf`. Verificado e2e con openssl (cadena del firmante → CA del proyecto → `OK`). El HMAC de desarrollo **desaparece**.
+  - Notas: `@signpdf/placeholder-plain` necesita tabla xref clásica → el adaptador normaliza el PDF con `useObjectStreams:false`. `@signpdf/utils` tuvo que añadirse como dep directa (era transitiva).
+- **Retomar en:** OLA 2 (resto de Fase B) → (1) cliente **TSA RFC 3161** real (`TSA_URL` → `uts-server` en compose + fallback público) e incluir el token en el CMS (PAdES-T) y en el manifiesto; (2) **manifiesto de evidencia firmado** (append-only) + registrar cert/algorithm por firmante; (3) **verificador offline** (paquete/CLI independiente del BFF); (4) sello por evento `SIGNATURE_APPLIED`; (5) política de firma versionada por caso (M10); (6) export del expediente probatorio (ZIP). Luego: DTOs/excepciones/paginación restantes, Redis (D10), ceremonia a pantalla completa, y OLA 3 (M05/M07/M13/M14/M15/M16).
+- Verificación pendiente: login OIDC **completo en navegador** (el `curl` llega hasta el redirect a Keycloak; falta rellenar el form y volver por `/api/auth/callback`). Playwright o manual al retomar.
 
 ### Sesión 2 — (pendiente)
 - ...
