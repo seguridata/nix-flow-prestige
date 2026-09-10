@@ -516,11 +516,18 @@ model OnboardingCase {
   ineBack            Json?
   ineHash            String?
   ineVerified        Boolean          @default(false)
+  /// M16 — OCR/MRZ crudo + campos extraídos de la INE (tesseract.js).
+  ineOcr             Json?
+  /// M16 — resultado del puerto IdentityVerifier (vigencia / CURP / RENAPO).
+  ineCheck           Json?
   selfie             Json?
   livenessHash       String?
   livenessScore      Float?
   livenessOk         Boolean          @default(false)
   faceMatchOk        Boolean          @default(false)
+  /// M16 — score de face-match 0..1 del puerto BiometricEngine.
+  faceMatchScore     Float?
+  biometricEngine    String?
   biometricSessionId String?
   enabledSignerId    String?
   notes              String?

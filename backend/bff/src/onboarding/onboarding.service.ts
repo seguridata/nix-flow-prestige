@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import type { OnboardingCase, OnboardingKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,6 +8,9 @@ import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
+import { OcrService } from '../identity/ocr.service';
+import { IDENTITY_VERIFIER, type IdentityVerifier } from '../identity/identity-verifier';
+import { BIOMETRIC_ENGINE, type BiometricEngine } from '../identity/biometric-engine';
 
 /** Referencia a un objeto cifrado en storage (lo que se guarda en las columnas Json). */
 interface StoredRef {
@@ -40,6 +43,9 @@ export class OnboardingService {
     private readonly signing: SigningRouter,
     private readonly storage: StorageService,
     private readonly webhooks: WebhooksService,
+    private readonly ocr: OcrService,
+    @Inject(IDENTITY_VERIFIER) private readonly identity: IdentityVerifier,
+    @Inject(BIOMETRIC_ENGINE) private readonly biometrics: BiometricEngine,
   ) {}
 
   list(tenantId = 'seguridata') {
@@ -97,6 +103,10 @@ export class OnboardingService {
     return { key: s.objectKey, sha256: s.sha256, size: s.sizeBytes, enc: s.enc };
   }
 
+  private readRef(ref: StoredRef): Promise<Buffer> {
+    return this.storage.getObject(ref.key, ref.enc);
+  }
+
   async attachIne(
     id: string,
     body: { front?: Buffer; back?: Buffer; actorId: string; actorName?: string },
@@ -121,12 +131,25 @@ export class OnboardingService {
     const parts = [ineFront?.sha256, ineBack?.sha256].filter(Boolean) as string[];
     const ineHash = parts.length ? sha256(Buffer.from(parts.join(':'))) : current.ineHash;
 
+    // M16 — OCR/MRZ real cuando ya hay frente y reverso.
+    let ineOcr: unknown = current.ineOcr;
+    if (ineFront && ineBack) {
+      try {
+        const frontBytes = body.front?.length ? body.front : await this.readRef(ineFront);
+        const backBytes = body.back?.length ? body.back : await this.readRef(ineBack);
+        ineOcr = await this.ocr.recognizeIne({ front: frontBytes, back: backBytes });
+      } catch (error) {
+        ineOcr = { engine: 'tesseract.js', error: (error as Error).message };
+      }
+    }
+
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
       data: {
         ineFront: ineFront as unknown as object,
         ineBack: ineBack as unknown as object,
         ineHash,
+        ineOcr: ineOcr as object,
         status: ineFront && ineBack ? 'INE' : current.status,
       },
     });
@@ -135,7 +158,12 @@ export class OnboardingService {
       actorId: body.actorId,
       actorName: body.actorName,
       action: 'INE_CAPTURED',
-      payload: { ineHash, hasFront: Boolean(ineFront), hasBack: Boolean(ineBack) },
+      payload: {
+        ineHash,
+        hasFront: Boolean(ineFront),
+        hasBack: Boolean(ineBack),
+        ocrFields: (ineOcr as { fields?: unknown })?.fields,
+      },
     });
     return publicView(updated);
   }
@@ -152,35 +180,24 @@ export class OnboardingService {
     const selfie = await this.store('onboarding/selfie', `${id}-selfie.jpg`, body.selfie, 'image/jpeg');
     const livenessHash = selfie.sha256;
 
-    const biometric = this.signing.capabilities().find((c) => c.method === 'BIOMETRICA');
-    let livenessOk = false;
-    let livenessScore: number | null = null;
-    let faceMatchOk = false;
-    let biometricSessionId: string | null = null;
-
-    if (biometric?.configured && process.env.BIOMETRIC_PROVIDER_URL) {
-      const url = process.env.BIOMETRIC_PROVIDER_URL.replace(/\/$/, '');
-      const res = await fetch(`${url}/liveness`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${process.env.BIOMETRIC_API_KEY ?? ''}`,
-        },
-        body: JSON.stringify({ onboardingId: id, imageHash: livenessHash }),
-      });
-      if (!res.ok) {
-        throw new BadRequestException(`Proveedor biométrico respondió ${res.status}`);
-      }
-      const payload = (await res.json()) as {
-        score?: number;
-        liveness?: boolean;
-        faceMatch?: boolean;
-        sessionId?: string;
+    // M16 — puerto BiometricEngine (noop|local face-api|remote). Nunca lanza:
+    // un fallo del motor deja el alta en revisión manual, no la rechaza.
+    let bio;
+    try {
+      const inePortrait = current.ineFront
+        ? await this.readRef(current.ineFront as unknown as StoredRef).catch(() => undefined)
+        : undefined;
+      bio = await this.biometrics.analyze({ onboardingId: id, selfie: body.selfie, inePortrait });
+    } catch (error) {
+      bio = {
+        engine: this.biometrics.kind,
+        livenessOk: false,
+        livenessScore: null,
+        faceMatchOk: false,
+        faceMatchScore: null,
+        sessionId: null,
+        reasons: [(error as Error).message],
       };
-      livenessScore = payload.score ?? null;
-      livenessOk = Boolean(payload.liveness);
-      faceMatchOk = Boolean(payload.faceMatch);
-      biometricSessionId = payload.sessionId ?? null;
     }
 
     const readyForReview = Boolean(current.ineFront && current.ineBack);
@@ -189,10 +206,12 @@ export class OnboardingService {
       data: {
         selfie: selfie as unknown as object,
         livenessHash,
-        livenessScore,
-        livenessOk,
-        faceMatchOk,
-        biometricSessionId,
+        livenessScore: bio.livenessScore,
+        livenessOk: bio.livenessOk,
+        faceMatchOk: bio.faceMatchOk,
+        faceMatchScore: bio.faceMatchScore,
+        biometricEngine: bio.engine,
+        biometricSessionId: bio.sessionId,
         status: readyForReview ? 'EN_REVISION' : 'PRUEBA_VIDA',
       },
     });
@@ -201,7 +220,14 @@ export class OnboardingService {
       actorId: body.actorId,
       actorName: body.actorName,
       action: 'LIVENESS_CAPTURED',
-      payload: { livenessHash, livenessOk, vendor: Boolean(biometric?.configured) },
+      payload: {
+        livenessHash,
+        engine: bio.engine,
+        livenessOk: bio.livenessOk,
+        faceMatchOk: bio.faceMatchOk,
+        faceMatchScore: bio.faceMatchScore,
+        reasons: bio.reasons,
+      },
     });
     if (readyForReview) {
       await this.collab.notify(
@@ -214,25 +240,49 @@ export class OnboardingService {
     return publicView(updated);
   }
 
-  async verifyIne(id: string, body: { actorId: string; actorName?: string; notes?: string }) {
+  async verifyIne(
+    id: string,
+    body: { actorId: string; actorName?: string; notes?: string; approve?: boolean },
+  ) {
     const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
     if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
     if (!current.ineFront || !current.ineBack) {
       throw new BadRequestException('Faltan frente y reverso de la INE');
     }
+
+    // M16 — verificación asistida: OCR + puerto IdentityVerifier (heuristic|renapo).
+    let ineCheck: unknown = null;
+    try {
+      ineCheck = await this.identity.verify({
+        declaredCurp: current.curp,
+        declaredName: current.fullName,
+        ocr: (current.ineOcr as never) ?? null,
+      });
+    } catch (error) {
+      ineCheck = { kind: 'error', ok: false, reasons: [(error as Error).message] };
+    }
+    const check = ineCheck as { ok?: boolean } | null;
+
+    // `manual` (por defecto): RH confirma; `body.approve === false` NO verifica.
+    // Con IDENTITY_AUTOVERIFY=true se verifica solo si el puerto dice `ok`.
+    const auto = process.env.IDENTITY_AUTOVERIFY === 'true';
+    const verified = body.approve === false ? false : auto ? Boolean(check?.ok) : true;
+
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
       data: {
-        ineVerified: true,
+        ineVerified: verified,
+        ineCheck: ineCheck as object,
         notes: body.notes ?? current.notes,
-        status: current.selfie ? 'EN_REVISION' : 'INE',
+        status: verified ? (current.selfie ? 'EN_REVISION' : 'INE') : current.status,
       },
     });
     await this.collab.audit({
       onboardingId: id,
-      actorId: body.actorId,
+      actorId: auto ? 'system' : body.actorId,
       actorName: body.actorName,
-      action: 'INE_VERIFIED',
+      action: verified ? 'INE_VERIFIED' : 'INE_CHECK_FAILED',
+      payload: { auto, check: ineCheck },
     });
     return publicView(updated);
   }

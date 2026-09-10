@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 const KINDS = ['EMPLEADO', 'PROVEEDOR', 'CLIENTE'] as const;
 
@@ -31,6 +31,11 @@ export class OnboardingActionDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  /** M16 — RH puede rechazar explícitamente la verificación de la INE. */
+  @IsOptional()
+  @IsBoolean()
+  approve?: boolean;
 }
 
 export class AttachIneDto {

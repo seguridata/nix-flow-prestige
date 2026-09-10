@@ -80,7 +80,7 @@ export class OnboardingController {
 
   @Post(':id/actions/verify-ine')
   verify(@Param('id') id: string, @Body() body: OnboardingActionDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.onboarding.verifyIne(id, { ...actor(user), notes: body.notes });
+    return this.onboarding.verifyIne(id, { ...actor(user), notes: body.notes, approve: body.approve });
   }
 
   @Post(':id/actions/enable')

@@ -378,3 +378,7 @@ playground/
 experiments/
 notes.local/
 
+
+# M16 — pesos de face-api (descargar aparte, ver models/face/README.md)
+backend/bff/models/face/*
+!backend/bff/models/face/README.md
