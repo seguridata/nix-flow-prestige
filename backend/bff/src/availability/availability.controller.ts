@@ -1,11 +1,14 @@
 import { Body, Controller, Delete, Get, Put } from '@nestjs/common';
-import { IsISO8601, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsISO8601, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+
+/** Identificador de principal (preferred_username): sin espacios ni markup. */
+const PRINCIPAL_ID = /^[A-Za-z0-9._@+-]{1,120}$/;
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { AvailabilityService } from './availability.service';
 
 class SetOutOfOfficeDto {
-  @IsString() @MinLength(1) @MaxLength(200)
+  @IsString() @MinLength(1) @Matches(PRINCIPAL_ID, { message: 'delegateId inválido' })
   delegateId!: string;
 
   @IsOptional() @IsString() @MaxLength(160)

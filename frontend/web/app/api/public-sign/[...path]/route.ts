@@ -12,7 +12,16 @@ const STRIP = new Set([
   "accept-encoding",
   "cookie",
   "authorization",
+  // El cliente no debe poder falsear su IP (bypass del throttler / prueba de
+  // consentimiento) a través de este proxy sin sesión.
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "forwarded",
 ]);
+
+const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 /**
  * M13 — proxy SIN sesión hacia `/public/links/*` del BFF (portal del firmante
@@ -20,7 +29,11 @@ const STRIP = new Set([
  */
 async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
-  const target = `${BFF_URL}/public/links/${(path ?? []).join("/")}${req.nextUrl.search}`;
+  const segments = path ?? [];
+  if (segments.length === 0 || segments.length > 3 || !segments.every((s) => SEGMENT.test(s))) {
+    return NextResponse.json({ message: "Ruta no válida" }, { status: 400 });
+  }
+  const target = `${BFF_URL}/public/links/${segments.join("/")}${req.nextUrl.search}`;
 
   const headers = new Headers();
   req.headers.forEach((v, k) => {

@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -65,13 +66,11 @@ export class SignActionDto {
   consentAccepted?: boolean;
 }
 
-export class ConsentAcceptDto {
-  @IsOptional() @IsString() @MaxLength(64)
-  ip?: string;
-
-  @IsOptional() @IsString() @MaxLength(512)
-  userAgent?: string;
-}
+/**
+ * Cuerpo vacío: la IP y el user-agent de la prueba de consentimiento se toman
+ * de la conexión en el controller, NUNCA del cliente (serían falsificables).
+ */
+export class ConsentAcceptDto {}
 
 export class RejectDto {
   @IsOptional() @IsString() @MaxLength(2000)
@@ -79,7 +78,7 @@ export class RejectDto {
 }
 
 export class DelegateDto {
-  @IsString() @MinLength(1) @MaxLength(200)
+  @IsString() @MinLength(1) @Matches(/^[A-Za-z0-9._@+-]{1,120}$/, { message: 'toSignerId inválido' })
   toSignerId!: string;
 
   @IsOptional() @IsString() @MaxLength(160)

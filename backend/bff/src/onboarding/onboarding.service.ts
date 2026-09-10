@@ -6,6 +6,8 @@ import { CollaborationService } from '../collaboration/collaboration.service';
 import { SigningRouter } from '../signing/signing.router';
 import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
+import { WebhooksService } from '../webhooks/webhooks.service';
+import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
 
 /** Referencia a un objeto cifrado en storage (lo que se guarda en las columnas Json). */
 interface StoredRef {
@@ -37,6 +39,7 @@ export class OnboardingService {
     private readonly collab: CollaborationService,
     private readonly signing: SigningRouter,
     private readonly storage: StorageService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   list(tenantId = 'seguridata') {
@@ -261,6 +264,21 @@ export class OnboardingService {
       'Ya puedes firmar documentos en Prestige.',
       '/inbox',
     );
+    await this.webhooks
+      .emit(
+        cloudEvent({
+          type: EVENT_TYPES.onboardingEnabled,
+          tenantId: updated.tenantId,
+          subject: updated.id,
+          data: {
+            onboardingId: updated.id,
+            enabledSignerId: signerId,
+            kind: updated.kind,
+            email: updated.email,
+          },
+        }),
+      )
+      .catch(() => undefined);
     return publicView(updated);
   }
 

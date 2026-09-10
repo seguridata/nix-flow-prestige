@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  Ip,
   Param,
   ParseFilePipeBuilder,
   Post,
@@ -65,10 +67,12 @@ export class SignatureRequestsController {
   @Post(':id/actions/consent')
   consentAccept(
     @Param('id') id: string,
-    @Body() body: ConsentAcceptDto,
+    @Body() _body: ConsentAcceptDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
   ) {
-    return this.signatureRequests.recordConsent(id, { signerId: user.actorId, ...body });
+    return this.signatureRequests.recordConsent(id, { signerId: user.actorId, ip, userAgent });
   }
 
   /**
@@ -82,6 +86,8 @@ export class SignatureRequestsController {
     @Param('id') id: string,
     @Body() body: SignActionDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string | undefined,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({ fileType: 'image/png' })
@@ -90,7 +96,11 @@ export class SignatureRequestsController {
     )
     file?: Express.Multer.File,
   ) {
-    return this.signatureRequests.sign(id, { ...body, signerId: user.actorId }, file?.buffer);
+    return this.signatureRequests.sign(
+      id,
+      { ...body, signerId: user.actorId, ip, userAgent },
+      file?.buffer,
+    );
   }
 
   @Post(':id/actions/reject')

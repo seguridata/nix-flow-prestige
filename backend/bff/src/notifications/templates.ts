@@ -11,15 +11,36 @@ const BRAND = {
   paper: '#F3F3F3',
 };
 
+/**
+ * Escapa TODO valor interpolado en el HTML del correo. Los nombres de archivo,
+ * de firmante y de remitente son texto controlado por el usuario: sin esto,
+ * un `filename` con `<a>`/`<img onerror>` viajaría como markup desde el dominio
+ * SMTP de Prestige (phishing con SPF/DKIM/DMARC válidos).
+ */
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Asunto: sin saltos de línea (defensa en profundidad ante header-injection). */
+function subj(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
 function shell(title: string, bodyHtml: string, cta?: { label: string; url: string }): string {
+  const url = cta ? esc(cta.url) : '';
   const button = cta
     ? `<tr><td style="padding:8px 0 4px">
-         <a href="${cta.url}" style="display:inline-block;background:${BRAND.carbon};color:#fff;
+         <a href="${url}" style="display:inline-block;background:${BRAND.carbon};color:#fff;
             text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:600;font-size:14px">
-           ${cta.label}
+           ${esc(cta.label)}
          </a></td></tr>
        <tr><td style="font-size:12px;color:${BRAND.gray};padding-top:8px;word-break:break-all">
-         ${cta.url}
+         ${url}
        </td></tr>`
     : '';
   return `<!doctype html><html lang="es"><body style="margin:0;background:${BRAND.paper};
@@ -57,12 +78,12 @@ export interface Rendered {
 export const templates = {
   signInvite(p: { signerName?: string; requesterName?: string; documentTitle: string; url: string }): Rendered {
     return {
-      subject: `Tienes un documento por firmar: ${p.documentTitle}`,
+      subject: subj(`Tienes un documento por firmar: ${p.documentTitle}`),
       html: shell(
         'Documento por firmar',
-        `<tr><td>Hola${p.signerName ? ` ${p.signerName}` : ''},</td></tr>
-         <tr><td style="padding-top:8px">${p.requesterName ?? 'Prestige'} te envió
-           <strong>${p.documentTitle}</strong> para tu firma electrónica.</td></tr>
+        `<tr><td>Hola${p.signerName ? ` ${esc(p.signerName)}` : ''},</td></tr>
+         <tr><td style="padding-top:8px">${esc(p.requesterName ?? 'Prestige')} te envió
+           <strong>${esc(p.documentTitle)}</strong> para tu firma electrónica.</td></tr>
          <tr><td style="padding-top:8px">Abre el enlace personal de un solo uso para revisar el
            documento, aceptar el consentimiento y firmar.</td></tr>`,
         { label: 'Revisar y firmar', url: p.url },
@@ -72,12 +93,12 @@ export const templates = {
 
   reminder(p: { signerName?: string; documentTitle: string; url: string }): Rendered {
     return {
-      subject: `Recordatorio de firma: ${p.documentTitle}`,
+      subject: subj(`Recordatorio de firma: ${p.documentTitle}`),
       html: shell(
         'Recordatorio de firma',
-        `<tr><td>Hola${p.signerName ? ` ${p.signerName}` : ''},</td></tr>
+        `<tr><td>Hola${p.signerName ? ` ${esc(p.signerName)}` : ''},</td></tr>
          <tr><td style="padding-top:8px">Sigue pendiente tu firma de
-           <strong>${p.documentTitle}</strong>. Puedes completarla desde tu enlace personal.</td></tr>`,
+           <strong>${esc(p.documentTitle)}</strong>. Puedes completarla desde tu enlace personal.</td></tr>`,
         { label: 'Firmar ahora', url: p.url },
       ),
     };
@@ -85,12 +106,12 @@ export const templates = {
 
   escalation(p: { requesterName?: string; signerLabel: string; documentTitle: string; url: string }): Rendered {
     return {
-      subject: `Escalamiento: la firma de ${p.signerLabel} venció su SLA (${p.documentTitle})`,
+      subject: subj(`Escalamiento: la firma de ${p.signerLabel} venció su SLA (${p.documentTitle})`),
       html: shell(
         'Escalamiento de firma',
-        `<tr><td>Hola${p.requesterName ? ` ${p.requesterName}` : ''},</td></tr>
-         <tr><td style="padding-top:8px">La firma de <strong>${p.signerLabel}</strong> en
-           <strong>${p.documentTitle}</strong> superó su plazo (SLA). La tarea quedó marcada como
+        `<tr><td>Hola${p.requesterName ? ` ${esc(p.requesterName)}` : ''},</td></tr>
+         <tr><td style="padding-top:8px">La firma de <strong>${esc(p.signerLabel)}</strong> en
+           <strong>${esc(p.documentTitle)}</strong> superó su plazo (SLA). La tarea quedó marcada como
            escalada y con prioridad alta en la bandeja.</td></tr>`,
         { label: 'Ver la solicitud', url: p.url },
       ),
@@ -99,11 +120,11 @@ export const templates = {
 
   completed(p: { name?: string; documentTitle: string; url: string }): Rendered {
     return {
-      subject: `Documento firmado: ${p.documentTitle}`,
+      subject: subj(`Documento firmado: ${p.documentTitle}`),
       html: shell(
         'Documento firmado',
-        `<tr><td>Hola${p.name ? ` ${p.name}` : ''},</td></tr>
-         <tr><td style="padding-top:8px"><strong>${p.documentTitle}</strong> quedó firmado por todas
+        `<tr><td>Hola${p.name ? ` ${esc(p.name)}` : ''},</td></tr>
+         <tr><td style="padding-top:8px"><strong>${esc(p.documentTitle)}</strong> quedó firmado por todas
            las partes. Ya puedes descargar el expediente de evidencia (manifiesto firmado + sello de
            tiempo RFC 3161 + verificador offline).</td></tr>`,
         { label: 'Descargar evidencia', url: p.url },

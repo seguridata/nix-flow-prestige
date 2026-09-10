@@ -1,7 +1,10 @@
 import 'reflect-metadata';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import { Logger } from 'nestjs-pino';
@@ -64,6 +67,34 @@ async function bootstrap() {
   );
 
   app.enableShutdownHooks();
+
+  // OpenAPI (M14). UI en /docs, JSON en /docs-json. En dev se vuelca el spec a
+  // backend/contracts/openapi.generated.json para diff contra el contrato a mano.
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Prestige BFF')
+    .setDescription(
+      'API del BFF de Prestige (firma electrónica, evidencia verificable, onboarding). ' +
+        'El navegador nunca habla directo con Postgres, Temporal, MinIO o el HSM.',
+    )
+    .setVersion(process.env.npm_package_version ?? '0.1.0')
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'keycloak')
+    .addApiKey({ type: 'apiKey', name: 'X-Prestige-Worker-Token', in: 'header' }, 'worker-token')
+    .build();
+  const openapi = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('docs', app, openapi, {
+    swaggerOptions: { persistAuthorization: true },
+    jsonDocumentUrl: 'docs-json',
+  });
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      writeFileSync(
+        join(__dirname, '..', '..', '..', 'contracts', 'openapi.generated.json'),
+        JSON.stringify(openapi, null, 2),
+      );
+    } catch {
+      /* el volcado del contrato es best-effort */
+    }
+  }
 
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port);

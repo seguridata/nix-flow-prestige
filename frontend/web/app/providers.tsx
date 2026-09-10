@@ -8,7 +8,10 @@ import { SessionContext, type SessionUser } from "@/store/session-store";
 
 function SessionProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const skip = pathname === "/login" || pathname.startsWith("/verificar");
+  const skip =
+    pathname === "/login" ||
+    pathname.startsWith("/verificar") ||
+    pathname.startsWith("/firmar");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
 

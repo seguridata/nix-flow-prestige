@@ -127,6 +127,19 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
         Object.assign(s, data);
         return { ...s };
       },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: { not?: string } };
+        data: Partial<FakeSignerRow>;
+      }) => {
+        const s = signers.get(where.id);
+        if (!s) return { count: 0 };
+        if (where.status?.not && s.status === where.status.not) return { count: 0 };
+        Object.assign(s, data);
+        return { count: 1 };
+      },
     },
     // El servicio real hace `this.prisma.$transaction(async (tx) => {...})`.
     // Como el fixture es un mapa en memoria compartido (sin motor SQL real
@@ -180,6 +193,11 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     }),
   };
   const collab = { notify: vi.fn(), audit: vi.fn() };
+  const mail = {
+    sendInvites: vi.fn().mockResolvedValue(undefined),
+    sendCompleted: vi.fn().mockResolvedValue(undefined),
+    sendReminder: vi.fn().mockResolvedValue(undefined),
+  };
 
   const service = new SignatureRequestsService(
     prisma,
@@ -190,6 +208,7 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     stamp as never,
     storage as never,
     collab as never,
+    mail as never,
   );
   return { service, requests, signers, realtime, evidence };
 }

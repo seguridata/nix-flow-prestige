@@ -1,8 +1,23 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { Public } from '../auth/public.decorator';
 import { WorkerGuard } from '../auth/worker.guard';
 import { WorkflowService } from './workflow.service';
-import type { ContratoWorkflowInput, NudgeCommand } from '../temporal/shared';
+import type { ContratoWorkflowInput } from '../temporal/shared';
+
+class NudgeCommandDto {
+  @IsString() @MaxLength(200)
+  signatureRequestId!: string;
+
+  @IsIn(['REMINDER', 'ESCALATION'])
+  kind!: 'REMINDER' | 'ESCALATION';
+
+  @IsNumber() @Min(0) @Max(1)
+  ratio!: number;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  signerId?: string;
+}
 
 /**
  * Endpoints que consume el worker de Temporal (activities vía HTTP). No usan
@@ -34,7 +49,7 @@ export class WorkflowInternalController {
 
   @Public()
   @Post('nudge')
-  nudge(@Body() body: NudgeCommand) {
+  nudge(@Body() body: NudgeCommandDto) {
     return this.workflow.nudge(body);
   }
 }

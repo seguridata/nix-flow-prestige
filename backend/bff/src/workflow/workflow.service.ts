@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvidenceService } from '../evidence/evidence.service';
+import { SignerMailService } from '../notifications/signer-mail.service';
 import {
   CONTRATO_DOS_PARTES,
   PRESTIGE_TASK_QUEUE,
@@ -10,8 +11,12 @@ import {
   type NudgeCommand,
 } from '../temporal/shared';
 
-/** Ventana anti-duplicado para reintentos de Temporal sobre el mismo aviso. */
-const NUDGE_DEDUPE_MS = 30 * 60_000;
+/**
+ * Ventana anti-duplicado para reintentos del activity de Temporal sobre el
+ * MISMO aviso (los reintentos ocurren en segundos). Corta para no tragarse las
+ * marcas legítimas 50/75/90 % cuando el SLA es de pocas horas.
+ */
+const NUDGE_DEDUPE_MS = 90_000;
 const CLOSED_REQUEST = ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'];
 const SIGN_SIGNAL = 'signCompleted';
 const REJECT_SIGNAL = 'rejected';
@@ -29,6 +34,7 @@ export class WorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly evidence: EvidenceService,
+    private readonly mail: SignerMailService,
   ) {}
 
   private async client(): Promise<Client> {
@@ -278,7 +284,11 @@ export class WorkflowService {
       where: {
         signatureRequestId: cmd.signatureRequestId,
         status: { in: ['CREADA', 'ASIGNADA'] },
-        ...(cmd.signerId ? { signerId: cmd.signerId } : {}),
+        // En orden SECUENCIAL el workflow apunta al firmante del orden; si está
+        // «fuera de oficina» la tarea vive bajo el suplente (`delegatedFrom`).
+        ...(cmd.signerId
+          ? { OR: [{ signerId: cmd.signerId }, { delegatedFrom: cmd.signerId }] }
+          : {}),
       },
     });
     if (openTasks.length === 0) return { skipped: false as const, reminded: 0, escalated: 0 };
@@ -319,6 +329,9 @@ export class WorkflowService {
           ratio: cmd.ratio,
           remindersSent: task.remindersSent + 1,
         });
+        await this.mail
+          .sendReminder(cmd.signatureRequestId, task.signerId, cmd.ratio ?? 0.5)
+          .catch(() => undefined);
         reminded += 1;
       } else {
         if (task.escalatedAt && now - task.escalatedAt.getTime() < NUDGE_DEDUPE_MS) continue;
@@ -339,6 +352,9 @@ export class WorkflowService {
           ratio: cmd.ratio,
           notified: [...new Set([...escalationRecipients, task.signerId])],
         });
+        await this.mail
+          .sendEscalation(cmd.signatureRequestId, task.delegatedFrom ?? task.signerId, cmd.ratio ?? 0.9)
+          .catch(() => undefined);
         escalated += 1;
       }
     }
@@ -354,7 +370,8 @@ export class WorkflowService {
     await this.prisma.humanTask.updateMany({
       where: {
         signatureRequestId,
-        signerId: fromSignerId,
+        // Re-delegación: la tarea puede estar ya bajo un suplente anterior.
+        OR: [{ signerId: fromSignerId }, { delegatedFrom: fromSignerId }],
         status: { in: ['CREADA', 'ASIGNADA'] },
       },
       data: {

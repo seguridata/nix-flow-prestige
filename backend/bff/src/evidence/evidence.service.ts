@@ -2,12 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
-import type { EvidenceManifest, Signer } from '@prisma/client';
+import { Prisma, type EvidenceManifest, type Signer } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { ManifestSigner } from './manifest-signer';
 import { requestTimestamp, verifyTimestampToken } from '../signing/tsa/rfc3161';
+import { WebhooksService } from '../webhooks/webhooks.service';
+import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
 
 export interface EvidenceDossier {
   manifestId: string;
@@ -71,6 +73,7 @@ export class EvidenceService {
     private readonly prisma: PrismaService,
     private readonly manifestSigner: ManifestSigner,
     private readonly storage: StorageService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   async generateForRequest(signatureRequestId: string): Promise<EvidenceManifest> {
@@ -205,37 +208,89 @@ export class EvidenceService {
     };
     const signedManifest = this.manifestSigner.sign(manifestBody);
 
-    return this.prisma.evidenceManifest.create({
-      data: {
-        signatureRequestId: request.id,
-        manifestId,
-        documentId: document.id,
-        documentVersion: document.version,
-        tenantId: document.case.tenantId,
-        originalHash,
-        presentedHash,
-        signedHash,
-        packageHash,
-        signingOrder: request.order,
-        chainOfCustody: chainOfCustody as unknown as object,
-        consentRecords: consentRecords as unknown as object,
-        signatures: signatures as unknown as object,
-        timestampProvider,
-        timestampIssuedAt,
-        timestampTokenHash,
-        timestampToken,
-        manifestHash: signedManifest.manifestHash,
-        manifestSignature: signedManifest.signature,
-        manifestSigningKeyId: signedManifest.keyId,
-        validationConclusion: 'VALID',
-        validationReasons: [
-          'Todos los firmantes completaron la firma',
-          'Cadena de hashes verificada',
-          tsa ? 'Sello de tiempo RFC 3161 obtenido' : 'Sin sello de tiempo RFC 3161 (TSA_URL no configurada)',
-          signedManifest.signature ? 'Manifiesto firmado (Ed25519)' : 'Manifiesto sin firmar (falta llave)',
-        ],
-      },
-    });
+    let manifest: EvidenceManifest;
+    try {
+      manifest = await this.prisma.evidenceManifest.create({
+        data: {
+          signatureRequestId: request.id,
+          manifestId,
+          documentId: document.id,
+          documentVersion: document.version,
+          tenantId: document.case.tenantId,
+          originalHash,
+          presentedHash,
+          signedHash,
+          packageHash,
+          signingOrder: request.order,
+          chainOfCustody: chainOfCustody as unknown as object,
+          consentRecords: consentRecords as unknown as object,
+          signatures: signatures as unknown as object,
+          timestampProvider,
+          timestampIssuedAt,
+          timestampTokenHash,
+          timestampToken,
+          manifestHash: signedManifest.manifestHash,
+          manifestSignature: signedManifest.signature,
+          manifestSigningKeyId: signedManifest.keyId,
+          validationConclusion: 'VALID',
+          validationReasons: [
+            'Todos los firmantes completaron la firma',
+            'Cadena de hashes verificada',
+            tsa ? 'Sello de tiempo RFC 3161 obtenido' : 'Sin sello de tiempo RFC 3161 (TSA_URL no configurada)',
+            signedManifest.signature ? 'Manifiesto firmado (Ed25519)' : 'Manifiesto sin firmar (falta llave)',
+          ],
+        },
+      });
+    } catch (error) {
+      // Carrera: `sign()` (inline) y el activity `sealEvidence` de Temporal
+      // pueden llamar a esto casi a la vez. El primero gana; el segundo relee.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
+        if (existing) return existing;
+      }
+      throw error;
+    }
+
+    // M14 — eventos CloudEvents (best-effort; no rompen el sellado).
+    const tenantId = document.case.tenantId;
+    await this.webhooks
+      .emit(
+        cloudEvent({
+          type: EVENT_TYPES.requestCompleted,
+          tenantId,
+          subject: request.id,
+          data: {
+            signatureRequestId: request.id,
+            documentId: document.id,
+            order: request.order,
+            signers: signedSigners.map((s) => ({
+              signerId: s.signerId,
+              signedAt: s.signedAt.toISOString(),
+              method: s.usedMethod,
+            })),
+          },
+        }),
+      )
+      .catch(() => undefined);
+    await this.webhooks
+      .emit(
+        cloudEvent({
+          type: EVENT_TYPES.evidenceSealed,
+          tenantId,
+          subject: manifest.manifestId,
+          data: {
+            manifestId: manifest.manifestId,
+            signatureRequestId: request.id,
+            documentId: document.id,
+            packageHash: manifest.packageHash,
+            manifestHash: manifest.manifestHash,
+            timestampProvider: manifest.timestampProvider,
+          },
+        }),
+      )
+      .catch(() => undefined);
+
+    return manifest;
   }
 
   /** Recompone el cuerpo canónico del manifiesto a partir de la fila guardada. */

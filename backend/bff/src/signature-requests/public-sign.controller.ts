@@ -3,6 +3,8 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  Ip,
   Param,
   ParseFilePipeBuilder,
   Post,
@@ -62,13 +64,18 @@ export class PublicSignController {
 
   @Public()
   @Post(':token/consent')
-  async consent(@Param('token') token: string, @Body() body: ConsentAcceptDto) {
+  async consent(
+    @Param('token') token: string,
+    @Body() _body: ConsentAcceptDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ) {
     const link = await this.links.resolve(token);
     if (!link.signatureRequestId) throw new BadRequestException('El enlace no tiene solicitud asociada');
     return this.signatureRequests.recordConsent(link.signatureRequestId, {
       signerId: link.signerId,
-      ip: body.ip,
-      userAgent: body.userAgent,
+      ip,
+      userAgent,
     });
   }
 
@@ -78,6 +85,8 @@ export class PublicSignController {
   async sign(
     @Param('token') token: string,
     @Body() body: SignActionDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string | undefined,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({ fileType: 'image/png' })
@@ -97,6 +106,8 @@ export class PublicSignController {
         method: body.method,
         consentAccepted: body.consentAccepted,
         biometricSessionId: body.biometricSessionId,
+        ip,
+        userAgent,
       },
       file?.buffer,
     );

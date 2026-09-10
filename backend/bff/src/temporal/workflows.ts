@@ -20,27 +20,33 @@ export const cancelSignal = defineSignal('cancelled');
 export const stateQuery = defineQuery<ContratoWorkflowState>('getState');
 
 /**
- * Espera hasta `windowMs` a que `satisfied()` se cumpla, disparando un aviso
- * (`onNudge`) en cada fracción de `NUDGE_MARKS` del SLA. Devuelve `true` sólo si
- * la condición se satisfizo dentro de la ventana (no por corte ni por timeout).
+ * Espera hasta un `deadlineMs` (epoch) fijo — el mismo para toda la ceremonia,
+ * en orden SECUENCIAL y PARALELO — a que `satisfied()` se cumpla, disparando un
+ * aviso (`onNudge`) al alcanzar cada fracción de `NUDGE_MARKS` del SLA total
+ * (`deadline - startMs`). Devuelve `true` sólo si la condición se satisfizo
+ * antes del deadline (no por corte ni por timeout).
+ *
+ * Al cambiar de firmante en SECUENCIAL, las marcas ya vencidas se disparan de
+ * inmediato: un firmante posterior que hereda poco margen recibe el aviso ya.
  */
-async function waitWithNudges(opts: {
-  windowMs: number;
+async function waitUntilDeadline(opts: {
+  startMs: number;
+  deadlineMs: number;
   satisfied: () => boolean;
   stopped: () => boolean;
   onNudge: (mark: number) => Promise<void>;
 }): Promise<boolean> {
-  let elapsed = 0;
+  const total = Math.max(opts.deadlineMs - opts.startMs, 1);
   for (const mark of NUDGE_MARKS) {
-    const at = Math.floor(opts.windowMs * mark);
-    const delta = at - elapsed;
-    if (delta <= 0) continue;
-    const reached = await condition(() => opts.satisfied() || opts.stopped(), delta);
-    if (reached) return opts.satisfied();
-    elapsed = at;
-    if (!opts.stopped()) await opts.onNudge(mark);
+    const at = opts.startMs + Math.floor(total * mark);
+    const delta = at - Date.now();
+    if (delta > 0) {
+      const reached = await condition(() => opts.satisfied() || opts.stopped(), delta);
+      if (reached) return opts.satisfied();
+    }
+    if (!opts.stopped() && !opts.satisfied()) await opts.onNudge(mark);
   }
-  const rest = opts.windowMs - elapsed;
+  const rest = opts.deadlineMs - Date.now();
   if (rest > 0) {
     const reached = await condition(() => opts.satisfied() || opts.stopped(), rest);
     if (reached) return opts.satisfied();
@@ -85,7 +91,10 @@ export async function contratoDosPartes(input: ContratoWorkflowInput): Promise<C
 
   await seedHumanTasks(input);
 
-  const timeoutMs = Math.max(input.slaHours, 1) * 60 * 60 * 1000;
+  // Deadline ÚNICO para toda la ceremonia (mismo en SECUENCIAL y PARALELO):
+  // `SignatureRequest.expiresAt` y `HumanTask.dueAt` también son `creado + SLA`.
+  const startMs = Date.now();
+  const deadlineMs = startMs + Math.max(input.slaHours, 1) * 60 * 60 * 1000;
   const allSigned = () => signed.size >= input.signers.length;
   const stopped = () => cancelled || Boolean(rejectedBy);
 
@@ -106,8 +115,9 @@ export async function contratoDosPartes(input: ContratoWorkflowInput): Promise<C
   if (input.order === 'SECUENCIAL') {
     for (const signer of input.signers) {
       if (signed.has(signer.signerId)) continue;
-      const reached = await waitWithNudges({
-        windowMs: timeoutMs,
+      const reached = await waitUntilDeadline({
+        startMs,
+        deadlineMs,
         satisfied: () => signed.has(signer.signerId),
         stopped,
         onNudge: nudge(signer.signerId),
@@ -115,8 +125,9 @@ export async function contratoDosPartes(input: ContratoWorkflowInput): Promise<C
       if (!reached || stopped()) break;
     }
   } else {
-    const reached = await waitWithNudges({
-      windowMs: timeoutMs,
+    const reached = await waitUntilDeadline({
+      startMs,
+      deadlineMs,
       satisfied: allSigned,
       stopped,
       onNudge: nudge(),

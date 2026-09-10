@@ -7,7 +7,13 @@ import { jwtVerify } from "jose";
  * la cookie de sesión tenga firma y vigencia válidas.
  */
 const SESSION_COOKIE = "prestige_session";
-const PUBLIC_PREFIXES = ["/login", "/api/auth/", "/verificar"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/api/auth/",
+  "/verificar",
+  "/firmar",
+  "/api/public-sign/",
+];
 
 async function hasValidSession(req: NextRequest): Promise<boolean> {
   const raw = req.cookies.get(SESSION_COOKIE)?.value;

@@ -13,9 +13,9 @@ export interface EnqueueEmail {
   dedupeKey?: string;
 }
 
-/** Backoff exponencial acotado: 1, 2, 4, 8, 16, 30 min. */
+/** Backoff exponencial acotado: 1, 2, 4, 8, 16, 30 min (attempt empieza en 1). */
 function backoffMs(attempt: number): number {
-  return Math.min(2 ** attempt, 30) * 60_000;
+  return Math.min(2 ** (attempt - 1), 30) * 60_000;
 }
 
 @Injectable()

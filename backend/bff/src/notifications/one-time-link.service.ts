@@ -33,6 +33,11 @@ export class OneTimeLinkService {
     return (process.env.PUBLIC_WEB_URL ?? 'http://localhost:3001').replace(/\/$/, '');
   }
 
+  private defaultTtlHours(): number {
+    const v = Number(process.env.ONE_TIME_LINK_TTL_HOURS);
+    return Number.isFinite(v) && v > 0 ? v : 72;
+  }
+
   async issue(params: {
     purpose?: string;
     signerId: string;
@@ -40,7 +45,7 @@ export class OneTimeLinkService {
     ttlHours?: number;
   }): Promise<IssuedLink> {
     const token = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + (params.ttlHours ?? 24 * 14) * 3600_000);
+    const expiresAt = new Date(Date.now() + (params.ttlHours ?? this.defaultTtlHours()) * 3600_000);
     await this.prisma.oneTimeLink.create({
       data: {
         purpose: params.purpose ?? 'sign',
@@ -68,9 +73,27 @@ export class OneTimeLinkService {
     };
   }
 
-  async consume(token: string) {
+  /**
+   * Marca el token como usado de forma atómica (`where usedAt: null`) para que
+   * dos peticiones concurrentes con el mismo enlace no ambas «ganen».
+   * Devuelve `true` sólo si esta llamada fue la que lo consumió.
+   */
+  async consume(token: string): Promise<boolean> {
     const row = await this.prisma.oneTimeLink.findUnique({ where: { tokenHash: hash(token) } });
-    if (!row || row.usedAt) return;
-    await this.prisma.oneTimeLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
+    if (!row) return false;
+    const res = await this.prisma.oneTimeLink.updateMany({
+      where: { id: row.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (res.count === 0) return false;
+    // Al firmar, invalida el resto de enlaces vivos del firmante en esa solicitud
+    // (invitación + recordatorios) para que no sigan resolviendo tras COMPLETADA.
+    if (row.signatureRequestId) {
+      await this.prisma.oneTimeLink.updateMany({
+        where: { signatureRequestId: row.signatureRequestId, signerId: row.signerId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+    }
+    return true;
   }
 }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -19,6 +20,8 @@ import { CollaborationModule } from './collaboration/collaboration.module';
 import { ProcessModule } from './process/process.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { AvailabilityModule } from './availability/availability.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -36,6 +39,7 @@ import { AvailabilityModule } from './availability/availability.module';
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT ?? 120) },
     ]),
+    ScheduleModule.forRoot(),
     PrismaModule,
     StorageModule,
     AuthModule,
@@ -53,6 +57,8 @@ import { AvailabilityModule } from './availability/availability.module';
     ProcessModule,
     OnboardingModule,
     AvailabilityModule,
+    NotificationsModule,
+    WebhooksModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

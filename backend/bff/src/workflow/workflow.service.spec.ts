@@ -129,7 +129,19 @@ function makeService(opts: {
   } as unknown as PrismaService;
 
   const evidence = { generateForRequest: vi.fn() } as unknown as EvidenceService;
-  return { service: new WorkflowService(prisma, evidence), tasks, notifications, audits };
+  const mail = {
+    sendReminder: vi.fn().mockResolvedValue(undefined),
+    sendEscalation: vi.fn().mockResolvedValue(undefined),
+    sendCompleted: vi.fn().mockResolvedValue(undefined),
+    sendInvites: vi.fn().mockResolvedValue(undefined),
+  };
+  return {
+    service: new WorkflowService(prisma, evidence, mail as never),
+    tasks,
+    notifications,
+    audits,
+    mail,
+  };
 }
 
 describe('M07 — marcas de recordatorio', () => {

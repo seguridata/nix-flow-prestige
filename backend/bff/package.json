@@ -14,7 +14,8 @@
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "sdk:gen": "openapi-typescript ../contracts/openapi.generated.json -o ../sdk/typescript/schema.d.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",
@@ -23,6 +24,8 @@
     "@nestjs/core": "^10.4.0",
     "@nestjs/platform-express": "^10.4.0",
     "@nestjs/platform-socket.io": "^10.4.0",
+    "@nestjs/schedule": "4.1.2",
+    "@nestjs/swagger": "7.4.2",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^10.4.0",
     "@prisma/client": "^6.19.3",
@@ -48,6 +51,7 @@
     "jose": "^5.9.6",
     "nestjs-pino": "^5.1.0",
     "node-forge": "^1.4.0",
+    "nodemailer": "^10.0.2",
     "pdf-lib": "^1.17.1",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
@@ -65,8 +69,10 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^22.5.0",
     "@types/node-forge": "^1.3.14",
+    "@types/nodemailer": "^8.0.1",
     "@types/uuid": "^10.0.0",
     "concurrently": "^9.1.2",
+    "openapi-typescript": "7.4.4",
     "prisma": "^6.19.3",
     "tsx": "^4.19.3",
     "typescript": "^5.5.4",

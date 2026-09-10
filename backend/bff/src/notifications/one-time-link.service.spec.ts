@@ -40,6 +40,24 @@ function fakePrisma() {
         Object.assign(r, data);
         return r;
       },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id?: string; usedAt?: null; signatureRequestId?: string; signerId?: string };
+        data: Partial<LinkRow>;
+      }) => {
+        let count = 0;
+        for (const r of rows) {
+          if (where.id && r.id !== where.id) continue;
+          if (where.usedAt === null && r.usedAt !== null) continue;
+          if (where.signatureRequestId && r.signatureRequestId !== where.signatureRequestId) continue;
+          if (where.signerId && r.signerId !== where.signerId) continue;
+          Object.assign(r, data);
+          count += 1;
+        }
+        return { count };
+      },
     },
   } as unknown as PrismaService;
   return { prisma, rows };

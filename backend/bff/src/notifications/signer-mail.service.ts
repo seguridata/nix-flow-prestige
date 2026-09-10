@@ -50,11 +50,14 @@ export class SignerMailService {
     const ctx = await this.context(signatureRequestId);
     if (!ctx) return;
     for (const signer of ctx.request.signers) {
-      const to = signer.delegatedTo ? await this.emailOf(signer.delegatedTo) : signer.email;
+      // Si la firma está delegada, el suplente ya recibió aviso in-app; el correo
+      // externo requeriría su dirección (no la capturamos en la delegación).
+      if (signer.delegatedTo) continue;
+      const to = signer.email;
       if (!to) continue;
-      const url = await this.linkUrlFor(signatureRequestId, signer.delegatedTo ?? signer.signerId);
+      const url = await this.linkUrlFor(signatureRequestId, signer.signerId);
       const t = templates.signInvite({
-        signerName: signer.delegatedToName ?? signer.name ?? undefined,
+        signerName: signer.name ?? undefined,
         requesterName: ctx.request.requestedByName ?? undefined,
         documentTitle: ctx.documentTitle,
         url,
@@ -67,7 +70,7 @@ export class SignerMailService {
     const ctx = await this.context(signatureRequestId);
     if (!ctx) return;
     const signer = ctx.request.signers.find((s) => s.signerId === signerId || s.delegatedTo === signerId);
-    const to = await this.emailOf(signerId, signer?.email ?? undefined);
+    const to = this.emailFromSigners(signerId, ctx.request.signers);
     if (!to) return;
     const url = await this.linkUrlFor(signatureRequestId, signerId);
     const t = templates.reminder({
@@ -83,10 +86,9 @@ export class SignerMailService {
     const ctx = await this.context(signatureRequestId);
     if (!ctx) return;
     const recipients = new Set<string>();
-    if (ctx.request.requestedBy) {
-      const e = await this.emailOf(ctx.request.requestedBy);
-      if (e) recipients.add(e);
-    }
+    // El emisor sólo recibe correo si su identificador ya es una dirección; no
+    // hay directorio de usuarios en el BFF (el aviso in-app lo cubre aparte).
+    if (ctx.request.requestedBy?.includes('@')) recipients.add(ctx.request.requestedBy);
     const url = this.appUrl('/sent');
     for (const to of recipients) {
       const t = templates.escalation({
@@ -108,12 +110,11 @@ export class SignerMailService {
       : this.appUrl(`/documents/${ctx.request.documentId}`);
     const recipients = new Map<string, string | undefined>();
     for (const s of ctx.request.signers) {
-      const to = s.delegatedTo ? await this.emailOf(s.delegatedTo) : s.email;
+      const to = s.email ?? undefined; // el correo de firma es el del `Signer` de ESTA solicitud
       if (to) recipients.set(to, s.delegatedToName ?? s.name ?? undefined);
     }
-    if (ctx.request.requestedBy) {
-      const e = await this.emailOf(ctx.request.requestedBy);
-      if (e) recipients.set(e, ctx.request.requestedByName ?? undefined);
+    if (ctx.request.requestedBy?.includes('@')) {
+      recipients.set(ctx.request.requestedBy, ctx.request.requestedByName ?? undefined);
     }
     for (const [to, name] of recipients) {
       const t = templates.completed({ name, documentTitle: ctx.documentTitle, url });
@@ -121,14 +122,18 @@ export class SignerMailService {
     }
   }
 
-  /** Resuelve un correo a partir de un identificador (username) o de un `email` ya conocido. */
-  private async emailOf(idOrEmail: string, known?: string): Promise<string | undefined> {
-    if (known && known.includes('@')) return known;
+  /**
+   * Resuelve el correo SÓLO entre los firmantes de la solicitud en curso (nunca
+   * con una búsqueda global de `Signer`, que podría cruzar de tenant por
+   * coincidencia de username).
+   */
+  private emailFromSigners(
+    idOrEmail: string,
+    signers: { signerId: string; delegatedTo: string | null; email: string | null }[],
+  ): string | undefined {
     if (idOrEmail.includes('@')) return idOrEmail;
-    const signer = await this.prisma.signer.findFirst({
-      where: { OR: [{ signerId: idOrEmail }, { delegatedTo: idOrEmail }], email: { not: null } },
-    });
-    return signer?.email ?? undefined;
+    const s = signers.find((x) => x.signerId === idOrEmail || x.delegatedTo === idOrEmail);
+    return s?.email ?? undefined;
   }
 
   private async enqueue(

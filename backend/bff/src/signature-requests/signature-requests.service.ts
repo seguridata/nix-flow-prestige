@@ -12,6 +12,7 @@ import type { EncMeta } from '../storage/object-crypto';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../consent/consent';
 import { CONTRATO_DOS_PARTES } from '../temporal/shared';
 import { CollaborationService } from '../collaboration/collaboration.service';
+import { SignerMailService } from '../notifications/signer-mail.service';
 
 export type { SignatureMethod, SigningOrder, SignerRole };
 
@@ -28,6 +29,7 @@ export class SignatureRequestsService {
     private readonly stamp: PdfStampService,
     private readonly storage: StorageService,
     private readonly collab: CollaborationService,
+    private readonly mail: SignerMailService,
   ) {}
 
   consentText() {
@@ -108,6 +110,9 @@ export class SignatureRequestsService {
       );
     }
 
+    // M13 — correo de invitación con enlace de un solo uso a cada firmante.
+    await this.mail.sendInvites(created.id).catch(() => undefined);
+
     return this.getOrThrow(created.id);
   }
 
@@ -170,6 +175,9 @@ export class SignatureRequestsService {
       method: SignatureMethod;
       biometricSessionId?: string;
       consentAccepted?: boolean;
+      /** IP y user-agent REALES de la conexión (los pone el controller, no el cliente). */
+      ip?: string;
+      userAgent?: string;
     },
     autographImage?: Buffer,
   ) {
@@ -187,7 +195,11 @@ export class SignatureRequestsService {
 
     if (!wasAlreadyClosed && !alreadySigned) {
       if (body.consentAccepted) {
-        await this.recordConsent(id, { signerId: body.signerId });
+        await this.recordConsent(id, {
+          signerId: body.signerId,
+          ip: body.ip,
+          userAgent: body.userAgent,
+        });
       } else {
         const consent = await this.prisma.consentAcceptance.findUnique({
           where: {
@@ -241,6 +253,15 @@ export class SignatureRequestsService {
           );
         }
       }
+
+      // Reclamo ATÓMICO del hueco del firmante antes de firmar el PDF: si otra
+      // petición concurrente con el mismo enlace de un solo uso (doble POST /
+      // reintento) ya lo tomó, salimos sin volver a firmar ni pisar el PDF.
+      const claim = await tx.signer.updateMany({
+        where: { id: signer.id, status: { not: 'FIRMADO' } },
+        data: { status: 'FIRMADO', signedAt: new Date(), usedMethod: body.method },
+      });
+      if (claim.count === 0) return request;
 
       // Recuadro de firma: el del firmante en el orden (aunque hoy firme un
       // delegado), o cualquiera del documento.
@@ -299,10 +320,7 @@ export class SignatureRequestsService {
         });
       }
 
-      await tx.signer.update({
-        where: { id: signer.id },
-        data: { status: 'FIRMADO', signedAt: new Date(), usedMethod: body.method },
-      });
+      // (el estado FIRMADO del firmante ya se fijó en el reclamo atómico previo)
 
       const remaining = request.signers.filter((s) => s.id !== signer.id);
       const allSigned = remaining.every((s) => s.status === 'FIRMADO');
@@ -367,6 +385,7 @@ export class SignatureRequestsService {
           at: now,
         });
         await this.evidence.generateForRequest(result.id);
+        await this.mail.sendCompleted(result.id).catch(() => undefined);
       }
     }
 
