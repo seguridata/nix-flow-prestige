@@ -21,12 +21,12 @@ export class CasesService {
     });
   }
 
-  find(id: string): Promise<Case | null> {
-    return this.prisma.case.findUnique({ where: { id } });
+  find(id: string, tenantId?: string): Promise<Case | null> {
+    return this.prisma.case.findFirst({ where: { id, ...(tenantId ? { tenantId } : {}) } });
   }
 
-  async getOrThrow(id: string): Promise<Case> {
-    const found = await this.find(id);
+  async getOrThrow(id: string, tenantId?: string): Promise<Case> {
+    const found = await this.find(id, tenantId);
     if (!found) throw new NotFoundException(`Caso ${id} no encontrado`);
     return found;
   }

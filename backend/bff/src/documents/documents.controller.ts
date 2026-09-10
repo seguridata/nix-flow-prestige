@@ -12,7 +12,9 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { DocumentsService, type SafeDocument } from './documents.service';
 import { CreateDocumentDto, ListDocumentsQueryDto } from './dto';
 
@@ -39,29 +41,38 @@ export class DocumentsController {
     )
     file: Express.Multer.File,
     @Body() dto: CreateDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<SafeDocument> {
     return this.documents.create({
       caseId: dto.caseId,
       filename: dto.filename ?? file.originalname ?? 'documento.pdf',
       bytes: file.buffer,
+      tenantId: user.tenantId,
     });
   }
 
   @Get()
-  list(@Query() query: ListDocumentsQueryDto): Promise<SafeDocument[]> {
-    return this.documents.list(query.caseId);
+  list(
+    @Query() query: ListDocumentsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<SafeDocument[]> {
+    return this.documents.list(query.caseId, user.tenantId);
   }
 
   @Get(':id')
-  get(@Param('id') id: string): Promise<SafeDocument> {
-    return this.documents.get(id);
+  get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<SafeDocument> {
+    return this.documents.get(id, user.tenantId);
   }
 
   /** Sirve el PDF descifrado (no una URL prefirmada: el objeto está cifrado a nivel app). */
 
   @Get(':id/content')
-  async getContent(@Param('id') id: string, @Res() res: Response): Promise<void> {
-    const { bytes, mimeType, filename } = await this.documents.getContent(id);
+  async getContent(
+    @Param('id') id: string,
+    @Res() res: Response,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    const { bytes, mimeType, filename } = await this.documents.getContent(id, user.tenantId);
     res
       .status(200)
       .setHeader('Content-Type', mimeType)

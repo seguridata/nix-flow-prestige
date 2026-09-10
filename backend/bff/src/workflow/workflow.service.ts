@@ -128,9 +128,13 @@ export class WorkflowService {
     return this.prisma.workflowRun.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
   }
 
-  async listTasks(params: { assignee?: string; candidateGroup?: string }) {
+  async listTasks(params: { assignee?: string; candidateGroup?: string; tenantId?: string }) {
     const tasks = await this.prisma.humanTask.findMany({
-      where: params.assignee ? { signerId: params.assignee } : undefined,
+      where: {
+        ...(params.assignee ? { signerId: params.assignee } : {}),
+        // A-07 — HumanTask no lleva tenant; se filtra por el de la solicitud.
+        ...(params.tenantId ? { signatureRequest: { tenantId: params.tenantId } } : {}),
+      },
       orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
     });
     return tasks.map((task) => ({

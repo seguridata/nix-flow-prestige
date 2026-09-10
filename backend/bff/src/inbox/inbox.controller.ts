@@ -17,12 +17,12 @@ export class InboxController {
 
   @Get('inbox')
   inboxFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
-    return this.inbox.forSigner(user.actorId);
+    return this.inbox.forSigner(user.actorId, user.tenantId);
   }
 
   @Get('sent')
   sentFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
-    return this.inbox.forRequester(user.actorId);
+    return this.inbox.forRequester(user.actorId, user.tenantId);
   }
 
   @Get('snapshot')

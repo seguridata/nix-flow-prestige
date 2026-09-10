@@ -39,12 +39,24 @@ export class SignatureRequestsController {
       ...body,
       requestedBy: user.actorId,
       requestedByName: user.name,
+      tenantId: user.tenantId,
     });
   }
 
   @Get()
-  list(@Query() query: ListSignatureRequestsQueryDto) {
-    return this.signatureRequests.list(query.signerId, query.status, query.documentId, query.requestedBy);
+  list(@Query() query: ListSignatureRequestsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    // A-07 — quien no es emisor/admin/auditor sólo ve las solicitudes en las que
+    // es firmante (o su delegado); nunca las de todo el tenant.
+    const privileged = ['sender', 'admin', 'auditor'].some((r) => user.roles.includes(r));
+    const signerId = privileged ? query.signerId : user.actorId;
+    const requestedBy = privileged ? query.requestedBy : undefined;
+    return this.signatureRequests.list(
+      signerId,
+      query.status,
+      query.documentId,
+      requestedBy,
+      user.tenantId,
+    );
   }
 
   @Public()
@@ -60,8 +72,8 @@ export class SignatureRequestsController {
   }
 
   @Get(':id/status')
-  status(@Param('id') id: string) {
-    return this.signatureRequests.getOrThrow(id);
+  status(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.getOrThrow(id, user.tenantId);
   }
 
   @Post(':id/actions/consent')

@@ -71,19 +71,24 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
     return { ...req, signers: requestSigners, document };
   }
 
+  const findReq = ({
+    where,
+    include,
+  }: {
+    where: { id: string };
+    include?: { signers?: unknown };
+  }) => {
+    const req = requests.get(where.id);
+    if (!req) return null;
+    return hydrate(req, Boolean(include?.signers));
+  };
+
   const api = {
     signatureRequest: {
-      findUnique: async ({
-        where,
-        include,
-      }: {
-        where: { id: string };
-        include?: { signers?: unknown };
-      }) => {
-        const req = requests.get(where.id);
-        if (!req) return null;
-        return hydrate(req, Boolean(include?.signers));
-      },
+      findUnique: async (args: { where: { id: string }; include?: { signers?: unknown } }) =>
+        findReq(args),
+      findFirst: async (args: { where: { id: string }; include?: { signers?: unknown } }) =>
+        findReq(args),
       update: async ({
         where,
         data,

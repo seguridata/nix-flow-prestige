@@ -31,7 +31,7 @@ export class WorkflowController {
   /** Tareas del usuario autenticado. */
   @Get('tasks')
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.workflow.listTasks({ assignee: user.actorId });
+    return this.workflow.listTasks({ assignee: user.actorId, tenantId: user.tenantId });
   }
 
   @Post('tasks/:id/complete')

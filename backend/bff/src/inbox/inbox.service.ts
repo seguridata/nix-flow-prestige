@@ -31,16 +31,16 @@ export class InboxService {
     private readonly cases: CasesService,
   ) {}
 
-  async forSigner(signerId: string): Promise<InboxItem[]> {
-    const requests = await this.signatureRequests.list(signerId);
+  async forSigner(signerId: string, tenantId?: string): Promise<InboxItem[]> {
+    const requests = await this.signatureRequests.list(signerId, undefined, undefined, undefined, tenantId);
 
     const items = await Promise.all(
       requests.map(async (request) => {
-        const document = await this.documents.find(request.documentId);
+        const document = await this.documents.find(request.documentId, tenantId);
         const signer = request.signers.find(
           (s) => s.signerId === signerId || s.delegatedTo === signerId,
         );
-        const kase = document ? await this.cases.find(document.caseId) : null;
+        const kase = document ? await this.cases.find(document.caseId, tenantId) : null;
 
         return {
           signatureRequestId: request.id,
@@ -59,12 +59,18 @@ export class InboxService {
     return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 
-  async forRequester(requestedBy: string): Promise<InboxItem[]> {
-    const requests = await this.signatureRequests.list(undefined, undefined, undefined, requestedBy);
+  async forRequester(requestedBy: string, tenantId?: string): Promise<InboxItem[]> {
+    const requests = await this.signatureRequests.list(
+      undefined,
+      undefined,
+      undefined,
+      requestedBy,
+      tenantId,
+    );
     const items = await Promise.all(
       requests.map(async (request) => {
-        const document = await this.documents.find(request.documentId);
-        const kase = document ? await this.cases.find(document.caseId) : null;
+        const document = await this.documents.find(request.documentId, tenantId);
+        const kase = document ? await this.cases.find(document.caseId, tenantId) : null;
         const pending = request.signers.filter((s) => s.status === 'PENDIENTE');
         return {
           signatureRequestId: request.id,

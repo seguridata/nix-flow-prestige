@@ -28,6 +28,9 @@ model Case {
 model Document {
   id            String   @id @default(uuid())
   caseId        String
+  /// A-07 — tenant denormalizado desde `Case` (como en `EvidenceManifest`) para
+  /// poder aislar por tenant en las lecturas sin join.
+  tenantId      String   @default("seguridata")
   filename      String
   version       Int      @default(1)
   hash          String // SHA-256 del contenido en claro
@@ -43,6 +46,7 @@ model Document {
   signatureFields   SignatureField[]
 
   @@index([caseId])
+  @@index([tenantId])
 }
 
 enum SignatureMethod {
@@ -67,6 +71,8 @@ enum RequestStatus {
 model SignatureRequest {
   id              String            @id @default(uuid())
   documentId      String
+  /// A-07 — tenant denormalizado desde el `Document`.
+  tenantId        String            @default("seguridata")
   methods         SignatureMethod[]
   order           SigningOrder      @default(SECUENCIAL)
   status          RequestStatus     @default(PENDIENTE)
@@ -85,6 +91,7 @@ model SignatureRequest {
 
   @@index([documentId])
   @@index([status])
+  @@index([tenantId])
 }
 
 enum SignerStatus {

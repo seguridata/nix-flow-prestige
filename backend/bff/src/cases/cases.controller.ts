@@ -35,7 +35,7 @@ export class CasesController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string): Promise<Case> {
-    return this.cases.getOrThrow(id);
+  get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<Case> {
+    return this.cases.getOrThrow(id, user.tenantId);
   }
 }

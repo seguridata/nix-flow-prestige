@@ -46,17 +46,26 @@ export class SignatureRequestsService {
     order?: SigningOrder;
     requestedBy?: string;
     requestedByName?: string;
+    tenantId: string;
     slaHours?: number;
     signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[];
   }) {
     if (!body.methods?.length) {
       throw new BadRequestException('Debes autorizar al menos un método de firma');
     }
+    // A-07 — el documento debe ser del tenant del solicitante.
+    const doc = await this.prisma.document.findFirst({
+      where: { id: body.documentId, tenantId: body.tenantId },
+      select: { id: true, tenantId: true, caseId: true },
+    });
+    if (!doc) throw new NotFoundException(`Documento ${body.documentId} no encontrado`);
+
     const slaHours = body.slaHours ?? 72;
     const expiresAt = new Date(Date.now() + slaHours * 3600_000);
     const created = await this.prisma.signatureRequest.create({
       data: {
         documentId: body.documentId,
+        tenantId: doc.tenantId,
         methods: body.methods,
         order: body.order ?? 'SECUENCIAL',
         requestedBy: body.requestedBy,
@@ -84,8 +93,7 @@ export class SignatureRequestsService {
       created.signers.map((s) => ({ signerId: s.signerId, name: s.name })),
     );
 
-    const document = await this.prisma.document.findUnique({ where: { id: body.documentId } });
-    await this.workflow.startInstance(CONTRATO_DOS_PARTES, document?.caseId ?? created.id, {
+    await this.workflow.startInstance(CONTRATO_DOS_PARTES, doc.caseId ?? created.id, {
       signatureRequestId: created.id,
       documentId: created.documentId,
       order: created.order,
@@ -116,9 +124,16 @@ export class SignatureRequestsService {
     return this.getOrThrow(created.id);
   }
 
-  list(signerId?: string, status?: string, documentId?: string, requestedBy?: string) {
+  list(
+    signerId?: string,
+    status?: string,
+    documentId?: string,
+    requestedBy?: string,
+    tenantId?: string,
+  ) {
     return this.prisma.signatureRequest.findMany({
       where: {
+        tenantId,
         documentId,
         requestedBy,
         status: status ? (status as never) : undefined,
@@ -131,9 +146,9 @@ export class SignatureRequestsService {
     });
   }
 
-  async getOrThrow(id: string) {
-    const found = await this.prisma.signatureRequest.findUnique({
-      where: { id },
+  async getOrThrow(id: string, tenantId?: string) {
+    const found = await this.prisma.signatureRequest.findFirst({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       include: INCLUDE_SIGNERS,
     });
     if (!found) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
