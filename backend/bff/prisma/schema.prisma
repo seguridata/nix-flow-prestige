@@ -191,18 +191,41 @@ model HumanTask {
   signerId           String
   name               String
   status             HumanTaskStatus @default(CREADA)
+  /// Prioridad en la bandeja: 0 normal, 1 alta, 2+ escalada.
+  priority           Int             @default(0)
   dueAt              DateTime?
   completedAt        DateTime?
   workflowId         String?
   claimedBy          String?
   claimedAt          DateTime?
   outcome            String?
+  /// M07 — recordatorios/escalamiento sobre timers de Temporal.
+  remindersSent      Int             @default(0)
+  lastReminderAt     DateTime?
+  escalatedAt        DateTime?
+  /// Firmante original cuando la tarea se reasignó por delegación / «fuera de oficina».
+  delegatedFrom      String?
   createdAt          DateTime        @default(now())
 
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
 
   @@index([signerId, status])
   @@index([signatureRequestId])
+  @@index([status, priority])
+}
+
+/// M07 — «fuera de oficina»: mientras esté activo, las firmas asignadas al
+/// usuario se delegan automáticamente en `delegateId` al crearse la solicitud.
+model OutOfOffice {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  delegateId   String
+  delegateName String?
+  reason       String?
+  since        DateTime  @default(now())
+  until        DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model ConsentAcceptance {

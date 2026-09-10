@@ -18,6 +18,7 @@ import { OperationsModule } from './operations/operations.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { ProcessModule } from './process/process.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { AvailabilityModule } from './availability/availability.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     CollaborationModule,
     ProcessModule,
     OnboardingModule,
+    AvailabilityModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

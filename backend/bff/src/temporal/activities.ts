@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { CONTRATO_DOS_PARTES, type ContratoWorkflowInput } from './shared';
+import { CONTRATO_DOS_PARTES, type ContratoWorkflowInput, type NudgeCommand } from './shared';
 
 /**
  * Activities talk to the BFF over HTTP so the workflow sandbox never
@@ -43,6 +43,14 @@ export async function seedHumanTasks(input: ContratoWorkflowInput) {
 
 export async function markExpired(signatureRequestId: string) {
   return post('/internal/workflows/expire', { signatureRequestId });
+}
+
+/**
+ * M07 — recordatorio / escalamiento disparado por un timer del workflow.
+ * El BFF crea las notificaciones y los eventos de auditoría reales.
+ */
+export async function sendNudge(command: NudgeCommand) {
+  return post('/internal/workflows/nudge', command);
 }
 
 export async function sealEvidence(signatureRequestId: string) {

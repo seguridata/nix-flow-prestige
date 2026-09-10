@@ -74,6 +74,14 @@ export class SignatureRequestsService {
       include: INCLUDE_SIGNERS,
     });
 
+    // M07 — «fuera de oficina»: fija la delegación en `Signer` ANTES de arrancar
+    // el flujo, para que las tareas humanas se siembren ya a nombre del suplente.
+    await this.applyOutOfOffice(
+      created.id,
+      created.documentId,
+      created.signers.map((s) => ({ signerId: s.signerId, name: s.name })),
+    );
+
     const document = await this.prisma.document.findUnique({ where: { id: body.documentId } });
     await this.workflow.startInstance(CONTRATO_DOS_PARTES, document?.caseId ?? created.id, {
       signatureRequestId: created.id,
@@ -100,7 +108,7 @@ export class SignatureRequestsService {
       );
     }
 
-    return created;
+    return this.getOrThrow(created.id);
   }
 
   list(signerId?: string, status?: string, documentId?: string, requestedBy?: string) {
@@ -168,7 +176,12 @@ export class SignatureRequestsService {
     const before = await this.prisma.signatureRequest.findUnique({ where: { id } });
     const wasAlreadyClosed = before ? ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'].includes(before.status) : false;
     const signerBefore = before
-      ? await this.prisma.signer.findFirst({ where: { signatureRequestId: id, signerId: body.signerId } })
+      ? ((await this.prisma.signer.findFirst({
+          where: { signatureRequestId: id, signerId: body.signerId },
+        })) ??
+        (await this.prisma.signer.findFirst({
+          where: { signatureRequestId: id, delegatedTo: body.signerId },
+        })))
       : null;
     const alreadySigned = signerBefore?.status === 'FIRMADO';
 
@@ -202,11 +215,15 @@ export class SignatureRequestsService {
         return request;
       }
 
-      const signer = request.signers.find((s) => s.signerId === body.signerId);
+      // El firmante puede actuar por sí mismo o como delegado (`delegatedTo`).
+      const signer =
+        request.signers.find((s) => s.signerId === body.signerId) ??
+        request.signers.find((s) => s.delegatedTo === body.signerId);
       if (!signer) {
         throw new NotFoundException(`Firmante ${body.signerId} no está en la solicitud ${id}`);
       }
       if (signer.status === 'FIRMADO') return request;
+      const onBehalfOf = signer.signerId !== body.signerId ? signer.signerId : undefined;
 
       if (!request.methods.includes(body.method)) {
         throw new BadRequestException(
@@ -225,10 +242,11 @@ export class SignatureRequestsService {
         }
       }
 
-      // Recuadro de firma: el propio del firmante, o cualquiera del documento.
+      // Recuadro de firma: el del firmante en el orden (aunque hoy firme un
+      // delegado), o cualquiera del documento.
       const field =
         (await tx.signatureField.findFirst({
-          where: { documentId: request.documentId, signerId: body.signerId, type: 'SIGNATURE' },
+          where: { documentId: request.documentId, signerId: signer.signerId, type: 'SIGNATURE' },
         })) ??
         (await tx.signatureField.findFirst({
           where: { documentId: request.documentId, type: 'SIGNATURE' },
@@ -243,7 +261,7 @@ export class SignatureRequestsService {
       const signed = await this.signing.sign({
         method: body.method,
         signerId: body.signerId,
-        signerName: signer.name ?? undefined,
+        signerName: (onBehalfOf ? signer.delegatedToName : signer.name) ?? signer.name ?? undefined,
         documentId: request.documentId,
         documentHash: request.document.hash,
         pdfBytes: currentPdf,
@@ -299,14 +317,23 @@ export class SignatureRequestsService {
 
     if (!wasAlreadyClosed && !alreadySigned) {
       const now = new Date().toISOString();
-      const signerName = result.signers.find((s) => s.signerId === body.signerId)?.name ?? undefined;
+      // El firmante «de la fila»: por sí mismo o el que lo delegó.
+      const filledSigner =
+        result.signers.find((s) => s.signerId === body.signerId) ??
+        result.signers.find((s) => s.delegatedTo === body.signerId);
+      const onBehalfOf =
+        filledSigner && filledSigner.signerId !== body.signerId ? filledSigner.signerId : undefined;
+      const effectiveSignerId = onBehalfOf ?? body.signerId;
+      const signerName =
+        (onBehalfOf ? filledSigner?.delegatedToName : filledSigner?.name) ?? filledSigner?.name ?? undefined;
       this.realtime.notifyDocumentEvent(result.documentId, {
         type: 'SIGNATURE_APPLIED',
         actorId: body.signerId,
         actorName: signerName,
         at: now,
       });
-      await this.workflow.signalSigned(result.id, body.signerId);
+      // La señal al workflow usa el firmante del orden, no el delegado.
+      await this.workflow.signalSigned(result.id, effectiveSignerId);
       const sr = (result as { lastSignResult?: import('../signing/signer-adapter').SignResult })
         .lastSignResult;
       await this.collab.audit({
@@ -317,6 +344,7 @@ export class SignatureRequestsService {
         action: 'SIGNATURE_APPLIED',
         payload: {
           method: body.method,
+          onBehalfOf,
           algorithm: sr?.algorithm,
           provider: sr?.provider,
           signatureHash: sr?.signatureHash,
@@ -382,7 +410,7 @@ export class SignatureRequestsService {
 
   async delegate(
     id: string,
-    body: { fromSignerId: string; toSignerId: string; toName?: string },
+    body: { fromSignerId: string; toSignerId: string; toName?: string; reason?: string; auto?: boolean },
   ) {
     const request = await this.getOrThrow(id);
     const signer = request.signers.find((s) => s.signerId === body.fromSignerId);
@@ -390,16 +418,27 @@ export class SignatureRequestsService {
     if (signer.status !== 'PENDIENTE') {
       throw new BadRequestException('Solo se puede delegar una firma pendiente');
     }
+    if (body.toSignerId === body.fromSignerId) {
+      throw new BadRequestException('No puedes delegarte una firma a ti mismo');
+    }
     await this.prisma.signer.update({
       where: { id: signer.id },
       data: { delegatedTo: body.toSignerId, delegatedToName: body.toName },
     });
+    // Las tareas humanas abiertas pasan a la bandeja del delegado.
+    await this.workflow.reassignForDelegation(id, body.fromSignerId, body.toSignerId);
     await this.collab.audit({
       signatureRequestId: id,
       documentId: request.documentId,
-      actorId: body.fromSignerId,
+      actorId: body.auto ? 'system' : body.fromSignerId,
       action: 'DELEGATED',
-      payload: { toSignerId: body.toSignerId, toName: body.toName },
+      payload: {
+        fromSignerId: body.fromSignerId,
+        toSignerId: body.toSignerId,
+        toName: body.toName,
+        reason: body.reason,
+        auto: Boolean(body.auto),
+      },
     });
     await this.collab.notify(
       body.toSignerId,
@@ -408,5 +447,52 @@ export class SignatureRequestsService {
       `/documents/${request.documentId}`,
     );
     return this.getOrThrow(id);
+  }
+
+  /**
+   * M07 — al crear la solicitud, fija en `Signer.delegatedTo` la delegación de
+   * cada firmante con una regla «fuera de oficina» vigente. Las tareas humanas
+   * (WorkflowService.seedTasks) se siembran luego ya a nombre del suplente.
+   */
+  private async applyOutOfOffice(
+    requestId: string,
+    documentId: string,
+    signers: { signerId: string; name?: string | null }[],
+  ) {
+    if (signers.length === 0) return;
+    const now = new Date();
+    const rules = await this.prisma.outOfOffice.findMany({
+      where: {
+        userId: { in: signers.map((s) => s.signerId) },
+        since: { lte: now },
+        OR: [{ until: null }, { until: { gt: now } }],
+      },
+    });
+    for (const rule of rules) {
+      if (rule.delegateId === rule.userId) continue;
+      await this.prisma.signer.updateMany({
+        where: { signatureRequestId: requestId, signerId: rule.userId, status: 'PENDIENTE' },
+        data: { delegatedTo: rule.delegateId, delegatedToName: rule.delegateName },
+      });
+      await this.collab.audit({
+        signatureRequestId: requestId,
+        documentId,
+        actorId: 'system',
+        action: 'DELEGATED',
+        payload: {
+          fromSignerId: rule.userId,
+          toSignerId: rule.delegateId,
+          toName: rule.delegateName,
+          reason: rule.reason,
+          auto: true,
+        },
+      });
+      await this.collab.notify(
+        rule.delegateId,
+        'Te delegaron una firma',
+        `${signers.find((s) => s.signerId === rule.userId)?.name ?? rule.userId} está fuera de oficina y te delegó un documento.`,
+        `/documents/${documentId}`,
+      );
+    }
   }
 }
