@@ -356,10 +356,10 @@ schema.generated.*
 *.generated.cs
 *.designer.cs
 
-# Documentation files (except README)
+# Documentation
+# Markdown is source: se versiona (planes, ADRs, handoffs, AGENTS.md, branding).
+# Solo se ignoran PDFs generados y el dossier binario de negocio en /docs/.
 *.pdf
-*.md
-!README.md
 
 # Test snapshots and reports
 test-report/
