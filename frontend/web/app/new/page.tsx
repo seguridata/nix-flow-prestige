@@ -16,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/libs/utils";
-import { useSession } from "@/store/session-store";
 import { createCase } from "@/services/cases-service";
 import { createDocument } from "@/services/documents-service";
 import { createSignatureRequest } from "@/services/signature-requests-service";
@@ -46,7 +45,6 @@ const STEPS = ["Documento", "Firmantes", "Método y envío"] as const;
 
 export default function NewSignatureRequestPage() {
   const router = useRouter();
-  const { signerId, name } = useSession();
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [methods, setMethods] = useState<SignatureMethod[]>(["DIGITAL"]);
@@ -97,14 +95,12 @@ export default function NewSignatureRequestPage() {
 
     setSubmitting(true);
     try {
-      const kase = await createCase({ tenantId: "seguridata", title: values.title });
+      const kase = await createCase({ title: values.title });
       const document = await createDocument({ caseId: kase.id, file });
       await createSignatureRequest({
         documentId: document.id,
         methods,
         order: values.sequential ? "SECUENCIAL" : "PARALELO",
-        requestedBy: signerId,
-        requestedByName: name,
         signers: values.signers.map((s) => ({
           signerId: s.email,
           name: s.name,

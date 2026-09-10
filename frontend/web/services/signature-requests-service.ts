@@ -5,8 +5,8 @@ export interface CreateSignatureRequestBody {
   documentId: string;
   methods: SignatureMethod[];
   order: SigningOrder;
-  requestedBy: string;
-  requestedByName: string;
+  slaHours?: number;
+  // requestedBy / tenant salen del token en el BFF.
   signers: { signerId: string; name?: string; email?: string; role?: "FIRMANTE" | "REVISOR" }[];
 }
 

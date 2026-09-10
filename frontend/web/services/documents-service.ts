@@ -1,20 +1,21 @@
 import { apiClient, ApiError } from "./api-client";
 import type { DocumentRecord } from "@/libs/types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
-
 export function fetchDocument(id: string) {
   return apiClient.get<DocumentRecord>(`/documents/${id}`);
 }
 
 /**
- * Descarga el PDF descifrado desde el BFF y devuelve un object URL listo para
- * `<embed>` / react-pdf. Quien lo recibe debe hacer `URL.revokeObjectURL` al
- * desmontar.
+ * Descarga el PDF descifrado (vía proxy /api/bff, que adjunta el token) y
+ * devuelve un object URL para `<embed>` / react-pdf. Quien lo recibe debe
+ * hacer `URL.revokeObjectURL` al desmontar.
  */
 export async function fetchDocumentObjectUrl(id: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/documents/${id}/content`, { credentials: "include" });
+  const res = await fetch(`/api/bff/documents/${id}/content`, { cache: "no-store" });
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
+    }
     throw new ApiError(`No se pudo cargar el documento (${res.status})`, res.status);
   }
   const blob = await res.blob();

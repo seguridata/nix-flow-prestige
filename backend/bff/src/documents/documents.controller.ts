@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { Public } from '../auth/public.decorator';
+import { Roles } from '../auth/roles.decorator';
 import { DocumentsService, type SafeDocument } from './documents.service';
 import { CreateDocumentDto, ListDocumentsQueryDto } from './dto';
 
@@ -27,7 +27,7 @@ export class DocumentsController {
    * campo `caseId` (+ `filename` opcional). El PDF se cifra y se guarda en
    * object storage; nunca viaja ni se persiste como base64.
    */
-  @Public()
+  @Roles('sender', 'admin')
   @Post()
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PDF_BYTES } }))
   create(
@@ -47,20 +47,18 @@ export class DocumentsController {
     });
   }
 
-  @Public()
   @Get()
   list(@Query() query: ListDocumentsQueryDto): Promise<SafeDocument[]> {
     return this.documents.list(query.caseId);
   }
 
-  @Public()
   @Get(':id')
   get(@Param('id') id: string): Promise<SafeDocument> {
     return this.documents.get(id);
   }
 
   /** Sirve el PDF descifrado (no una URL prefirmada: el objeto está cifrado a nivel app). */
-  @Public()
+
   @Get(':id/content')
   async getContent(@Param('id') id: string, @Res() res: Response): Promise<void> {
     const { bytes, mimeType, filename } = await this.documents.getContent(id);

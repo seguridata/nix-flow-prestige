@@ -1,8 +1,13 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { Public } from '../auth/public.decorator';
+import { Controller, Get } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { InboxService, type InboxItem } from './inbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * `/me/*` — siempre relativo al usuario autenticado. La identidad sale del
+ * token (JwtAuthGuard), nunca de un query param.
+ */
 @Controller('me')
 export class InboxController {
   constructor(
@@ -10,21 +15,19 @@ export class InboxController {
     private readonly prisma: PrismaService,
   ) {}
 
-  @Public()
   @Get('inbox')
-  inboxFor(@Query('signerId') signerId: string): Promise<InboxItem[]> {
-    return this.inbox.forSigner(signerId);
+  inboxFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
+    return this.inbox.forSigner(user.actorId);
   }
 
-  @Public()
   @Get('sent')
-  sentFor(@Query('requestedBy') requestedBy: string): Promise<InboxItem[]> {
-    return this.inbox.forRequester(requestedBy);
+  sentFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
+    return this.inbox.forRequester(user.actorId);
   }
 
-  @Public()
   @Get('snapshot')
-  async snapshot(@Query('userId') userId: string) {
+  async snapshot(@CurrentUser() user: AuthenticatedUser) {
+    const userId = user.actorId;
     const [unread, pendingTasks, pendingSign] = await Promise.all([
       this.prisma.userNotification.count({ where: { userId, read: false } }),
       this.prisma.humanTask.count({

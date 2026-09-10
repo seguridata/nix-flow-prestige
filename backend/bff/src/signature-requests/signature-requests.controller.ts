@@ -11,8 +11,18 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/public.decorator';
-import { SignatureRequestsService, type SignatureMethod, type SignerRole, type SigningOrder } from './signature-requests.service';
-import { SignActionDto } from './dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
+import { SignatureRequestsService } from './signature-requests.service';
+import {
+  ConsentAcceptDto,
+  CreateSignatureRequestDto,
+  DelegateDto,
+  ListSignatureRequestsQueryDto,
+  RejectDto,
+  SignActionDto,
+} from './dto';
 
 const MAX_STROKE_BYTES = 2 * 1024 * 1024; // 2 MB — un PNG de trazo es de ~10–100 KB
 
@@ -20,31 +30,19 @@ const MAX_STROKE_BYTES = 2 * 1024 * 1024; // 2 MB — un PNG de trazo es de ~10�
 export class SignatureRequestsController {
   constructor(private readonly signatureRequests: SignatureRequestsService) {}
 
-  @Public()
+  @Roles('sender', 'admin')
   @Post()
-  create(
-    @Body()
-    body: {
-      documentId: string;
-      methods: SignatureMethod[];
-      order?: SigningOrder;
-      requestedBy?: string;
-      requestedByName?: string;
-      signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[];
-    },
-  ) {
-    return this.signatureRequests.create(body);
+  create(@Body() body: CreateSignatureRequestDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.create({
+      ...body,
+      requestedBy: user.actorId,
+      requestedByName: user.name,
+    });
   }
 
-  @Public()
   @Get()
-  list(
-    @Query('signerId') signerId?: string,
-    @Query('status') status?: string,
-    @Query('documentId') documentId?: string,
-    @Query('requestedBy') requestedBy?: string,
-  ) {
-    return this.signatureRequests.list(signerId, status, documentId, requestedBy);
+  list(@Query() query: ListSignatureRequestsQueryDto) {
+    return this.signatureRequests.list(query.signerId, query.status, query.documentId, query.requestedBy);
   }
 
   @Public()
@@ -59,32 +57,31 @@ export class SignatureRequestsController {
     return this.signatureRequests.capabilities();
   }
 
-  @Public()
   @Get(':id/status')
   status(@Param('id') id: string) {
     return this.signatureRequests.getOrThrow(id);
   }
 
-  @Public()
   @Post(':id/actions/consent')
   consentAccept(
     @Param('id') id: string,
-    @Body() body: { signerId: string; ip?: string; userAgent?: string },
+    @Body() body: ConsentAcceptDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.signatureRequests.recordConsent(id, body);
+    return this.signatureRequests.recordConsent(id, { signerId: user.actorId, ...body });
   }
 
   /**
    * Firma. `multipart/form-data` cuando el método es AUTÓGRAFA (campo `file`
-   * con el PNG del trazo); JSON en los demás casos. El trazo nunca viaja ni
-   * se persiste como base64.
+   * con el PNG del trazo); JSON en los demás casos. El firmante sale del token;
+   * el trazo nunca viaja ni se persiste como base64.
    */
-  @Public()
   @Post(':id/actions/sign')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_STROKE_BYTES } }))
   sign(
     @Param('id') id: string,
     @Body() body: SignActionDto,
+    @CurrentUser() user: AuthenticatedUser,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({ fileType: 'image/png' })
@@ -93,27 +90,22 @@ export class SignatureRequestsController {
     )
     file?: Express.Multer.File,
   ) {
-    return this.signatureRequests.sign(id, body, file?.buffer);
+    return this.signatureRequests.sign(id, { ...body, signerId: user.actorId }, file?.buffer);
   }
 
-  @Public()
   @Post(':id/actions/reject')
-  reject(@Param('id') id: string, @Body() body: { signerId: string; reason?: string }) {
-    return this.signatureRequests.reject(id, body);
+  reject(@Param('id') id: string, @Body() body: RejectDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.reject(id, { signerId: user.actorId, reason: body.reason });
   }
 
-  @Public()
+  @Roles('sender', 'admin')
   @Post(':id/actions/cancel')
-  cancel(@Param('id') id: string, @Body() body: { actorId?: string } = {}) {
-    return this.signatureRequests.cancel(id, body);
+  cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.cancel(id, { actorId: user.actorId });
   }
 
-  @Public()
   @Post(':id/actions/delegate')
-  delegate(
-    @Param('id') id: string,
-    @Body() body: { fromSignerId: string; toSignerId: string; toName?: string },
-  ) {
-    return this.signatureRequests.delegate(id, body);
+  delegate(@Param('id') id: string, @Body() body: DelegateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.delegate(id, { fromSignerId: user.actorId, ...body });
   }
 }

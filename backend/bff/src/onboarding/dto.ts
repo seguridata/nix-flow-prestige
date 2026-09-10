@@ -24,36 +24,16 @@ export class CreateOnboardingDto {
   @IsString()
   @MaxLength(13)
   rfc?: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(200)
-  requestedBy!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(160)
-  requestedByName?: string;
 }
 
-export class ActorDto {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(200)
-  actorId!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(160)
-  actorName?: string;
-
+export class OnboardingActionDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
   notes?: string;
 }
 
-export class AttachIneDto extends ActorDto {
+export class AttachIneDto {
   @IsIn(['front', 'back'])
   part!: 'front' | 'back';
 }

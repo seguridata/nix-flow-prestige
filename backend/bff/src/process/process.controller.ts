@@ -1,52 +1,69 @@
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
-import { Public } from '../auth/public.decorator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { Roles } from '../auth/roles.decorator';
 import { ProcessService } from './process.service';
+
+class SaveProcessDto {
+  @IsOptional() @IsString() @MaxLength(2_000_000)
+  bpmnXml?: string;
+
+  @IsOptional() @IsString() @MaxLength(2_000_000)
+  dmnXml?: string;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  name?: string;
+}
+
+class DecideDto {
+  @IsOptional() @IsString() @MaxLength(80)
+  tipo?: string;
+}
+
+class AuditQueryDto {
+  @IsOptional() @IsString() @MaxLength(200) signatureRequestId?: string;
+  @IsOptional() @IsString() @MaxLength(200) documentId?: string;
+  @IsOptional() @IsString() @MaxLength(200) onboardingId?: string;
+}
 
 @Controller()
 export class ProcessController {
   constructor(private readonly process: ProcessService) {}
 
-  @Public()
   @Get('process-definitions')
   list() {
     return this.process.list();
   }
 
-  @Public()
   @Get('process-definitions/:key')
   get(@Param('key') key: string) {
     return this.process.getLatest(key);
   }
 
-  @Public()
   @Get('process-definitions/:key/bpmn')
   async bpmn(@Param('key') key: string) {
     const def = await this.process.getLatest(key);
     return { xml: def.bpmnXml, key: def.key, version: def.version, name: def.name };
   }
 
-  @Public()
   @Get('process-definitions/:key/dmn')
   async dmn(@Param('key') key: string) {
     const def = await this.process.getLatest(key);
     return { xml: def.dmnXml, key: def.key, version: def.version };
   }
 
-  @Public()
+  @Roles('admin')
   @Put('process-definitions/:key')
-  save(@Param('key') key: string, @Body() body: { bpmnXml?: string; dmnXml?: string; name?: string }) {
+  save(@Param('key') key: string, @Body() body: SaveProcessDto) {
     return this.process.saveXml(key, body);
   }
 
-  @Public()
   @Post('process-definitions/:key/decide')
-  decide(@Body() body: { tipo?: string }) {
+  decide(@Body() body: DecideDto) {
     return this.process.decide(body.tipo ?? 'contrato');
   }
 
-  @Public()
   @Get('process-audit')
-  audit(@Query('signatureRequestId') signatureRequestId?: string, @Query('documentId') documentId?: string, @Query('onboardingId') onboardingId?: string) {
-    return this.process.listAudit({ signatureRequestId, documentId, onboardingId });
+  audit(@Query() query: AuditQueryDto) {
+    return this.process.listAudit(query);
   }
 }

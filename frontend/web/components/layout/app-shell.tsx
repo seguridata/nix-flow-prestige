@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import {
@@ -9,6 +10,7 @@ import {
   Inbox,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   Menu,
   Search,
   Send,
@@ -21,11 +23,12 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 import { SeguriDataLogo } from "@/components/brand/logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
 import { CommandPalette, useCommandPalette } from "@/components/command/command-palette";
 
-const NAV = [
+const NAV: { href: Route; label: string; icon: typeof Inbox }[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/inbox", label: "Bandeja", icon: Inbox },
   { href: "/sent", label: "Enviados", icon: Send },
@@ -46,7 +49,7 @@ export function AppShell({
   actions?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { name } = useSession();
+  const { name, email, roles } = useSession();
   const palette = useCommandPalette();
   const initials = name
     .split(" ")
@@ -132,9 +135,30 @@ export function AppShell({
             <div data-tour="notify">
               <NotificationsBell />
             </div>
-            <Avatar className="size-9">
-              <AvatarFallback>{initials}</AvatarFallback>
-            </Avatar>
+            <Popover>
+              <PopoverTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring">
+                <Avatar className="size-9">
+                  <AvatarFallback>{initials}</AvatarFallback>
+                </Avatar>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-60 p-0">
+                <div className="border-b border-border px-4 py-3">
+                  <p className="truncate text-sm font-medium">{name}</p>
+                  {email ? <p className="truncate text-xs text-muted-foreground">{email}</p> : null}
+                  {roles.length ? (
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {roles.join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+                <a
+                  href="/api/auth/logout"
+                  className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-muted"
+                >
+                  <LogOut className="size-4" /> Cerrar sesión
+                </a>
+              </PopoverContent>
+            </Popover>
           </div>
         </header>
         <motion.main

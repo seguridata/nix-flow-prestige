@@ -19,6 +19,9 @@ export interface AuthenticatedUser {
   preferredUsername?: string;
   name?: string;
   email?: string;
+  /** Identidad de negocio: hoy = preferred_username (los usuarios del realm son maria/carlos/roberto). */
+  actorId: string;
+  tenantId: string;
   roles: string[];
   raw: JWTPayload;
 }
@@ -27,6 +30,7 @@ interface KeycloakAccessToken extends JWTPayload {
   preferred_username?: string;
   name?: string;
   email?: string;
+  tenant?: string;
   realm_access?: { roles?: string[] };
 }
 
@@ -92,6 +96,8 @@ export class JwtAuthGuard implements CanActivate {
         preferredUsername: payload.preferred_username,
         name: payload.name,
         email: payload.email,
+        actorId: payload.preferred_username ?? payload.sub ?? '',
+        tenantId: payload.tenant ?? 'seguridata',
         roles: payload.realm_access?.roles ?? [],
         raw: payload,
       } satisfies AuthenticatedUser;

@@ -7,7 +7,10 @@
   "roles": {
     "realm": [
       { "name": "signer", "description": "Puede firmar y revisar documentos" },
-      { "name": "sender", "description": "Puede crear casos y enviar solicitudes de firma" }
+      { "name": "sender", "description": "Puede crear casos y enviar solicitudes de firma" },
+      { "name": "rh", "description": "Recursos Humanos: opera el onboarding e identidad" },
+      { "name": "auditor", "description": "Solo lectura: expedientes, evidencia y auditoría" },
+      { "name": "admin", "description": "Administración: procesos, políticas, tenants" }
     ]
   },
   "clients": [
@@ -20,7 +23,23 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "redirectUris": ["http://localhost:3001/*", "http://localhost:3000/*"],
-      "webOrigins": ["http://localhost:3001", "http://localhost:3000"]
+      "webOrigins": ["http://localhost:3001", "http://localhost:3000"],
+      "protocolMappers": [
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -31,6 +50,7 @@
       "lastName": "González",
       "enabled": true,
       "emailVerified": true,
+      "attributes": { "tenant": ["seguridata"] },
       "credentials": [{ "type": "password", "value": "maria123", "temporary": false }],
       "realmRoles": ["signer"]
     },
@@ -41,8 +61,9 @@
       "lastName": "Mendoza",
       "enabled": true,
       "emailVerified": true,
+      "attributes": { "tenant": ["seguridata"] },
       "credentials": [{ "type": "password", "value": "carlos123", "temporary": false }],
-      "realmRoles": ["signer"]
+      "realmRoles": ["signer", "auditor"]
     },
     {
       "username": "roberto",
@@ -51,8 +72,9 @@
       "lastName": "Gómez",
       "enabled": true,
       "emailVerified": true,
+      "attributes": { "tenant": ["seguridata"] },
       "credentials": [{ "type": "password", "value": "roberto123", "temporary": false }],
-      "realmRoles": ["signer", "sender"]
+      "realmRoles": ["signer", "sender", "rh", "admin"]
     }
   ]
 }

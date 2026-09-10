@@ -1,24 +1,39 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { Public } from '../auth/public.decorator';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { CasesService, type Case } from './cases.service';
+
+class CreateCaseDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  title!: string;
+}
+
+class ListCasesQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  tenantId?: string;
+}
 
 @Controller('cases')
 export class CasesController {
   constructor(private readonly cases: CasesService) {}
 
-  @Public()
+  @Roles('sender', 'admin')
   @Post()
-  create(@Body() body: { tenantId: string; title: string }): Promise<Case> {
-    return this.cases.create(body);
+  create(@Body() body: CreateCaseDto, @CurrentUser() user: AuthenticatedUser): Promise<Case> {
+    return this.cases.create({ tenantId: user.tenantId, title: body.title });
   }
 
-  @Public()
   @Get()
-  list(@Query('tenantId') tenantId?: string): Promise<Case[]> {
-    return this.cases.list(tenantId);
+  list(@Query() query: ListCasesQueryDto, @CurrentUser() user: AuthenticatedUser): Promise<Case[]> {
+    return this.cases.list(user.tenantId);
   }
 
-  @Public()
   @Get(':id')
   get(@Param('id') id: string): Promise<Case> {
     return this.cases.getOrThrow(id);

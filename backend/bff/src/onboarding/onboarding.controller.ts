@@ -9,9 +9,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Public } from '../auth/public.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { OnboardingService } from './onboarding.service';
-import { ActorDto, AttachIneDto, CreateOnboardingDto } from './dto';
+import { AttachIneDto, CreateOnboardingDto, OnboardingActionDto } from './dto';
 
 const MAX_IMG_BYTES = 8 * 1024 * 1024; // 8 MB por imagen (INE / selfie)
 
@@ -21,76 +23,73 @@ const imageFile = () =>
     .addMaxSizeValidator({ maxSize: MAX_IMG_BYTES })
     .build({ fileIsRequired: true });
 
+const actor = (u: AuthenticatedUser) => ({ actorId: u.actorId, actorName: u.name ?? u.actorId });
+
+/** Onboarding e identidad digital (M16). Solo RH y administración. */
 @Controller('onboarding')
+@Roles('rh', 'admin')
 export class OnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
 
-  @Public()
   @Get()
-  list() {
-    return this.onboarding.list();
+  list(@CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.list(user.tenantId);
   }
 
-  @Public()
   @Post()
-  create(@Body() body: CreateOnboardingDto) {
-    return this.onboarding.create(body);
+  create(@Body() body: CreateOnboardingDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.create({
+      ...body,
+      tenantId: user.tenantId,
+      requestedBy: user.actorId,
+      requestedByName: user.name,
+    });
   }
 
-  @Public()
   @Get(':id')
   get(@Param('id') id: string) {
     return this.onboarding.get(id);
   }
 
-  /** INE por `multipart/form-data`: `file` (imagen) + `part` (front|back) + actor. */
-  @Public()
+  /** INE por `multipart/form-data`: `file` (imagen) + `part` (front|back). */
   @Post(':id/ine')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMG_BYTES } }))
   ine(
     @Param('id') id: string,
     @Body() body: AttachIneDto,
     @UploadedFile(imageFile()) file: Express.Multer.File,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.onboarding.attachIne(id, {
       front: body.part === 'front' ? file.buffer : undefined,
       back: body.part === 'back' ? file.buffer : undefined,
-      actorId: body.actorId,
-      actorName: body.actorName,
+      ...actor(user),
     });
   }
 
-  /** Prueba de vida por `multipart/form-data`: `file` (selfie) + actor. */
-  @Public()
+  /** Prueba de vida por `multipart/form-data`: `file` (selfie). */
   @Post(':id/liveness')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMG_BYTES } }))
   liveness(
     @Param('id') id: string,
-    @Body() body: ActorDto,
     @UploadedFile(imageFile()) file: Express.Multer.File,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.onboarding.captureLiveness(id, {
-      selfie: file.buffer,
-      actorId: body.actorId,
-      actorName: body.actorName,
-    });
+    return this.onboarding.captureLiveness(id, { selfie: file.buffer, ...actor(user) });
   }
 
-  @Public()
   @Post(':id/actions/verify-ine')
-  verify(@Param('id') id: string, @Body() body: ActorDto) {
-    return this.onboarding.verifyIne(id, body);
+  verify(@Param('id') id: string, @Body() body: OnboardingActionDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.verifyIne(id, { ...actor(user), notes: body.notes });
   }
 
-  @Public()
   @Post(':id/actions/enable')
-  enable(@Param('id') id: string, @Body() body: ActorDto) {
-    return this.onboarding.enable(id, body);
+  enable(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.enable(id, actor(user));
   }
 
-  @Public()
   @Post(':id/actions/reject')
-  reject(@Param('id') id: string, @Body() body: ActorDto) {
-    return this.onboarding.reject(id, body);
+  reject(@Param('id') id: string, @Body() body: OnboardingActionDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.reject(id, { ...actor(user), notes: body.notes });
   }
 }

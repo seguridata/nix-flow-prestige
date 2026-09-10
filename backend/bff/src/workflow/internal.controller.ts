@@ -1,9 +1,16 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
+import { WorkerGuard } from '../auth/worker.guard';
 import { WorkflowService } from './workflow.service';
 import type { ContratoWorkflowInput } from '../temporal/shared';
 
+/**
+ * Endpoints que consume el worker de Temporal (activities vía HTTP). No usan
+ * JWT de Keycloak (`@Public()`) pero sí exigen el token de worker firmado
+ * (`WorkerGuard` + `X-Prestige-Worker-Token`).
+ */
 @Controller('internal/workflows')
+@UseGuards(WorkerGuard)
 export class WorkflowInternalController {
   constructor(private readonly workflow: WorkflowService) {}
 

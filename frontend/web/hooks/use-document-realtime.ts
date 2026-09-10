@@ -15,7 +15,7 @@ interface PresenceUpdatePayload {
 }
 
 function describeEvent(event: RealtimeEvent, myActorId: string): string | null {
-  if (event.actorId === myActorId) return null; // no notificamos nuestras propias acciones
+  if (event.actorId === myActorId) return null;
   const who = event.actorName ?? "Alguien";
   switch (event.type) {
     case "SIGNATURE_APPLIED":
@@ -30,55 +30,63 @@ function describeEvent(event: RealtimeEvent, myActorId: string): string | null {
 }
 
 /**
- * Presencia y notificaciones en vivo para un documento (M-realtime).
- * Se conecta al gateway de Socket.IO del BFF mientras el componente que
- * llama a este hook esté montado; se desconecta limpiamente al salir.
+ * Presencia y notificaciones en vivo para un documento. El handshake de
+ * Socket.IO se autentica con un access token de corta vida obtenido de
+ * `/api/auth/session-token` (el WS no puede pasar por el proxy de route
+ * handlers). La identidad la resuelve el gateway a partir de ese token.
  */
 export function useDocumentRealtime(documentId: string | undefined) {
-  const { signerId, name } = useSession();
+  const { signerId } = useSession();
   const [presentActors, setPresentActors] = useState<PresenceState[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     if (!documentId) return;
+    let disposed = false;
+    let socket: Socket | null = null;
 
-    const socket = io(SOCKET_URL, { transports: ["websocket"] });
-    socketRef.current = socket;
+    (async () => {
+      let token: string | undefined;
+      try {
+        const r = await fetch("/api/auth/session-token", { cache: "no-store" });
+        if (r.ok) token = (await r.json()).token;
+      } catch {
+        /* sin token no hay presencia en vivo; el resto de la vista funciona */
+      }
+      if (disposed || !token) return;
 
-    const join = () => {
-      socket.emit("join-document", { documentId, actorId: signerId, actorName: name });
-    };
+      socket = io(SOCKET_URL, { transports: ["websocket"], auth: { token } });
+      socketRef.current = socket;
 
-    socket.on("connect", () => {
-      setIsConnected(true);
-      join();
-    });
-
-    socket.on("disconnect", () => {
-      setIsConnected(false);
-    });
-
-    socket.on("presence-update", (payload: PresenceUpdatePayload) => {
-      if (payload.documentId !== documentId) return;
-      setPresentActors(payload.actors.filter((actor) => actor.actorId !== signerId));
-    });
-
-    socket.on("document-event", (event: RealtimeEvent) => {
-      if (event.documentId !== documentId) return;
-      const message = describeEvent(event, signerId);
-      if (message) toast.info(message);
-    });
+      socket.on("connect", () => {
+        setIsConnected(true);
+        socket?.emit("join-document", { documentId });
+      });
+      socket.on("disconnect", () => setIsConnected(false));
+      socket.on("presence-update", (payload: PresenceUpdatePayload) => {
+        if (payload.documentId !== documentId) return;
+        setPresentActors(payload.actors.filter((a) => a.actorId !== signerId));
+      });
+      socket.on("document-event", (event: RealtimeEvent) => {
+        if (event.documentId !== documentId) return;
+        const message = describeEvent(event, signerId);
+        if (message) toast.info(message);
+      });
+    })();
 
     return () => {
-      socket.emit("leave-document", { documentId, actorId: signerId });
-      socket.disconnect();
+      disposed = true;
+      if (socket) {
+        socket.emit("leave-document", { documentId });
+        socket.disconnect();
+      }
       socketRef.current = null;
       setIsConnected(false);
       setPresentActors([]);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentId, signerId, name]);
+  }, [documentId, signerId]);
 
   return { presentActors, isConnected };
 }

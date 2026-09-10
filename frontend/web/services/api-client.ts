@@ -1,4 +1,6 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+// Todas las llamadas pasan por el proxy de route handlers (/api/bff/*), que
+// adjunta el Bearer token de la sesión server-side. El navegador nunca ve el token.
+const BASE_URL = "/api/bff";
 
 export class ApiError extends Error {
   constructor(
@@ -24,7 +26,6 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...rest,
-      credentials: "include",
       headers: {
         // FormData: el navegador pone el content-type con el boundary correcto.
         ...(isForm ? {} : { "content-type": "application/json" }),
@@ -44,6 +45,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
+    }
     let parsed: unknown;
     try {
       parsed = await res.json();

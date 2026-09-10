@@ -6,18 +6,21 @@ import { EvidenceService } from './evidence.service';
 export class EvidenceController {
   constructor(private readonly evidence: EvidenceService) {}
 
-  @Public()
   @Get('by-request/:signatureRequestId')
   byRequest(@Param('signatureRequestId') signatureRequestId: string) {
     return this.evidence.findByRequest(signatureRequestId);
   }
 
-  @Public()
   @Get(':manifestId')
   byManifestId(@Param('manifestId') manifestId: string) {
     return this.evidence.findByManifestId(manifestId);
   }
 
+  /**
+   * Verificador público: cualquiera puede recalcular la cadena de un
+   * manifiesto a partir de su id. No expone PII ni el contenido del documento,
+   * solo `{ valid, mismatches }`.
+   */
   @Public()
   @Get(':manifestId/verify')
   verify(@Param('manifestId') manifestId: string) {

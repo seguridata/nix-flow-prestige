@@ -1,13 +1,23 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { RolesGuard } from './roles.guard';
+import { WorkerGuard } from './worker.guard';
 
 /**
- * Registra JwtAuthGuard como guard global (APP_GUARD): protege todas las
- * rutas del backend por default, salvo las marcadas explícitamente con
- * @Public(). Ver public.decorator.ts y jwt-auth.guard.ts.
+ * Cadena de guards globales (se ejecutan en orden):
+ *   1. JwtAuthGuard  — verifica el access token de Keycloak, salvo @Public().
+ *   2. RolesGuard    — exige los roles de @Roles(...) si la ruta los declara.
+ * WorkerGuard NO es global: se aplica con @UseGuards() en el controller
+ * interno del worker.
  */
+@Global()
 @Module({
-  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    WorkerGuard,
+  ],
+  exports: [WorkerGuard],
 })
 export class AuthModule {}
