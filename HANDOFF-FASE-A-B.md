@@ -134,7 +134,8 @@ Un ítem del checklist está **hecho** cuando:
 | Levantar TODO | `wsl -d Ubuntu -- bash -lc "cd /mnt/c/Users/Dave/Documents/Develop/Projects/SeguriLab/Nix-flow-prestige && bun run dev"` |
 | Reset del sandbox | mismo comando con `-- --reset` |
 | Bajar infra | `wsl -d Ubuntu -- bash -lc "cd <repo> && bun run down"` |
-| Prisma (desde `backend/bff`) | `wsl -d Ubuntu -- bash -lc "cd <repo>/backend/bff && bunx prisma migrate dev"` |
+| Prisma migrate (desde `backend/bff`) | `bunx prisma migrate deploy` — `migrate dev` **falla** en no-interactivo; las migraciones nuevas se escriben a mano en `prisma/migrations/<ts>_<slug>/migration.sql` y se aplican con `deploy` |
+| Prisma generate | matar antes los `node` de `Nix-flow-prestige` (si no, `EPERM` al renombrar el engine en Windows) |
 | Ver contenedores | `wsl -d Ubuntu -- docker ps` |
 
 `bun run dev` (raíz): infra Docker + `prisma migrate deploy` + `prisma generate`
@@ -173,7 +174,10 @@ Puertos libres: `3000` BFF · `3001` app · `5432` Postgres · `6379` Redis ·
 | `b7c91c6` | Endurecimiento BFF: `helmet`, CORS por lista (`CORS_ORIGINS`), body 2 MB, `ValidationPipe` global (whitelist+forbidNonWhitelisted+transform), `compression`, `trust proxy`, shutdown hooks, logger `pino` (`nestjs-pino`) con redacción de secretos, `ThrottlerModule`. **Elimina `DemoModule`** (`/demo/self-sign`) y los botones «prueba para firmar» de `inbox`/`sent` + `createSelfSignDemo`. Deps nuevas: helmet, compression, @nestjs/throttler, nestjs-pino, pino*, ioredis, @socket.io/redis-adapter, class-validator, class-transformer | **e2e vía WSL**: infra up + `prisma migrate deploy` + `nest start`. `GET /operations/health` → `postgres:true`, `objectStorage:true`. Cabeceras `helmet` presentes (CSP, HSTS, X-Frame-Options, sin `X-Powered-By`). `X-RateLimit-*` presentes (throttler activo). **`ValidationPipe` instalado pero sin efecto aún**: los controllers usan tipos inline, no clases DTO con `class-validator` → un `POST /cases` con campo extra pasa (201). Es el siguiente ítem del checklist. |
 | `d3693ef` | `.gitignore` dejaba de versionar todo `.md` salvo README → corregido; se versionan `branding.md`, `AGENTS.md`, `CLAUDE.md`, planes y ADRs. Añade `HANDOFF-FASE-A-B.md`. | n/a |
 | `a52c46a` | Bitácora con la verificación e2e de `b7c91c6`. | n/a |
-| `36058a7` | **De-base64 del contenido de documentos → object storage cifrado.** PDF por multipart; envelope AES-256-GCM (`src/storage/object-crypto.ts`, `STORAGE_MASTER_KEY`); BD solo `objectKey`+`hash`(claro)+`enc`+`sizeBytes`; `GET /documents/:id/content` sirve el PDF descifrado. Trazo autógrafo por multipart (`SignCommand.signatureImage: Buffer`, `pdf-stamp` con Buffers). Migración `20260910030000` + `prisma/scripts/backfill-storage.ts`. DTOs `class-validator` (documents, sign). Frontend: `createDocument` FormData, `fetchDocumentObjectUrl` (blob+revoke), `api-client` FormData+`credentials`+`put()`, `autograph-pad` emite `Blob`. Bugs latentes arreglados: `app-shell` `<SheetContent direction>` inválido; `types/shims.d.ts`; `dev.ts` `ensureEnv` fusiona claves; `bun run gen-keys`. | **e2e WSL**: upload multipart → objeto cifrado en MinIO (no `%PDF`) → `GET /content` byte-idéntico (ROUNDTRIP OK). `tsc` bff+web limpio; 11 tests bff + 18 web verdes. |
+| `36058a7` | **De-base64 del contenido de documentos → object storage cifrado.** PDF por multipart; envelope AES-256-GCM (`src/storage/object-crypto.ts`, `STORAGE_MASTER_KEY`); BD solo `objectKey`+`hash`(claro)+`enc`+`sizeBytes`; `GET /documents/:id/content` sirve el PDF descifrado. Trazo autógrafo por multipart. Migración `20260910030000` + `backfill-storage.ts`. | **e2e WSL**: ROUNDTRIP OK, objeto cifrado en MinIO. `tsc` + 11+18 tests. |
+| `1f5869a` | **De-base64 de onboarding** (INE + selfie) → storage cifrado; `/ine` y `/liveness` a multipart; `libs/file.ts` eliminado. Migración `20260910040000`. | **e2e WSL**: 3 objetos cifrados, `GET` sin campos crudos. |
+| `6766848` | Handoff al día. | n/a |
+| `83ba942` | **FASE A — identidad OIDC real + cierre de superficie pública.** Backend: `@Public()` fuera salvo health/consent/capabilities/verify/internal; `RolesGuard`+`@Roles()` (roles `signer/sender/rh/auditor/admin` en el realm + claim `tenant`); `CurrentUser` da `actorId`/`tenantId` a todos los controllers; `WorkerGuard` HMAC en `/internal/*`; handshake WS autenticado; DTOs `class-validator` en 8 controllers. Frontend Next 16: OIDC Auth Code + PKCE (`libs/auth.ts`), cookie httpOnly firmada (jose), `/api/auth/*`, proxy `/api/bff/[...path]` (adjunta Bearer), `proxy.ts` (ex-middleware) protege rutas, `/login`, logout, `useSession()` real, fuera `maria`. | **e2e WSL**: sin token 401; maria→403 / roberto→200 (roles); `tenantId` del claim; worker HMAC 201 / viejo 401; `next build` OK; `GET /`→307 `/login`; `/api/auth/login`→307 authorize PKCE S256. `tsc` bff+web limpio; 11+18 tests. |
 
 ### Verificación e2e disponible
 
@@ -237,25 +241,23 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - [x] `evidence.service`: solo usa `document.hash` — confirmado, sin cambios
 - [x] `BODY_LIMIT` en 2 MB; documentos y trazos ya no viajan en JSON
 
-**Fase A — Backend (identidad y cierre de superficie)**
-- [ ] `A-01`..`A-12` del checklist original — ver detalle abajo
-- [ ] Quitar `@Public()` de **todos** los controllers salvo: `GET /operations/health`, `GET /signature-requests/consent`, verificador público de evidencia (`GET /evidence/:manifestId/verify` cuando exista la ruta pública `/verificar`)
-- [ ] `CurrentUser` en cada handler que hoy recibe `actorId`/`requestedBy`/`tenantId` por body o literal → tomarlos del token
-- [ ] `@Roles()` guard + roles `signer`, `sender`, `rh`, `auditor`, `admin` en `prestige-realm.json`
-- [ ] Autorización por recurso (un firmante solo ve lo suyo; RH su cola; auditor solo lectura)
-- [ ] `tenantId` desde claim de organización del token; quitar literal `'seguridata'` (onboarding, cases-controller body)
-- [ ] Guard de canal interno worker→BFF sobre `/internal/*` (D4); actualizar `temporal/activities.ts` para firmar el token
-- [ ] Handshake Socket.IO autenticado + filtro por tenant/documento (D5); CORS del gateway desde `CORS_ORIGINS`
-- [ ] `step-up auth` para acciones sensibles (cancelar, habilitar firmante, publicar proceso)
+**Fase A — Backend (identidad y cierre de superficie)** — `83ba942`
+- [x] Quitar `@Public()` de todos los controllers salvo health, consent, capabilities, `evidence/:id/verify`, `/internal/*`
+- [x] `CurrentUser` en cada handler que recibía `actorId`/`requestedBy`/`tenantId` → del token
+- [x] `@Roles()` guard + roles `signer/sender/rh/auditor/admin` en `prestige-realm.json` + claim `tenant` (protocol mapper)
+- [~] Autorización por recurso — roles sí; el scoping fino (firmante solo ve lo suyo en `GET /signature-requests`) queda pendiente (`A-07`)
+- [x] `tenantId` desde el claim; literal `'seguridata'` fuera
+- [x] `WorkerGuard` HMAC en `/internal/*` (D4); `activities.ts` firma `X-Prestige-Worker-Token`
+- [x] Handshake Socket.IO autenticado (D5); identidad de presencia del token; CORS del gateway desde `CORS_ORIGINS`
+- [ ] `step-up auth` para acciones sensibles (`A-11`)
 
-**Fase A — Frontend (OIDC real, D3)**
-- [ ] Leer `frontend/web/node_modules/next/dist/docs/` (Next.js 16 tiene breaking changes; ver `frontend/web/AGENTS.md`)
-- [ ] Route handlers `app/api/auth/login|callback|logout|session` con `openid-client` (Auth Code + PKCE) contra `prestige-web`
-- [ ] Sesión en cookie httpOnly (iron-session o JWT `jose`); refresh de token
-- [ ] `middleware.ts` protege rutas y redirige a login; página de sesión expirada
-- [ ] `services/api-client.ts` adjunta `Authorization: Bearer` y maneja 401 → refresh/login
-- [ ] Eliminar `store/session-store.ts` (`maria`); `useSession()` lee de la sesión real
-- [ ] Botón de logout en el `AppShell`/topbar
+**Fase A — Frontend (OIDC real, D3)** — `83ba942`
+- [x] OIDC Auth Code + PKCE a mano sobre endpoints de Keycloak (`libs/auth.ts`); sin `openid-client`
+- [x] Sesión en cookie httpOnly firmada (jose HS256) + refresh automático
+- [x] `proxy.ts` (ex-`middleware.ts`, renombrado en Next 16) protege rutas → `/login`
+- [x] Patrón BFF: `api-client` → `/api/bff/[...path]` (route handler adjunta el Bearer); 401 → `/login`
+- [x] `store/session-store.ts` → `useSession()` real desde `/api/auth/me` (SessionProvider en `providers.tsx`); fuera `maria`
+- [x] Botón «Cerrar sesión» en el `AppShell`
 
 **Fase A — Ceremonia de firma a pantalla completa (TP-16)**
 - [ ] Flujo guiado documento → consentimiento → método → firma → acuse, fuera del `AppShell`, una acción por pantalla, barra de progreso
@@ -335,16 +337,16 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 
 ### Detalle Fase A — `A-01`..`A-12` (del informe original)
 
-- [ ] `A-01` Login OIDC en el portal (Auth Code + PKCE) contra Keycloak realm `prestige`
-- [ ] `A-02` Sesión real (cookie httpOnly + refresh); eliminar `session-store` con `maria`
-- [ ] `A-03` `middleware.ts` protege rutas + página de sesión expirada
-- [ ] `A-04` Quitar `@Public()` ruta por ruta (dejar solo health, consent, verificador)
-- [ ] `A-05` `requestedBy`/`actorId`/`actorName` del token en todos los controllers
-- [ ] `A-06` `tenantId` del token; quitar literal `'seguridata'` (onboarding, cases body)
-- [ ] `A-07` Autorización por recurso (firmante/RH/auditor)
-- [ ] `A-08` Roles en el realm: `signer`, `sender`, `rh`, `auditor`, `admin`; guards por rol
-- [ ] `A-09` Guard real del canal interno worker→BFF (`/internal/*`); firmar token en `activities.ts`
-- [ ] `A-10` Handshake Socket.IO autenticado + tenant/documento; CORS del gateway unificado
+- [x] `A-01` Login OIDC en el portal (Auth Code + PKCE) contra Keycloak realm `prestige`
+- [x] `A-02` Sesión real (cookie httpOnly + refresh); eliminar `session-store` con `maria`
+- [x] `A-03` `middleware.ts` protege rutas + página de sesión expirada
+- [x] `A-04` Quitar `@Public()` ruta por ruta (dejar solo health, consent, verificador)
+- [x] `A-05` `requestedBy`/`actorId`/`actorName` del token en todos los controllers
+- [x] `A-06` `tenantId` del token; quitar literal `'seguridata'` (onboarding, cases body)
+- [~] `A-07` Autorización por recurso — roles listos; scoping fino de GET /signature-requests pendiente
+- [x] `A-08` Roles en el realm: `signer`, `sender`, `rh`, `auditor`, `admin`; guards por rol
+- [x] `A-09` Guard real del canal interno worker→BFF (`/internal/*`); firmar token en `activities.ts`
+- [x] `A-10` Handshake Socket.IO autenticado + tenant/documento; CORS del gateway unificado
 - [ ] `A-11` Step-up auth para acciones sensibles
 - [ ] `A-12` Enlaces de un solo uso con expiración para firmantes externos sin cuenta Keycloak
 
@@ -443,7 +445,11 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - `36058a7` **de-base64 de documentos** → object storage cifrado (envelope AES-256-GCM), multipart, trazo autógrafo por multipart, migración + backfill, DTOs, frontend blob URLs. Verificado e2e por ROUNDTRIP en WSL. También arreglé bugs latentes que ocultaba `.next/dev/types` corrupto (`.next` borrado; `SheetContent direction`; shims de tipos; `dev.ts` merge de `.env`).
 - `1f5869a` **de-base64 de onboarding** (INE frente/reverso + selfie) → object storage cifrado; `/ine` y `/liveness` a multipart; DTOs; `canvas.toBlob` en el frontend; `libs/file.ts` eliminado. Verificado e2e en WSL: 3 objetos cifrados en MinIO, `GET` sin campos crudos. **Base64 de documentos/imágenes: eliminado de la BD.**
 - Nota entorno: `prisma generate` en Windows da `EPERM` al renombrar `query_engine-windows.dll.node` si hay un `nest`/BFF de una sesión previa vivo. **Fix:** matar los procesos `node` cuyo command line contenga `Nix-flow-prestige` antes de `generate` (PowerShell: `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where CommandLine -match 'Nix-flow-prestige' | ForEach Stop-Process -Id $_.ProcessId -Force`).
-- **Retomar en:** OLA 1 → (1) DTOs `class-validator` en el resto de controllers (cases, evidence, signature-fields, collaboration, workflow, process, operations) + filtro de excepciones global + paginación por cursor, (2) Redis real (D10), (3) **Fase A backend** (`@Public()` fuera salvo health/consent/verify + `CurrentUser`/roles/tenant + guard worker `/internal/*` + handshake WS), (4) **Fase A frontend OIDC** (D3: `openid-client`, cookie httpOnly, middleware, quitar `session-store`), (5) ceremonia de firma a pantalla completa.
+- `83ba942` **FASE A completa** (identidad OIDC + cierre de superficie), backend y frontend, verificada e2e en WSL (roles, tenant del claim, worker HMAC, redirect a `/login`, PKCE). Pendientes menores de Fase A: `A-07` scoping fino por recurso, `A-11` step-up auth, `A-12` enlaces de un uso (va con M13).
+  - Frontend Next 16: `middleware` se llama **`proxy.ts`** ahora; `cookies()` es async. Patrón BFF: todo el tráfico va por `/api/bff/[...path]` (route handler que adjunta el Bearer server-side); el WS usa `/api/auth/session-token`.
+  - Realm reimportado con `down -v` + `up` (roles `rh/auditor/admin`, claim `tenant`). El token debe pedirse al MISMO host que `KEYCLOAK_ISSUER` (`localhost`, no `127.0.0.1`) o el guard rechaza por `iss` mismatch.
+- **Retomar en:** (1) **DTOs + filtro de excepciones global + paginación por cursor** en el resto de listados; (2) **Redis real** (D10); (3) **ceremonia de firma a pantalla completa** (TP-16); (4) **OLA 2 — Fase B** (cripto real: `KeyCustodian` port + PAdES `@signpdf/signpdf` + TSA RFC 3161 `uts-server` + manifiesto firmado + verificador offline).
+- Verificación pendiente: login OIDC **completo en navegador** (el `curl` llega hasta el redirect a Keycloak; falta rellenar el form y volver por `/api/auth/callback`). Hacerlo con Playwright o a mano al retomar.
 
 ### Sesión 2 — (pendiente)
 - ...
