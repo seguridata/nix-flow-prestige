@@ -95,7 +95,13 @@ export default function InboxPage() {
                   </div>
                   <div className="mt-6 flex gap-2">
                     <Button asChild className="flex-1">
-                      <Link href={`/documents/${item.documentId}`}>
+                      <Link
+                        href={
+                          item.myStatus === "PENDIENTE"
+                            ? `/documents/${item.documentId}/firmar`
+                            : `/documents/${item.documentId}`
+                        }
+                      >
                         {item.myStatus === "PENDIENTE" ? "Revisar y firmar" : "Ver expediente"}
                       </Link>
                     </Button>
