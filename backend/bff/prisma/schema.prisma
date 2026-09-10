@@ -164,6 +164,12 @@ model EvidenceManifest {
   timestampProvider    String
   timestampIssuedAt    DateTime
   timestampTokenHash   String
+  /// Token RFC 3161 (CMS SignedData, DER en base64) sobre packageHash. Null si TSA_URL no está configurada.
+  timestampToken       String?  @db.Text
+  /// Firma Ed25519 del JSON canónico del manifiesto (append-only, verificable offline).
+  manifestHash         String?
+  manifestSignature    String?
+  manifestSigningKeyId String?
   validationConclusion String
   validationReasons    Json
   createdAt            DateTime @default(now())

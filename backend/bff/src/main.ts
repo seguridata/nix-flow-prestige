@@ -28,7 +28,16 @@ async function bootstrap() {
 
   app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(compression());
+  app.use(
+    compression({
+      // No comprimir binarios ya comprimidos (ZIP del expediente, PDFs).
+      filter: (req, res) => {
+        const type = String(res.getHeader('Content-Type') ?? '');
+        if (/application\/(zip|pdf|octet-stream)/.test(type)) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
 
   const bodyLimit = process.env.BODY_LIMIT ?? '2mb';
   app.useBodyParser('json', { limit: bodyLimit });
