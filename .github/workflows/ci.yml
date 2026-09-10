@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://prestige:prestige@localhost:5432/prestige?schema=public
+  # Claves de desarrollo — sólo para que arranquen tsc/tests/build; NO son secretos reales.
+  STORAGE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  SESSION_SECRET: ci-session-secret-not-used-in-prod-0000000000
+  WORKER_SHARED_SECRET: ci-worker-secret-0000000000000000000000000000
+  # Frontend (next build)
+  KEYCLOAK_ISSUER: http://localhost:8081/realms/prestige
+  OIDC_CLIENT_ID: prestige-web
+  OIDC_REDIRECT_URI: http://localhost:3001/api/auth/callback
+  BFF_URL: http://localhost:3000
+  NEXT_PUBLIC_API_URL: http://localhost:3000
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: prestige
+          POSTGRES_PASSWORD: prestige
+          POSTGRES_DB: prestige
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U prestige"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Prisma generate
+        working-directory: backend/bff
+        run: bunx prisma generate
+
+      - name: Prisma migrate deploy
+        working-directory: backend/bff
+        run: bunx prisma migrate deploy
+
+      - name: Migration drift check
+        working-directory: backend/bff
+        run: >-
+          bunx prisma migrate diff
+          --from-migrations prisma/migrations
+          --to-schema-datamodel prisma/schema.prisma
+          --exit-code
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
