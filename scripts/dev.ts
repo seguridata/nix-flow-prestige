@@ -188,6 +188,9 @@ async function up() {
   log("bun install…");
   if ((await run(["bun", "install"])) !== 0) fail("bun install falló");
 
+  log("PKI interna (CA de firma DIGITAL)…");
+  if ((await run(["bun", "scripts/pki-init.ts"])) !== 0) fail("pki:init falló");
+
   log("Levantando Postgres, Keycloak, Temporal, MinIO, Redis…");
   if ((await run([...COMPOSE, "up", "-d"])) !== 0) fail("docker compose up falló");
 

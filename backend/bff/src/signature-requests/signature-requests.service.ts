@@ -225,31 +225,48 @@ export class SignatureRequestsService {
         }
       }
 
+      // Recuadro de firma: el propio del firmante, o cualquiera del documento.
+      const field =
+        (await tx.signatureField.findFirst({
+          where: { documentId: request.documentId, signerId: body.signerId, type: 'SIGNATURE' },
+        })) ??
+        (await tx.signatureField.findFirst({
+          where: { documentId: request.documentId, type: 'SIGNATURE' },
+        }));
+
+      // El PDF actual, descifrado desde el storage.
+      const currentPdf = await this.storage.getObject(
+        request.document.objectKey,
+        request.document.enc as unknown as EncMeta,
+      );
+
       const signed = await this.signing.sign({
         method: body.method,
         signerId: body.signerId,
+        signerName: signer.name ?? undefined,
+        documentId: request.documentId,
         documentHash: request.document.hash,
+        pdfBytes: currentPdf,
         signatureImage: autographImage,
+        field: field
+          ? {
+              page: field.page,
+              xPct: field.xPct,
+              yPct: field.yPct,
+              widthPct: field.widthPct,
+              heightPct: field.heightPct,
+            }
+          : undefined,
         biometricSessionId: body.biometricSessionId,
       });
 
-      if (body.method === 'AUTOGRAFA' && autographImage?.length) {
-        const field =
-          (await tx.signatureField.findFirst({
-            where: { documentId: request.documentId, signerId: body.signerId, type: 'SIGNATURE' },
-          })) ??
-          (await tx.signatureField.findFirst({
-            where: { documentId: request.documentId, type: 'SIGNATURE' },
-          }));
-        const currentPdf = await this.storage.getObject(
-          request.document.objectKey,
-          request.document.enc as unknown as EncMeta,
-        );
-        const stamped = await this.stamp.stampAutograph(currentPdf, autographImage, field ?? undefined);
+      // Si el adaptador incrustó la firma (DIGITAL PAdES / AUTÓGRAFA), la nueva
+      // versión del PDF se guarda cifrada en el storage.
+      if (signed.signedPdf?.length) {
         const stored = await this.storage.putObject({
           prefix: 'documents',
           filename: request.document.filename,
-          bytes: stamped,
+          bytes: signed.signedPdf,
           contentType: 'application/pdf',
         });
         await tx.document.update({
@@ -290,13 +307,21 @@ export class SignatureRequestsService {
         at: now,
       });
       await this.workflow.signalSigned(result.id, body.signerId);
+      const sr = (result as { lastSignResult?: import('../signing/signer-adapter').SignResult })
+        .lastSignResult;
       await this.collab.audit({
         signatureRequestId: result.id,
         documentId: result.documentId,
         actorId: body.signerId,
         actorName: signerName,
         action: 'SIGNATURE_APPLIED',
-        payload: { method: body.method },
+        payload: {
+          method: body.method,
+          algorithm: sr?.algorithm,
+          provider: sr?.provider,
+          signatureHash: sr?.signatureHash,
+          certificate: sr?.certificate,
+        },
       });
       if (result.requestedBy && result.requestedBy !== body.signerId) {
         await this.collab.notify(
