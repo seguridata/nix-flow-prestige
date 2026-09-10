@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Roles } from '../auth/roles.decorator';
+import { AuditChainService } from '../collaboration/audit-chain.service';
 import { ProcessService } from './process.service';
 
 class SaveProcessDto {
@@ -34,7 +35,10 @@ class AuditQueryDto {
 
 @Controller()
 export class ProcessController {
-  constructor(private readonly process: ProcessService) {}
+  constructor(
+    private readonly process: ProcessService,
+    private readonly auditChain: AuditChainService,
+  ) {}
 
   @Get('process-definitions')
   list() {
@@ -72,5 +76,17 @@ export class ProcessController {
   @Get('process-audit')
   audit(@Query() query: AuditQueryDto) {
     return this.process.listAudit(query);
+  }
+
+  /**
+   * M11 — verifica la cadena de auditoría inmutable. Sin parámetros: cadena
+   * GLOBAL (recalcula todo). Con `signatureRequestId`/`onboardingId`: SCOPED.
+   */
+  @Get('process-audit/verify')
+  verifyAudit(@Query() query: AuditQueryDto) {
+    return this.auditChain.verify({
+      signatureRequestId: query.signatureRequestId,
+      onboardingId: query.onboardingId,
+    });
   }
 }

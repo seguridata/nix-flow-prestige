@@ -2,6 +2,11 @@
 // antes de que se evalúen los imports de Nest/Prisma de abajo.
 import './tracing';
 import 'reflect-metadata';
+
+// M11 — `ProcessAuditEvent.seq` es BIGINT; que `JSON.stringify` no reviente.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (this: bigint) {
+  return this.toString();
+};
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';

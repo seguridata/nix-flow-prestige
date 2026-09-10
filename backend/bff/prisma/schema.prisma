@@ -395,8 +395,14 @@ model ProcessDefinition {
   @@index([key])
 }
 
+/// M11 — auditoría inmutable encadenada. Cada evento lleva `seq` monótono,
+/// `prevHash` (hash del anterior) y `hash` = SHA-256(prevHash + JSON canónico).
+/// La cabeza global vive en `AuditAnchor` y se toma con `FOR UPDATE` al escribir.
 model ProcessAuditEvent {
   id                 String   @id @default(uuid())
+  seq                BigInt?  @unique
+  prevHash           String?
+  hash               String?
   signatureRequestId String?
   documentId         String?
   onboardingId       String?
@@ -409,6 +415,15 @@ model ProcessAuditEvent {
   @@index([signatureRequestId, createdAt])
   @@index([documentId, createdAt])
   @@index([onboardingId, createdAt])
+  @@index([seq])
+}
+
+/// M11 — cabeza (singleton) de la cadena de auditoría global.
+model AuditAnchor {
+  id        String   @id
+  seq       BigInt   @default(0)
+  hash      String   @default("")
+  updatedAt DateTime @updatedAt
 }
 
 model ProcessWatcher {

@@ -10,6 +10,7 @@ import { ManifestSigner } from './manifest-signer';
 import { requestTimestamp, verifyTimestampToken } from '../signing/tsa/rfc3161';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
+import { AuditChainService } from '../collaboration/audit-chain.service';
 
 export interface EvidenceDossier {
   manifestId: string;
@@ -29,6 +30,8 @@ export interface EvidenceVerificationResult {
     chainOfCustody: boolean;
     manifestSignature: boolean | 'sin-firma';
     timestamp: boolean | 'sin-sello';
+    /** M11 — cadena de auditoría inmutable del proceso (scoped a la solicitud). */
+    auditChain: boolean;
   };
 }
 
@@ -74,6 +77,7 @@ export class EvidenceService {
     private readonly manifestSigner: ManifestSigner,
     private readonly storage: StorageService,
     private readonly webhooks: WebhooksService,
+    private readonly auditChain: AuditChainService,
   ) {}
 
   async generateForRequest(signatureRequestId: string): Promise<EvidenceManifest> {
@@ -345,6 +349,7 @@ export class EvidenceService {
           chainOfCustody: false,
           manifestSignature: 'sin-firma',
           timestamp: 'sin-sello',
+          auditChain: false,
         },
       };
     }
@@ -424,6 +429,11 @@ export class EvidenceService {
       if (!check.valid) mismatches.push(`Sello de tiempo inválido: ${check.reason}`);
     }
 
+    const auditChainCheck = await this.auditChain
+      .verify({ signatureRequestId: manifest.signatureRequestId })
+      .catch(() => ({ ok: false }));
+    if (!auditChainCheck.ok) mismatches.push('Cadena de auditoría inmutable alterada o incompleta');
+
     return {
       valid: mismatches.length === 0,
       mismatches,
@@ -434,6 +444,7 @@ export class EvidenceService {
         chainOfCustody: chainOk,
         manifestSignature: manifestSigOk,
         timestamp: tsOk,
+        auditChain: auditChainCheck.ok,
       },
     };
   }

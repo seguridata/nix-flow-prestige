@@ -3,6 +3,7 @@ import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvidenceService } from '../evidence/evidence.service';
 import { SignerMailService } from '../notifications/signer-mail.service';
+import { AuditChainService } from '../collaboration/audit-chain.service';
 import {
   CONTRATO_DOS_PARTES,
   PRESTIGE_TASK_QUEUE,
@@ -35,6 +36,7 @@ export class WorkflowService {
     private readonly prisma: PrismaService,
     private readonly evidence: EvidenceService,
     private readonly mail: SignerMailService,
+    private readonly auditChain: AuditChainService,
   ) {}
 
   private async client(): Promise<Client> {
@@ -398,9 +400,8 @@ export class WorkflowService {
     action: string,
     payload: Record<string, unknown>,
   ) {
-    return this.prisma.processAuditEvent.create({
-      data: { signatureRequestId, documentId, actorId: 'system', action, payload: payload as object },
-    });
+    // M11 — por la cadena inmutable, igual que el resto de la auditoría.
+    return this.auditChain.append({ signatureRequestId, documentId, actorId: 'system', action, payload });
   }
 
   private async signal(signatureRequestId: string, kind: 'sign' | 'reject', signerId: string) {

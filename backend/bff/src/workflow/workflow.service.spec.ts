@@ -135,8 +135,14 @@ function makeService(opts: {
     sendCompleted: vi.fn().mockResolvedValue(undefined),
     sendInvites: vi.fn().mockResolvedValue(undefined),
   };
+  const auditChain = {
+    append: async (e: { action: string; payload: unknown }) => {
+      audits.push({ action: e.action, payload: e.payload });
+      return e;
+    },
+  };
   return {
-    service: new WorkflowService(prisma, evidence, mail as never),
+    service: new WorkflowService(prisma, evidence, mail as never, auditChain as never),
     tasks,
     notifications,
     audits,
