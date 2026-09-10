@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { evaluateDmn } from './dmn-engine';
 import {
   CONTRATO_BPMN,
   DEFAULT_DECISION_RULES,
@@ -81,14 +82,58 @@ export class ProcessService implements OnModuleInit {
     });
   }
 
-  decide(tipo: string) {
-    const rules = DEFAULT_DECISION_RULES;
-    const match = rules.find((r) => r.tipo === tipo.toLowerCase()) ?? rules.find((r) => r.tipo === '*');
+  private readonly log = new Logger(ProcessService.name);
+
+  /**
+   * Decide SLA / orden / método a partir de un contexto. Evalúa DE VERDAD el
+   * `dmnXml` del proceso con el motor DMN (FEEL); si el proceso no tiene DMN,
+   * evalúa el `decisionRules` guardado; como último recurso, la constante.
+   */
+  async decide(context: Record<string, unknown>, processKey = 'contrato-dos-partes') {
+    const tipo = String(context.tipo ?? 'contrato').toLowerCase();
+    const ctx = { ...context, tipo };
+
+    const def = await this.prisma.processDefinition
+      .findFirst({ where: { key: processKey }, orderBy: { version: 'desc' } })
+      .catch(() => null);
+
+    // 1. Motor DMN sobre el dmnXml del proceso.
+    if (def?.dmnXml) {
+      try {
+        const result = evaluateDmn(def.dmnXml, ctx);
+        const out = (result?.outputs ?? {}) as Record<string, unknown>;
+        if (out.slaHours != null || out.order != null || out.method != null) {
+          return {
+            tipo,
+            slaHours: Number(out.slaHours ?? 48),
+            order: String(out.order ?? 'SECUENCIAL'),
+            method: out.method != null ? String(out.method) : undefined,
+            hitPolicy: result?.hitPolicy ?? 'UNIQUE',
+            source: 'dmn' as const,
+            matchedRules: result?.matchedRules ?? [],
+          };
+        }
+      } catch (error) {
+        this.log.warn(`DMN no evaluó (${(error as Error).message}); uso decisionRules`);
+      }
+    }
+
+    // 2. decisionRules guardado en la definición (o la constante).
+    const rules = (Array.isArray(def?.decisionRules) ? def!.decisionRules : DEFAULT_DECISION_RULES) as {
+      tipo: string;
+      slaHours: number;
+      order: string;
+      method?: string;
+    }[];
+    const match = rules.find((r) => r.tipo === tipo) ?? rules.find((r) => r.tipo === '*');
     return {
       tipo,
       slaHours: match?.slaHours ?? 48,
       order: match?.order ?? 'SECUENCIAL',
+      method: match?.method,
       hitPolicy: 'FIRST',
+      source: def?.decisionRules ? ('rules' as const) : ('default' as const),
+      matchedRules: match ? [match.tipo] : [],
     };
   }
 

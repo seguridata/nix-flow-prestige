@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Roles } from '../auth/roles.decorator';
 import { ProcessService } from './process.service';
 
@@ -17,6 +17,13 @@ class SaveProcessDto {
 class DecideDto {
   @IsOptional() @IsString() @MaxLength(80)
   tipo?: string;
+
+  @IsOptional() @IsString() @MaxLength(120)
+  processKey?: string;
+
+  /** Contexto adicional para el motor DMN (monto, area, riesgo, …). */
+  @IsOptional() @IsObject()
+  context?: Record<string, unknown>;
 }
 
 class AuditQueryDto {
@@ -58,8 +65,8 @@ export class ProcessController {
   }
 
   @Post('process-definitions/:key/decide')
-  decide(@Body() body: DecideDto) {
-    return this.process.decide(body.tipo ?? 'contrato');
+  decide(@Param('key') key: string, @Body() body: DecideDto) {
+    return this.process.decide({ tipo: body.tipo ?? 'contrato', ...(body.context ?? {}) }, body.processKey ?? key);
   }
 
   @Get('process-audit')
