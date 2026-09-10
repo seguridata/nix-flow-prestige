@@ -100,7 +100,7 @@ export function AppShell({
               <SheetTrigger className="rounded-md p-2 hover:bg-muted" aria-label="Menú">
                 <Menu className="size-4" />
               </SheetTrigger>
-              <SheetContent direction="left" title="Navegación" className="bg-secondary text-secondary-foreground">
+              <SheetContent title="Navegación" className="bg-secondary text-secondary-foreground">
                 <div className="px-5 py-5">
                   <SeguriDataLogo inverted />
                 </div>

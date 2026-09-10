@@ -58,7 +58,9 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
     const document = {
       id: req.documentId,
       hash: 'abc',
-      contentBase64: Buffer.from('%PDF-1.4').toString('base64'),
+      objectKey: 'documents/2026-01-01/obj-1.pdf',
+      enc: { v: 1, alg: 'AES-256-GCM', iv: 'x', tag: 'x', dek: { wrapped: 'x', iv: 'x', tag: 'x' } },
+      filename: 'contrato.pdf',
       caseId: 'case-1',
     };
     if (!includeSigners) return { ...req, document };
@@ -142,7 +144,9 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
       findUnique: async () => ({
         id: DOCUMENT_ID,
         hash: 'abc',
-        contentBase64: Buffer.from('%PDF-1.4').toString('base64'),
+        objectKey: 'documents/2026-01-01/obj-1.pdf',
+        enc: { v: 1, alg: 'AES-256-GCM', iv: 'x', tag: 'x', dek: { wrapped: 'x', iv: 'x', tag: 'x' } },
+        filename: 'contrato.pdf',
         caseId: 'case-1',
       }),
       update: async () => ({}),
@@ -165,7 +169,16 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     sign: vi.fn().mockResolvedValue({ algorithm: 'HMAC-SHA256', signatureHash: 'x', provider: 'test' }),
     capabilities: vi.fn().mockReturnValue([]),
   };
-  const stamp = { stampAutograph: vi.fn().mockResolvedValue('c3RhbXBlZA==') };
+  const stamp = { stampAutograph: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 stamped')) };
+  const storage = {
+    getObject: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4')),
+    putObject: vi.fn().mockResolvedValue({
+      objectKey: 'documents/2026-01-01/obj-2.pdf',
+      sha256: 'def',
+      sizeBytes: 15,
+      enc: { v: 1, alg: 'AES-256-GCM', iv: 'y', tag: 'y', dek: { wrapped: 'y', iv: 'y', tag: 'y' } },
+    }),
+  };
   const collab = { notify: vi.fn(), audit: vi.fn() };
 
   const service = new SignatureRequestsService(
@@ -175,6 +188,7 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     workflow as never,
     signing as never,
     stamp as never,
+    storage as never,
     collab as never,
   );
   return { service, requests, signers, realtime, evidence };

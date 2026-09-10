@@ -1,6 +1,20 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseFilePipeBuilder,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/public.decorator';
 import { SignatureRequestsService, type SignatureMethod, type SignerRole, type SigningOrder } from './signature-requests.service';
+import { SignActionDto } from './dto';
+
+const MAX_STROKE_BYTES = 2 * 1024 * 1024; // 2 MB — un PNG de trazo es de ~10–100 KB
 
 @Controller('signature-requests')
 export class SignatureRequestsController {
@@ -60,20 +74,26 @@ export class SignatureRequestsController {
     return this.signatureRequests.recordConsent(id, body);
   }
 
+  /**
+   * Firma. `multipart/form-data` cuando el método es AUTÓGRAFA (campo `file`
+   * con el PNG del trazo); JSON en los demás casos. El trazo nunca viaja ni
+   * se persiste como base64.
+   */
   @Public()
   @Post(':id/actions/sign')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_STROKE_BYTES } }))
   sign(
     @Param('id') id: string,
-    @Body()
-    body: {
-      signerId: string;
-      method: SignatureMethod;
-      signatureImageBase64?: string;
-      biometricSessionId?: string;
-      consentAccepted?: boolean;
-    },
+    @Body() body: SignActionDto,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addFileTypeValidator({ fileType: 'image/png' })
+        .addMaxSizeValidator({ maxSize: MAX_STROKE_BYTES })
+        .build({ fileIsRequired: false }),
+    )
+    file?: Express.Multer.File,
   ) {
-    return this.signatureRequests.sign(id, body);
+    return this.signatureRequests.sign(id, body, file?.buffer);
   }
 
   @Public()

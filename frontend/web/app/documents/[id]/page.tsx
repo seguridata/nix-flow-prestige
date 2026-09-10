@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -18,7 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/store/session-store";
 import { useDocumentRealtime } from "@/hooks/use-document-realtime";
-import { fetchDocument, fetchDocumentContent } from "@/services/documents-service";
+import { fetchDocument, fetchDocumentObjectUrl } from "@/services/documents-service";
 import {
   cancelRequest,
   delegateRequest,
@@ -57,8 +57,15 @@ export default function DocumentDetailPage({
 
   const contentQuery = useQuery({
     queryKey: ["document-content", documentId],
-    queryFn: () => fetchDocumentContent(documentId),
+    queryFn: () => fetchDocumentObjectUrl(documentId),
   });
+  // El object URL apunta a un blob en memoria: liberarlo al cambiar o desmontar.
+  useEffect(() => {
+    const url = contentQuery.data;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [contentQuery.data]);
 
   const requestsQuery = useQuery({
     queryKey: ["signature-requests", "document", documentId],
@@ -70,10 +77,7 @@ export default function DocumentDetailPage({
   const request = requestsQuery.data?.[0];
   const me = request?.signers.find((s) => s.signerId === signerId);
 
-  const pdfDataUrl = useMemo(() => {
-    if (!contentQuery.data?.contentBase64) return null;
-    return `data:application/pdf;base64,${contentQuery.data.contentBase64}`;
-  }, [contentQuery.data]);
+  const pdfDataUrl = contentQuery.data ?? null;
 
   const [methodDialogOpen, setMethodDialogOpen] = useState(false);
   const [delegateTo, setDelegateTo] = useState("");
@@ -108,11 +112,15 @@ export default function DocumentDetailPage({
   const signMutation = useMutation({
     mutationFn: (payload: {
       method: SignatureMethod;
-      signatureImageBase64?: string;
+      autograph?: Blob;
       consentAccepted: boolean;
     }) => {
       if (!request) throw new Error("No hay solicitud de firma para este documento");
-      return signRequest(request.id, { signerId, ...payload });
+      return signRequest(
+        request.id,
+        { signerId, method: payload.method, consentAccepted: payload.consentAccepted },
+        payload.autograph,
+      );
     },
     onSuccess: () => {
       toast.success("Documento firmado. El trazo queda dentro del recuadro verde.");

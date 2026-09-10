@@ -8,7 +8,7 @@
  *   bun run down -- --volumes
  */
 
-import { copyFileSync, existsSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -61,11 +61,37 @@ async function output(cmd: string[]): Promise<{ code: number; text: string }> {
   return { code, text: text.trim() };
 }
 
+function envKeys(text: string): Set<string> {
+  return new Set(
+    text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"))
+      .map((l) => l.split("=")[0].trim()),
+  );
+}
+
 function ensureEnv(example: string, dest: string) {
-  if (existsSync(dest)) return;
   if (!existsSync(example)) fail(`Falta ${example}`);
-  copyFileSync(example, dest);
-  log(`Creado ${dest.slice(ROOT.length + 1)} desde example`);
+  const rel = dest.slice(ROOT.length + 1);
+  if (!existsSync(dest)) {
+    copyFileSync(example, dest);
+    log(`Creado ${rel} desde example`);
+    return;
+  }
+  // El .env ya existe: añade solo las claves nuevas que trae el example.
+  const exampleText = readFileSync(example, "utf8");
+  const have = envKeys(readFileSync(dest, "utf8"));
+  const missing = exampleText
+    .split(/\r?\n/)
+    .filter((l) => {
+      const key = l.split("=")[0].trim();
+      return l.includes("=") && !l.trim().startsWith("#") && key && !have.has(key);
+    });
+  if (missing.length) {
+    appendFileSync(dest, `\n# --- claves añadidas automáticamente desde ${rel}.example ---\n${missing.join("\n")}\n`);
+    log(`${rel}: añadidas ${missing.length} clave(s) nueva(s) (${missing.map((l) => l.split("=")[0]).join(", ")})`);
+  }
 }
 
 async function requireCmd(bin: string, hint: string) {

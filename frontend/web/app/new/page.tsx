@@ -16,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/libs/utils";
-import { fileToBase64 } from "@/libs/file";
 import { useSession } from "@/store/session-store";
 import { createCase } from "@/services/cases-service";
 import { createDocument } from "@/services/documents-service";
@@ -98,13 +97,8 @@ export default function NewSignatureRequestPage() {
 
     setSubmitting(true);
     try {
-      const contentBase64 = await fileToBase64(file);
       const kase = await createCase({ tenantId: "seguridata", title: values.title });
-      const document = await createDocument({
-        caseId: kase.id,
-        filename: file.name,
-        contentBase64,
-      });
+      const document = await createDocument({ caseId: kase.id, file });
       await createSignatureRequest({
         documentId: document.id,
         methods,

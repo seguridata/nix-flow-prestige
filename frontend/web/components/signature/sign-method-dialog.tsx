@@ -44,7 +44,7 @@ interface SignMethodDialogProps {
   biometricReady?: boolean;
   onConfirm: (payload: {
     method: SignatureMethod;
-    signatureImageBase64?: string;
+    autograph?: Blob;
     consentAccepted: boolean;
   }) => void;
   isSubmitting?: boolean;
@@ -61,7 +61,7 @@ export function SignMethodDialog({
 }: SignMethodDialogProps) {
   const [selected, setSelected] = useState<SignatureMethod | null>(null);
   const [accepted, setAccepted] = useState(false);
-  const [stroke, setStroke] = useState<string | null>(null);
+  const [stroke, setStroke] = useState<Blob | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -144,7 +144,7 @@ export function SignMethodDialog({
             selected &&
             onConfirm({
               method: selected,
-              signatureImageBase64: stroke ?? undefined,
+              autograph: stroke ?? undefined,
               consentAccepted: accepted,
             })
           }

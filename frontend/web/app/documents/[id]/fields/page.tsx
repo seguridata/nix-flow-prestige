@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/libs/utils";
 
-import { fetchDocument, fetchDocumentContent } from "@/services/documents-service";
+import { fetchDocument, fetchDocumentObjectUrl } from "@/services/documents-service";
 import { fetchSignatureRequestsForDocument } from "@/services/signature-requests-service";
 import { bulkCreateFields, fetchFields } from "@/services/signature-fields-service";
 import type { DraftField, SignerColor } from "@/components/documents/field-editor-types";
@@ -101,8 +101,14 @@ export default function SignatureFieldsPage({
 
   const contentQuery = useQuery({
     queryKey: ["document-content", documentId],
-    queryFn: () => fetchDocumentContent(documentId),
+    queryFn: () => fetchDocumentObjectUrl(documentId),
   });
+  useEffect(() => {
+    const url = contentQuery.data;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [contentQuery.data]);
 
   const requestsQuery = useQuery({
     queryKey: ["signature-requests", "document", documentId],
@@ -117,10 +123,7 @@ export default function SignatureFieldsPage({
   const request = requestsQuery.data?.[0];
   const signers = useMemo(() => request?.signers ?? [], [request]);
 
-  const pdfDataUrl = useMemo(() => {
-    if (!contentQuery.data?.contentBase64) return null;
-    return `data:application/pdf;base64,${contentQuery.data.contentBase64}`;
-  }, [contentQuery.data]);
+  const pdfDataUrl = contentQuery.data ?? null;
 
   const [draftFields, setDraftFields] = useState<DraftField[]>([]);
   const [seeded, setSeeded] = useState(false);

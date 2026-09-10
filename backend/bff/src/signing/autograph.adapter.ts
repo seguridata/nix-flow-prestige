@@ -11,11 +11,12 @@ export class AutographSignerAdapter implements SignerAdapter {
   }
 
   async sign(command: SignCommand): Promise<SignResult> {
-    if (!command.signatureImageBase64) {
-      throw new BadRequestException('La firma autógrafa requiere el trazo capturado (signatureImageBase64)');
+    if (!command.signatureImage?.length) {
+      throw new BadRequestException('La firma autógrafa requiere el trazo capturado (campo `file`)');
     }
+    const strokeHash = createHash('sha256').update(command.signatureImage).digest('hex');
     const signatureHash = createHash('sha256')
-      .update(`${command.documentHash}:${command.signatureImageBase64}`)
+      .update(`${command.documentHash}:${strokeHash}`)
       .digest('hex');
     return {
       algorithm: 'SHA-256+STROKE',

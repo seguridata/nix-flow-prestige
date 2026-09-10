@@ -4,7 +4,8 @@ export interface SignCommand {
   method: SignatureMethod;
   signerId: string;
   documentHash: string;
-  signatureImageBase64?: string;
+  /** Trazo autógrafo capturado (PNG). Bytes, nunca base64 en tránsito ni en BD. */
+  signatureImage?: Buffer;
   biometricSessionId?: string;
 }
 

@@ -25,13 +25,13 @@ export class PdfStampService {
   private readonly log = new Logger(PdfStampService.name);
 
   async stampAutograph(
-    pdfBase64: string,
-    pngBase64: string,
+    pdfBytes: Buffer,
+    pngBytes: Buffer,
     field?: { page: number; xPct: number; yPct: number; widthPct: number; heightPct: number },
-  ): Promise<string> {
+  ): Promise<Buffer> {
     try {
-      const pdf = await PDFDocument.load(Buffer.from(pdfBase64, 'base64'));
-      const png = await pdf.embedPng(Buffer.from(pngBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64'));
+      const pdf = await PDFDocument.load(pdfBytes);
+      const png = await pdf.embedPng(pngBytes);
       const pages = pdf.getPages();
       const pageIndex = Math.min(Math.max((field?.page ?? 1) - 1, 0), pages.length - 1);
       const page = pages[pageIndex];
@@ -64,11 +64,10 @@ export class PdfStampService {
         `Autógrafa en recuadro x=${boxX.toFixed(1)} y=${boxY.toFixed(1)} ${boxW.toFixed(1)}×${boxH.toFixed(1)}`,
       );
       page.drawImage(png, { x: drawX, y: drawY, width: drawW, height: drawH });
-      const bytes = await pdf.save();
-      return Buffer.from(bytes).toString('base64');
+      return Buffer.from(await pdf.save());
     } catch (error) {
       this.log.warn(`No se pudo incrustar la autógrafa: ${(error as Error).message}`);
-      return pdfBase64;
+      return pdfBytes;
     }
   }
 }

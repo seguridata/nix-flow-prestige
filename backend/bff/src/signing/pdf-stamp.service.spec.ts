@@ -26,16 +26,16 @@ describe('PdfStampService', () => {
       width: DEFAULT_SIGNATURE_BOX.pdfW,
       height: DEFAULT_SIGNATURE_BOX.pdfH,
     });
-    const png = await PDFDocument.create();
-    // 1x1 png
-    const pngB64 =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-    const service = new PdfStampService();
-    const stamped = await service.stampAutograph(
-      Buffer.from(await pdf.save()).toString('base64'),
-      pngB64,
+    // PNG 1x1
+    const pngBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
     );
+    const original = Buffer.from(await pdf.save());
+    const service = new PdfStampService();
+    const stamped = await service.stampAutograph(original, pngBytes);
+    expect(Buffer.isBuffer(stamped)).toBe(true);
     expect(stamped.length).toBeGreaterThan(80);
-    expect(stamped).not.toBe(Buffer.from(await pdf.save()).toString('base64'));
+    expect(stamped.equals(original)).toBe(false);
   });
 });

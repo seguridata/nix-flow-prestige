@@ -30,10 +30,11 @@ model Document {
   caseId        String
   filename      String
   version       Int      @default(1)
-  hash          String
+  hash          String // SHA-256 del contenido en claro
   locked        Boolean  @default(false)
-  contentBase64 String   @db.Text
-  objectKey     String?
+  objectKey     String // clave del objeto cifrado en el storage (obligatoria)
+  enc           Json // metadatos de cifrado en reposo (envelope AES-256-GCM)
+  sizeBytes     Int      @default(0)
   mimeType      String   @default("application/pdf")
   createdAt     DateTime @default(now())
 

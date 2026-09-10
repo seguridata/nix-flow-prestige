@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "down": "bun scripts/dev.ts down",
+    "gen-keys": "bun scripts/gen-keys.ts",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

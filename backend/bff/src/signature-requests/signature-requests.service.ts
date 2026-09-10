@@ -7,6 +7,8 @@ import { EvidenceService } from '../evidence/evidence.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { SigningRouter } from '../signing/signing.router';
 import { PdfStampService } from '../signing/pdf-stamp.service';
+import { StorageService } from '../storage/storage.service';
+import type { EncMeta } from '../storage/object-crypto';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../consent/consent';
 import { CONTRATO_DOS_PARTES } from '../temporal/shared';
 import { CollaborationService } from '../collaboration/collaboration.service';
@@ -24,6 +26,7 @@ export class SignatureRequestsService {
     private readonly workflow: WorkflowService,
     private readonly signing: SigningRouter,
     private readonly stamp: PdfStampService,
+    private readonly storage: StorageService,
     private readonly collab: CollaborationService,
   ) {}
 
@@ -157,10 +160,10 @@ export class SignatureRequestsService {
     body: {
       signerId: string;
       method: SignatureMethod;
-      signatureImageBase64?: string;
       biometricSessionId?: string;
       consentAccepted?: boolean;
     },
+    autographImage?: Buffer,
   ) {
     const before = await this.prisma.signatureRequest.findUnique({ where: { id } });
     const wasAlreadyClosed = before ? ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'].includes(before.status) : false;
@@ -226,11 +229,11 @@ export class SignatureRequestsService {
         method: body.method,
         signerId: body.signerId,
         documentHash: request.document.hash,
-        signatureImageBase64: body.signatureImageBase64,
+        signatureImage: autographImage,
         biometricSessionId: body.biometricSessionId,
       });
 
-      if (body.method === 'AUTOGRAFA' && body.signatureImageBase64) {
+      if (body.method === 'AUTOGRAFA' && autographImage?.length) {
         const field =
           (await tx.signatureField.findFirst({
             where: { documentId: request.documentId, signerId: body.signerId, type: 'SIGNATURE' },
@@ -238,15 +241,26 @@ export class SignatureRequestsService {
           (await tx.signatureField.findFirst({
             where: { documentId: request.documentId, type: 'SIGNATURE' },
           }));
-        const stamped = await this.stamp.stampAutograph(
-          request.document.contentBase64,
-          body.signatureImageBase64,
-          field ?? undefined,
+        const currentPdf = await this.storage.getObject(
+          request.document.objectKey,
+          request.document.enc as unknown as EncMeta,
         );
-        const hash = createHash('sha256').update(stamped, 'base64').digest('hex');
+        const stamped = await this.stamp.stampAutograph(currentPdf, autographImage, field ?? undefined);
+        const stored = await this.storage.putObject({
+          prefix: 'documents',
+          filename: request.document.filename,
+          bytes: stamped,
+          contentType: 'application/pdf',
+        });
         await tx.document.update({
           where: { id: request.documentId },
-          data: { contentBase64: stamped, hash, version: { increment: 1 } },
+          data: {
+            objectKey: stored.objectKey,
+            enc: stored.enc as unknown as object,
+            hash: stored.sha256,
+            sizeBytes: stored.sizeBytes,
+            version: { increment: 1 },
+          },
         });
       }
 

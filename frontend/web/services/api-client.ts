@@ -18,17 +18,20 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, idempotencyKey, headers, ...rest } = options;
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
 
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...rest,
+      credentials: "include",
       headers: {
-        "content-type": "application/json",
+        // FormData: el navegador pone el content-type con el boundary correcto.
+        ...(isForm ? {} : { "content-type": "application/json" }),
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         ...headers,
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: isForm ? (body as FormData) : body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (error) {
     const hint =
@@ -63,6 +66,8 @@ export const apiClient = {
     request<T>(path, { ...options, method: "GET" }),
   post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "POST", body }),
+  put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: "PUT", body }),
   patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "PATCH", body }),
   delete: <T>(path: string, options?: RequestOptions) =>
