@@ -424,6 +424,23 @@ model ProcessAuditEvent {
   @@index([seq])
 }
 
+/// Fase B — sello de tiempo RFC 3161 por evento de firma (además del sello del
+/// paquete en el manifiesto): «esta firma existía en el instante T».
+model SignatureEventTimestamp {
+  id                 String   @id @default(uuid())
+  signatureRequestId String
+  signerId           String
+  /// Hash (hex) sobre el que se pidió el sello — el de la firma PAdES de ese evento.
+  signedHash         String
+  provider           String
+  tokenHash          String
+  token              String   @db.Text
+  issuedAt           DateTime
+  createdAt          DateTime @default(now())
+
+  @@unique([signatureRequestId, signerId])
+}
+
 /// M11 — cabeza (singleton) de la cadena de auditoría global.
 model AuditAnchor {
   id        String   @id

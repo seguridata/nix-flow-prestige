@@ -7,6 +7,7 @@ import { EvidenceService } from '../evidence/evidence.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { SigningRouter } from '../signing/signing.router';
 import { PdfStampService } from '../signing/pdf-stamp.service';
+import { requestTimestamp } from '../signing/tsa/rfc3161';
 import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../consent/consent';
@@ -386,10 +387,40 @@ export class SignatureRequestsService {
         actorName: signerName,
         at: now,
       });
-      // La señal al workflow usa el firmante del orden, no el delegado.
-      await this.workflow.signalSigned(result.id, effectiveSignerId);
       const sr = (result as { lastSignResult?: import('../signing/signer-adapter').SignResult })
         .lastSignResult;
+
+      // Fase B — sello de tiempo RFC 3161 POR EVENTO sobre el hash de esta firma
+      // (además del sello del paquete). Best-effort: un fallo de la TSA no
+      // bloquea la firma.
+      let eventTimestamp: { provider: string; tokenHash: string; issuedAt: string } | undefined;
+      if (sr?.signatureHash && /^[0-9a-f]{64}$/i.test(sr.signatureHash)) {
+        try {
+          const ts = await requestTimestamp(Buffer.from(sr.signatureHash, 'hex'));
+          if (ts) {
+            const tokenHash = createHash('sha256').update(ts.token).digest('hex');
+            const issuedAt = new Date(ts.info.genTime);
+            await this.prisma.signatureEventTimestamp.upsert({
+              where: { signatureRequestId_signerId: { signatureRequestId: result.id, signerId: effectiveSignerId } },
+              create: {
+                signatureRequestId: result.id,
+                signerId: effectiveSignerId,
+                signedHash: sr.signatureHash,
+                provider: ts.tsaUrl,
+                tokenHash,
+                token: ts.token.toString('base64'),
+                issuedAt,
+              },
+              update: { signedHash: sr.signatureHash, provider: ts.tsaUrl, tokenHash, token: ts.token.toString('base64'), issuedAt },
+            });
+            eventTimestamp = { provider: ts.tsaUrl, tokenHash, issuedAt: issuedAt.toISOString() };
+          }
+        } catch (error) {
+          // sin sello por evento; el sello del paquete sigue vigente
+          void error;
+        }
+      }
+
       await this.collab.audit({
         signatureRequestId: result.id,
         documentId: result.documentId,
@@ -403,8 +434,14 @@ export class SignatureRequestsService {
           provider: sr?.provider,
           signatureHash: sr?.signatureHash,
           certificate: sr?.certificate,
+          eventTimestamp,
         },
       });
+
+      // La señal al workflow (que puede disparar el sellado) va DESPUÉS de que
+      // el evento SIGNATURE_APPLIED con su sello por evento esté persistido.
+      await this.workflow.signalSigned(result.id, effectiveSignerId);
+
       if (result.requestedBy && result.requestedBy !== body.signerId) {
         await this.collab.notify(
           result.requestedBy,

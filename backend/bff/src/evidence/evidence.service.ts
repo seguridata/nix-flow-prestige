@@ -32,6 +32,8 @@ export interface EvidenceVerificationResult {
     timestamp: boolean | 'sin-sello';
     /** M11 — cadena de auditoría inmutable del proceso (scoped a la solicitud). */
     auditChain: boolean;
+    /** Fase B — sellos RFC 3161 por evento de firma. */
+    eventTimestamps: boolean | 'sin-sellos';
   };
 }
 
@@ -51,6 +53,8 @@ interface SignatureEntry {
   certificate?: Record<string, unknown>;
   signatureHash: string;
   signedAt: string;
+  /** Fase B — sello RFC 3161 de este evento de firma (si la TSA respondió). */
+  eventTimestamp?: { provider: string; tokenHash: string; issuedAt: string };
 }
 
 const INCLUDE_FOR_MANIFEST = {
@@ -161,6 +165,7 @@ export class EvidenceService {
             .update(`${signer.signerId}${signer.signedAt.toISOString()}${signer.usedMethod}`)
             .digest('hex'),
         signedAt: signer.signedAt.toISOString(),
+        eventTimestamp: (meta.eventTimestamp as SignatureEntry['eventTimestamp']) ?? undefined,
       };
     });
 
@@ -357,6 +362,7 @@ export class EvidenceService {
           manifestSignature: 'sin-firma',
           timestamp: 'sin-sello',
           auditChain: false,
+          eventTimestamps: 'sin-sellos',
         },
       };
     }
@@ -441,6 +447,25 @@ export class EvidenceService {
       .catch(() => ({ ok: false }));
     if (!auditChainCheck.ok) mismatches.push('Cadena de auditoría inmutable alterada o incompleta');
 
+    // Fase B — sellos RFC 3161 por evento de firma.
+    const manifestSignatures = (manifest.signatures as unknown as SignatureEntry[]) ?? [];
+    const withEventTs = manifestSignatures.filter((s) => s.eventTimestamp?.tokenHash);
+    let eventTimestamps: boolean | 'sin-sellos' = withEventTs.length ? true : 'sin-sellos';
+    for (const s of withEventTs) {
+      const stored = await this.prisma.signatureEventTimestamp.findFirst({
+        where: { signatureRequestId: manifest.signatureRequestId, signerId: s.signerId },
+      });
+      const tokenOk =
+        stored != null &&
+        createHash('sha256').update(Buffer.from(stored.token, 'base64')).digest('hex') === s.eventTimestamp!.tokenHash &&
+        /^[0-9a-f]{64}$/i.test(s.signatureHash) &&
+        verifyTimestampToken(Buffer.from(stored.token, 'base64'), Buffer.from(s.signatureHash, 'hex')).valid;
+      if (!tokenOk) {
+        eventTimestamps = false;
+        mismatches.push(`Sello RFC 3161 del evento de firma de ${s.signerId} inválido o ausente`);
+      }
+    }
+
     return {
       valid: mismatches.length === 0,
       mismatches,
@@ -452,6 +477,7 @@ export class EvidenceService {
         manifestSignature: manifestSigOk,
         timestamp: tsOk,
         auditChain: auditChainCheck.ok,
+        eventTimestamps,
       },
     };
   }
