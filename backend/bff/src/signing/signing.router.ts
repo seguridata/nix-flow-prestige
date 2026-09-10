@@ -3,7 +3,13 @@ import type { SignatureMethod } from '@prisma/client';
 import { AutographSignerAdapter } from './autograph.adapter';
 import { BiometricSignerAdapter } from './biometric.adapter';
 import { DigitalSignerAdapter } from './digital.adapter';
-import type { SignCommand, SignResult, SignerAdapter, VerifyResult } from './signer-adapter';
+import type {
+  ReconcileResult,
+  SignCommand,
+  SignResult,
+  SignerAdapter,
+  VerifyResult,
+} from './signer-adapter';
 
 @Injectable()
 export class SigningRouter {
@@ -28,6 +34,17 @@ export class SigningRouter {
     const adapter = this.byMethod[command.method];
     if (!adapter) throw new BadRequestException(`Método ${command.method} no soportado`);
     return adapter.sign(command);
+  }
+
+  /** Fase B — consulta el estado de una firma `pending` del método dado. */
+  async reconcile(
+    method: SignatureMethod,
+    pendingRef: string,
+    command: SignCommand,
+  ): Promise<ReconcileResult> {
+    const adapter = this.byMethod[method];
+    if (!adapter?.reconcile) return { status: 'failed', reason: `El método ${method} no soporta reconciliación` };
+    return adapter.reconcile(pendingRef, command);
   }
 
   /** Verifica la firma criptográfica embebida en un PDF (hoy: PAdES/DIGITAL). */

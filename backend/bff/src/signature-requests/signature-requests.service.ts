@@ -271,8 +271,9 @@ export class SignatureRequestsService {
       if (!signer) {
         throw new NotFoundException(`Firmante ${body.signerId} no está en la solicitud ${id}`);
       }
-      if (signer.status === 'FIRMADO') return request;
+      if (signer.status === 'FIRMADO' || signer.status === 'RECHAZADO') return request;
       const onBehalfOf = signer.signerId !== body.signerId ? signer.signerId : undefined;
+      const isReconcileRetry = signer.status === 'PENDIENTE' && Boolean(signer.pendingRef);
 
       if (!request.methods.includes(body.method)) {
         throw new BadRequestException(
@@ -291,12 +292,13 @@ export class SignatureRequestsService {
         }
       }
 
-      // Reclamo ATÓMICO del hueco del firmante antes de firmar el PDF: si otra
-      // petición concurrente con el mismo enlace de un solo uso (doble POST /
-      // reintento) ya lo tomó, salimos sin volver a firmar ni pisar el PDF.
+      // Reclamo ATÓMICO del hueco: PENDIENTE → EN_PROCESO. Si otra petición
+      // concurrente ya lo tomó (o ya firmó / rechazó), salimos sin re-firmar ni
+      // pisar el PDF. La firma se marca FIRMADO sólo si el adaptador NO devuelve
+      // `pending` (métodos asíncronos vuelven a PENDIENTE con un `pendingRef`).
       const claim = await tx.signer.updateMany({
-        where: { id: signer.id, status: { not: 'FIRMADO' } },
-        data: { status: 'FIRMADO', signedAt: new Date(), usedMethod: body.method },
+        where: { id: signer.id, status: 'PENDIENTE' },
+        data: { status: 'EN_PROCESO', usedMethod: body.method },
       });
       if (claim.count === 0) return request;
 
@@ -336,6 +338,27 @@ export class SignatureRequestsService {
         biometricSessionId: body.biometricSessionId,
       });
 
+      // Fase B — firma asíncrona: el adaptador la inició pero falta la
+      // confirmación del proveedor (2FA / biometría). Volvemos a PENDIENTE con
+      // un `pendingRef` para que el reconciliador la cierre luego.
+      if (signed.pending) {
+        await tx.signer.update({
+          where: { id: signer.id },
+          data: {
+            status: 'PENDIENTE',
+            usedMethod: body.method,
+            pendingRef: signed.pendingRef ?? `pending-${signer.id}`,
+            pendingSince: new Date(),
+          },
+        });
+        const stillPending = await tx.signatureRequest.update({
+          where: { id },
+          data: { status: 'EN_FIRMA' },
+          include: INCLUDE_SIGNERS,
+        });
+        return Object.assign(stillPending, { lastSignResult: signed, pendingResult: true as const });
+      }
+
       // Si el adaptador incrustó la firma (DIGITAL PAdES / AUTÓGRAFA), la nueva
       // versión del PDF se guarda cifrada en el storage.
       if (signed.signedPdf?.length) {
@@ -357,7 +380,17 @@ export class SignatureRequestsService {
         });
       }
 
-      // (el estado FIRMADO del firmante ya se fijó en el reclamo atómico previo)
+      // Firma concluida: EN_PROCESO → FIRMADO (limpia el pendiente si lo había).
+      await tx.signer.update({
+        where: { id: signer.id },
+        data: {
+          status: 'FIRMADO',
+          signedAt: new Date(),
+          usedMethod: body.method,
+          pendingRef: null,
+          pendingSince: null,
+        },
+      });
 
       const remaining = request.signers.filter((s) => s.id !== signer.id);
       const allSigned = remaining.every((s) => s.status === 'FIRMADO');
@@ -369,6 +402,28 @@ export class SignatureRequestsService {
       });
       return Object.assign(updated, { lastSignResult: signed });
     });
+
+    // Fase B — firma asíncrona iniciada: audita y espera al reconciliador.
+    if ((result as { pendingResult?: boolean }).pendingResult) {
+      const sr = (result as { lastSignResult?: import('../signing/signer-adapter').SignResult })
+        .lastSignResult;
+      await this.collab.audit({
+        signatureRequestId: result.id,
+        documentId: result.documentId,
+        actorId: body.signerId,
+        action: 'SIGNATURE_PENDING',
+        payload: { method: body.method, provider: sr?.provider, pendingRef: sr?.pendingRef, detail: sr?.detail },
+      });
+      if (result.requestedBy && result.requestedBy !== body.signerId) {
+        await this.collab.notify(
+          result.requestedBy,
+          `${body.signerId} inició su firma`,
+          `Firma ${body.method} en curso; falta la confirmación del proveedor.`,
+          `/documents/${result.documentId}`,
+        );
+      }
+      return result;
+    }
 
     if (!wasAlreadyClosed && !alreadySigned) {
       const now = new Date().toISOString();
@@ -463,6 +518,105 @@ export class SignatureRequestsService {
     }
 
     return result;
+  }
+
+  /**
+   * Fase B — cierra una firma que quedó `pending` cuando el proveedor asíncrono
+   * confirma (o rechaza). Idempotente: si el firmante ya no está pendiente, no
+   * hace nada.
+   */
+  async finalizePending(
+    signatureRequestId: string,
+    signerId: string,
+    r: { status: 'completed' | 'failed'; signatureHash?: string; signedPdf?: Buffer; reason?: string },
+  ) {
+    const request = await this.prisma.signatureRequest.findUnique({
+      where: { id: signatureRequestId },
+      include: { ...INCLUDE_SIGNERS, document: true },
+    });
+    if (!request || ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'].includes(request.status)) return;
+    const signer = request.signers.find(
+      (s) => (s.signerId === signerId || s.delegatedTo === signerId) && s.status === 'PENDIENTE' && s.pendingRef,
+    );
+    if (!signer) return;
+
+    if (r.status === 'failed') {
+      await this.prisma.signer.update({
+        where: { id: signer.id },
+        data: { status: 'RECHAZADO', pendingRef: null, pendingSince: null },
+      });
+      await this.prisma.signatureRequest.update({
+        where: { id: signatureRequestId },
+        data: { status: 'RECHAZADA' },
+      });
+      await this.workflow.signalRejected(signatureRequestId, signer.signerId);
+      await this.collab.audit({
+        signatureRequestId,
+        documentId: request.documentId,
+        actorId: signer.signerId,
+        action: 'SIGNATURE_FAILED',
+        payload: { reason: r.reason, reconciled: true },
+      });
+      return;
+    }
+
+    // completed
+    const signatureHash = r.signatureHash ?? request.document.hash;
+    const completed = await this.prisma.$transaction(async (tx) => {
+      if (r.signedPdf?.length) {
+        const stored = await this.storage.putObject({
+          prefix: 'documents',
+          filename: request.document.filename,
+          bytes: r.signedPdf,
+          contentType: 'application/pdf',
+        });
+        await tx.document.update({
+          where: { id: request.documentId },
+          data: {
+            objectKey: stored.objectKey,
+            enc: stored.enc as unknown as object,
+            hash: stored.sha256,
+            sizeBytes: stored.sizeBytes,
+            version: { increment: 1 },
+          },
+        });
+      }
+      await tx.signer.update({
+        where: { id: signer.id },
+        data: { status: 'FIRMADO', signedAt: new Date(), pendingRef: null, pendingSince: null },
+      });
+      const remaining = request.signers.filter((s) => s.id !== signer.id);
+      const allSigned = remaining.every((s) => s.status === 'FIRMADO');
+      return tx.signatureRequest.update({
+        where: { id: signatureRequestId },
+        data: { status: allSigned ? 'COMPLETADA' : 'EN_FIRMA' },
+        include: INCLUDE_SIGNERS,
+      });
+    });
+
+    await this.collab.audit({
+      signatureRequestId,
+      documentId: request.documentId,
+      actorId: signer.signerId,
+      actorName: signer.name ?? undefined,
+      action: 'SIGNATURE_APPLIED',
+      payload: { method: signer.usedMethod, signatureHash, reconciled: true },
+    });
+    await this.workflow.signalSigned(signatureRequestId, signer.signerId);
+    if (completed.status === 'COMPLETADA') {
+      await this.evidence.generateForRequest(signatureRequestId);
+      await this.mail.sendCompleted(signatureRequestId).catch(() => undefined);
+    }
+  }
+
+  /** Firmantes con una firma asíncrona a la espera (para el reconciliador). */
+  pendingSignatures(olderThanSeconds = 20) {
+    const cutoff = new Date(Date.now() - olderThanSeconds * 1000);
+    return this.prisma.signer.findMany({
+      where: { status: 'PENDIENTE', pendingRef: { not: null }, pendingSince: { lt: cutoff } },
+      include: { signatureRequest: { include: { document: true } } },
+      take: 50,
+    });
   }
 
   async reject(id: string, body: { signerId: string; reason?: string }) {

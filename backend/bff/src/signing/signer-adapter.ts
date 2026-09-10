@@ -41,9 +41,20 @@ export interface SignResult {
   signedPdf?: Buffer;
   /** Certificado del firmante (DIGITAL). Es público; se guarda en la evidencia. */
   certificate?: SignedCertificate;
-  /** Firma iniciada pero no concluida (2Fo / asíncrona). */
+  /** Firma iniciada pero no concluida (2FA / biometría / firma asíncrona). */
   pending?: boolean;
+  /** Referencia opaca de la operación pendiente para reconciliar más tarde. */
+  pendingRef?: string;
   detail?: string;
+}
+
+/** Resultado de reconciliar una firma que quedó `pending`. */
+export interface ReconcileResult {
+  status: 'completed' | 'failed' | 'pending';
+  signedPdf?: Buffer;
+  signatureHash?: string;
+  certificate?: SignedCertificate;
+  reason?: string;
 }
 
 export interface VerifyResult {
@@ -64,4 +75,6 @@ export interface SignerAdapter {
   capabilities(): { configured: boolean; reason?: string };
   sign(command: SignCommand): Promise<SignResult>;
   verify?(pdfBytes: Buffer): Promise<VerifyResult>;
+  /** Consulta el estado de una firma `pending` (lo implementan los métodos asíncronos). */
+  reconcile?(pendingRef: string, command: SignCommand): Promise<ReconcileResult>;
 }

@@ -18,6 +18,7 @@ import { Roles } from '../auth/roles.decorator';
 import { StepUp } from '../auth/step-up.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { SignatureRequestsService } from './signature-requests.service';
+import { SignatureReconcileService } from './signature-reconcile.service';
 import {
   ConsentAcceptDto,
   CreateSignatureRequestDto,
@@ -31,7 +32,17 @@ const MAX_STROKE_BYTES = 2 * 1024 * 1024; // 2 MB — un PNG de trazo es de ~10�
 
 @Controller('signature-requests')
 export class SignatureRequestsController {
-  constructor(private readonly signatureRequests: SignatureRequestsService) {}
+  constructor(
+    private readonly signatureRequests: SignatureRequestsService,
+    private readonly reconcile: SignatureReconcileService,
+  ) {}
+
+  /** Fase B — fuerza una pasada de reconciliación de firmas asíncronas (sin espera mínima). */
+  @Roles('admin')
+  @Post('reconcile')
+  runReconcile() {
+    return this.reconcile.reconcileDue(0);
+  }
 
   @Roles('sender', 'admin')
   @Post()

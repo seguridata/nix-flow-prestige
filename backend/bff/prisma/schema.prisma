@@ -99,6 +99,8 @@ model SignatureRequest {
 
 enum SignerStatus {
   PENDIENTE
+  /// Fase B — firma en curso (claim atómico); un método asíncrono puede dejarla aquí.
+  EN_PROCESO
   FIRMADO
   RECHAZADO
 }
@@ -121,11 +123,15 @@ model Signer {
   sortOrder           Int              @default(0)
   delegatedTo         String?
   delegatedToName     String?
+  /// Fase B — firma asíncrona: referencia del proveedor + cuándo se inició.
+  pendingRef          String?
+  pendingSince        DateTime?
 
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
 
   @@unique([signatureRequestId, signerId])
   @@index([signerId])
+  @@index([status, pendingSince])
 }
 
 enum SignatureFieldType {
