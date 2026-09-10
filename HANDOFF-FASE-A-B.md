@@ -141,6 +141,19 @@ Un ítem del checklist está **hecho** cuando:
 `bun run dev` (raíz): infra Docker + `prisma migrate deploy` + `prisma generate`
 + frontend (`@prestige/web`, `:3001`, Turbopack) + BFF y worker Temporal
 (`@prestige/bff`, `:3000`, `tsx watch`). Copia `.env` si faltan e instala deps.
+**Además siembra el escenario de demostración** (`backend/bff/prisma/scripts/demo-seed.ts`)
+en cuanto el BFF responde — usando el API real, así que ejercita workflow,
+auditoría, evidencia y correo. Idempotente; se omite con `bun run dev -- --no-demo`
+o `DEMO_SEED=0`. Standalone: `bun run demo` / `bun run demo:reset`.
+
+**Qué trae la demo** (entra en `:3001` con `maria/maria123`, `carlos/carlos123`,
+`roberto/roberto123`; correos en Mailpit `:8025`):
+- Política de firma del tenant, 3 miembros, catálogos, una suscripción de webhook.
+- Caso *"DEMO — Adquisición de servicios 2026"* con 3 PDFs.
+- Solicitud SECUENCIAL en progreso (maría firmó, roberto pendiente).
+- Solicitud PARALELO **COMPLETADA** → manifiesto de evidencia (`/evidence/:id/verify` 8/8).
+- Solicitud con **firmante externo** → invitación + enlace de un solo uso (`/firmar/<token>`).
+- Onboarding *"Ana Torres Rincón"* con INE (OCR) + prueba de vida → **EN_REVISIÓN**.
 
 Puertos libres: `3000` BFF · `3001` app · `5432` Postgres · `6379` Redis ·
 `7233` Temporal · `8081` Keycloak · `8088` Temporal UI · `9000/9001` MinIO.
