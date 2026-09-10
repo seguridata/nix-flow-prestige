@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { LoggerModule } from 'nestjs-pino';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -12,13 +15,26 @@ import { EvidenceModule } from './evidence/evidence.module';
 import { StorageModule } from './storage/storage.module';
 import { SigningModule } from './signing/signing.module';
 import { OperationsModule } from './operations/operations.module';
-import { DemoModule } from './demo/demo.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { ProcessModule } from './process/process.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? { target: 'pino-pretty', options: { singleLine: true, translateTime: 'SYS:HH:MM:ss' } }
+            : undefined,
+        redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-prestige-worker-token"]'],
+        autoLogging: { ignore: (req) => req.url === '/operations/health' },
+      },
+    }),
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT ?? 120) },
+    ]),
     PrismaModule,
     StorageModule,
     AuthModule,
@@ -32,10 +48,10 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     SignatureFieldsModule,
     EvidenceModule,
     OperationsModule,
-    DemoModule,
     CollaborationModule,
     ProcessModule,
     OnboardingModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

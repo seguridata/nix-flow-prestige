@@ -65,10 +65,3 @@ export function delegateRequest(
     { idempotencyKey: newIdempotencyKey() },
   );
 }
-
-export function createSelfSignDemo(body: { signerId: string; name: string; email?: string }) {
-  return apiClient.post<{
-    document: { id: string };
-    request: SignatureRequest;
-  }>("/demo/self-sign", body);
-}

@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { FileText, FlaskConical, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBadge } from "@/components/documents/status-badge";
@@ -15,7 +13,6 @@ import { Card } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useSession } from "@/store/session-store";
 import { fetchInbox } from "@/services/inbox-service";
-import { createSelfSignDemo } from "@/services/signature-requests-service";
 
 function initialsOf(name: string) {
   return name
@@ -27,20 +24,7 @@ function initialsOf(name: string) {
 }
 
 export default function InboxPage() {
-  const { signerId, name, email } = useSession();
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const demoMutation = useMutation({
-    mutationFn: () => createSelfSignDemo({ signerId, name, email }),
-    onSuccess: (result) => {
-      toast.success("Prueba lista para firmar.");
-      queryClient.invalidateQueries({ queryKey: ["inbox", signerId] });
-      router.push(`/documents/${result.document.id}`);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "No se pudo crear la prueba.");
-    },
-  });
+  const { signerId, name } = useSession();
   const { data: items, isLoading } = useQuery({
     queryKey: ["inbox", signerId],
     queryFn: () => fetchInbox(signerId),
@@ -52,22 +36,11 @@ export default function InboxPage() {
     <AppShell
       title="Bandeja"
       actions={
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => demoMutation.mutate()}
-            disabled={demoMutation.isPending}
-          >
-            <FlaskConical className="size-4" />
-            {demoMutation.isPending ? "Generando…" : "Prueba para firmar"}
-          </Button>
-          <Button asChild variant="secondary" size="sm">
-            <Link href="/new">
-              <Plus className="size-4" /> Nuevo envío
-            </Link>
-          </Button>
-        </div>
+        <Button asChild variant="secondary" size="sm">
+          <Link href="/new">
+            <Plus className="size-4" /> Nuevo envío
+          </Link>
+        </Button>
       }
     >
       <div className="mx-auto max-w-5xl">
@@ -152,10 +125,10 @@ export default function InboxPage() {
             <div className="px-6 py-8 text-center">
               <p className="text-base font-medium">No hay documentos por firmar</p>
               <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-                Cuando alguien te envíe un contrato, aparecerá aquí. También puedes generar una prueba para firmarte a ti mismo.
+                Cuando alguien te envíe un contrato para firmar, aparecerá aquí.
               </p>
-              <Button className="mt-4" onClick={() => demoMutation.mutate()} disabled={demoMutation.isPending}>
-                Generar prueba para firmar
+              <Button asChild className="mt-4">
+                <Link href="/new">Enviar un documento a firma</Link>
               </Button>
             </div>
           </Card>
