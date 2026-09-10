@@ -2,6 +2,12 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createHash, randomBytes } from "node:crypto";
 import { jwtVerify, SignJWT } from "jose";
+import {
+  dropSession,
+  putSession,
+  readSession,
+  sessionStoreEnabled,
+} from "./session-store";
 
 /**
  * OIDC (Authorization Code + PKCE) contra Keycloak, patrón BFF: el navegador
@@ -149,7 +155,21 @@ export function sessionFromTokens(t: TokenResponse): Session {
   };
 }
 
+/**
+ * Con Redis (recomendado): la cookie sólo lleva `{ sid }` firmado y el `Session`
+ * completo (tokens incluidos) vive en Redis — evita el límite de 4 KB de cookie.
+ * Sin `REDIS_URL`: se firma el `Session` entero en la cookie (modo degradado).
+ */
 export async function sealSession(session: Session): Promise<string> {
+  if (sessionStoreEnabled()) {
+    const sid = randomBytes(18).toString("base64url");
+    await putSession(sid, session);
+    return new SignJWT({ sid })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("8h")
+      .sign(secretKey());
+  }
   return new SignJWT(session as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -161,7 +181,22 @@ export async function unsealSession(value: string | undefined): Promise<Session 
   if (!value) return null;
   try {
     const { payload } = await jwtVerify(value, secretKey());
+    if (typeof (payload as { sid?: string }).sid === "string") {
+      return readSession((payload as { sid: string }).sid);
+    }
     return payload as unknown as Session;
+  } catch {
+    return null;
+  }
+}
+
+async function currentSid(): Promise<string | null> {
+  const jar = await cookies();
+  const raw = jar.get(SESSION_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    const { payload } = await jwtVerify(raw, secretKey());
+    return (payload as { sid?: string }).sid ?? null;
   } catch {
     return null;
   }
@@ -179,6 +214,8 @@ export async function writeSessionCookie(session: Session) {
 }
 
 export async function clearSessionCookie() {
+  const sid = await currentSid();
+  if (sid) await dropSession(sid);
   const jar = await cookies();
   jar.delete(SESSION_COOKIE);
 }

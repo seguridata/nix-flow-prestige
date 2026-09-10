@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 import { SeguriDataLogo } from "@/components/brand/logo";
@@ -22,7 +21,7 @@ export default async function LoginPage({
   const safeReturn = returnTo.startsWith("/") ? returnTo : "/";
   if (await getValidSession()) redirect(safeReturn as Route);
 
-  const loginHref = `/api/auth/login?returnTo=${encodeURIComponent(safeReturn)}` as Route;
+  const loginHref = `/api/auth/login?returnTo=${encodeURIComponent(safeReturn)}`;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-secondary px-6 text-secondary-foreground">
@@ -44,13 +43,15 @@ export default async function LoginPage({
           </p>
         ) : null}
 
-        <Link
+        {/* Navegación dura (no <Link>): el handler responde 307 a Keycloak y el
+            navegador la sigue como navegación normal — un fetch cruzado a
+            Keycloak lo bloquearía CORS. */}
+        <a
           href={loginHref}
-          prefetch={false}
           className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-transform duration-150 active:scale-[0.98]"
         >
           Entrar
-        </Link>
+        </a>
       </div>
     </main>
   );

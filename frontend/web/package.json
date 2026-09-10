@@ -41,6 +41,7 @@
     "date-fns": "^4.1.0",
     "dmn-js": "^17.10.1",
     "driver.js": "^1.8.0",
+    "ioredis": "5.4.1",
     "jose": "^6.2.12",
     "lucide-react": "^0.545.0",
     "motion": "^12.23.24",
