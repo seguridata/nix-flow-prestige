@@ -488,6 +488,8 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 ## 9. Bitácora de sesiones
 
 ### Sesión 1 — 2026-09-09/10 · `session_011dcPJsWMoFEARdPd7kcBiQ`
+- `383cfad` **demo sembrada por `bun run dev`** (`backend/bff/prisma/scripts/demo-seed.ts`, idempotente, `bun run demo[:reset]`). `0dfa1cb` URLs con `localhost` (no `127.0.0.1`).
+- `998738f` **fix login navegador**: cookie de sesión > 4 KB (3 tokens de Keycloak) → Chrome la descartaba → sesión en **Redis** (`libs/session-store.ts`, `sess:<sid>`, cookie sólo `{sid}`). Botón «Entrar» `<Link>`→`<a>` (evita fetch cross-origin a Keycloak / CORS). `frontend/web` += `ioredis` + `REDIS_URL`. **Tras esto hay que reiniciar `bun run dev`.** Recordatorio: entrar por **`http://localhost:3001`**, no `127.0.0.1` (el redirect OIDC está en `localhost`).
 - Revisión completa del repo; generados 2 PDF de diagnóstico en `docs/reportes/revision-2026-09/` (fuera de control de versiones por `.gitignore` de `/docs/` y `*.pdf`).
 - Rama `feat/fase-a-b-produccion` creada.
 - `3968bf2` limpieza del repo · `b7c91c6` endurecimiento BFF + fuera `DemoModule` · `d3693ef` versionar markdown + handoff.
