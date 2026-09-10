@@ -181,6 +181,9 @@ Puertos libres: `3000` BFF · `3001` app · `5432` Postgres · `6379` Redis ·
 | `f8d70ff` | Handoff — Fase A completa. | n/a |
 | `8af449b` | **FASE B — firma DIGITAL real PAdES.** `KeyCustodian` port + `SoftwareKeyCustodian` (PKCS#12 por firmante, CA X.509 interna, `bun run pki:init`) + `Pkcs11KeyCustodian` (esqueleto HSM). `DigitalSignerAdapter`: apariencia visible + PKCS#7 `ETSI.CAdES.detached` con `@signpdf`. `sign()` de todos los métodos firma y sube la versión firmada cifrada. **Sustituye el HMAC.** | **e2e WSL**: `openssl verify` del cert del firmante contra la CA → OK. 13 tests. |
 | `189a300` | Handoff — Fase B núcleo. | n/a |
+| `073452f` | **M07 — recordatorios / escalamiento / delegación sobre timers de Temporal.** `waitWithNudges()` en el workflow dispara `sendNudge` en 50/75/90 % del SLA (recordatorio `< 0.9`, escalamiento `>= 0.9`) en orden SECUENCIAL y PARALELO. `WorkflowService.nudge()` crea `UserNotification` + `ProcessAuditEvent` reales (`SIGNATURE_REMINDER`/`SIGNATURE_ESCALATED`), ventana anti-duplicado de 30 min; el escalamiento sube `priority` y avisa al emisor y observadores. **«Fuera de oficina»**: modelo `OutOfOffice` + `GET/PUT/DELETE /me/out-of-office`; al crear la solicitud se fija `Signer.delegatedTo` de los firmantes con regla vigente y `seedTasks` siembra la `HumanTask` a nombre del suplente (`delegatedFrom`). `delegate()` manual reasigna las tareas abiertas. `sign()` resuelve al delegado y la señal/cierre de tarea usan el firmante del orden (`onBehalfOf` en auditoría). `HumanTask += priority/remindersSent/lastReminderAt/escalatedAt/delegatedFrom`; `/tasks` ordena por prioridad. Bandeja `/tasks`: tarjeta «fuera de oficina», badges, delegar. Migración `20260911010000`. | **e2e WSL** (BFF+Temporal+Postgres+Keycloak+MinIO): auto-delegación por OOO; `REMINDER` con dedupe (2º inmediato → 0); `ESCALATION` avisa al emisor + `priority=2` + `escalatedAt`; firma del delegado contada como el firmante original; auditoría `DELEGATED(auto)`/`SIGNATURE_REMINDER`/`SIGNATURE_ESCALATED`/`SIGNATURE_APPLIED{onBehalfOf}`. `tsc` bff+web limpio; 23 tests bff / 18 web. |
+| `5099d4e` | **M05 — motor DMN real (FEEL).** `dmn-engine.ts` (`evaluateDmn` con `feelin` + `fast-xml-parser`): evalúa `<decisionTable>` con hit policies FIRST/UNIQUE/ANY/COLLECT y condiciones multi-entrada. `ProcessService.decide(context, processKey)` ahora evalúa el `dmnXml` guardado → `decisionRules` → constante. `/process-definitions/:key/decide` acepta `{ tipo, processKey, context }`. | `tsc` + 16 tests (2 nuevos de `dmn-engine`). |
+| `19e3969` | Handoff — Fase B completa. | n/a |
 | `fc97cee` | **FASE B — TSA RFC 3161 real + manifiesto firmado + verificador offline + ZIP.** Cliente RFC 3161 a mano (`rfc3161.ts`, `TSA_URL` → freeTSA por defecto). `ManifestSigner` Ed25519 firma el JSON canónico del manifiesto (append-only). Columnas `timestampToken`/`manifestHash`/`manifestSignature`/`manifestSigningKeyId` (migr. `20260910050000`). `verify()` con `checks{}` granular. **`verifier/verify.mjs`**: verificador OFFLINE (solo node-forge) sin BFF/BD. `GET /evidence/:id/dossier` → ZIP con todo + el verificador. | **e2e WSL**: firmar DIGITAL → manifiesto con token de freeTSA + firma Ed25519 → `/verify` 6/6 checks → ZIP 16 KB → **verificador OFFLINE: «expediente VÁLIDO» 7/7** (incl. cadena PAdES y sello RFC 3161). 14 tests bff + 18 web. |
 
 ### Verificación e2e disponible
@@ -302,14 +305,14 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 ### OLA 3 — Resto de módulos parciales
 
 **M05 — Diseñador de procesos**
-- [ ] Motor DMN real (`dmn-eval-js`) evaluando `dmnXml` + `decisionRules` (D6)
+- [x] Motor DMN real (FEEL, `feelin` — el mismo que dmn-js — en vez de `dmn-eval-js`) evaluando `dmnXml` → `decisionRules` → constante (D6) · `5099d4e`
 - [ ] Catálogo de actividades BPMN permitidas + validación al publicar
 - [ ] Resolver divergencia BPMN de diseño ↔ workflow TS en Temporal (generar workflow desde BPMN o mapeo versionado)
 
-**M07 — Bandejas / SLA**
-- [ ] Recordatorios (nudges 24/48/72 h) + escalamiento al superior sobre timers de Temporal
-- [ ] Reasignación por ausencia; delegación y «fuera de oficina» (`delegatedTo` ya está en el modelo)
-- [ ] Prioridades en la bandeja
+**M07 — Bandejas / SLA** · `073452f`
+- [x] Recordatorios (nudges en 50/75/90 % del SLA) + escalamiento al emisor y observadores sobre timers de Temporal
+- [x] Reasignación por ausencia; delegación y «fuera de oficina» (`OutOfOffice` + `/me/out-of-office`; `delegatedTo`/`delegatedFrom`)
+- [x] Prioridades en la bandeja (`HumanTask.priority`; `/tasks` ordena por prioridad; el escalamiento sube a 2)
 
 **M13 — Notificaciones**
 - [ ] `nodemailer` + plantillas MJML; **Mailpit** en compose (D7)
@@ -468,8 +471,11 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y verificado e2e
 - `fc97cee` **FASE B completa (núcleo M10/M11)** — TSA RFC 3161 real (freeTSA por defecto), manifiesto firmado Ed25519 (append-only), verificador **offline** (`verifier/`), export ZIP `GET /evidence/:id/dossier`. Verificado e2e: el verificador offline dice «expediente VÁLIDO» 7/7 sin tocar el BFF.
   - Notas: `archiver` v8 es **ESM puro** → `new ZipArchive()` (no la forma llamable). `compression` en `main.ts` excluye `application/zip|pdf`. El token TSA se pide al host de `TSA_URL`; freeTSA.org respondió en la prueba real.
 - **Fase A y Fase B: núcleos DONE y verificados e2e.** Pendientes acotados (ver checklist §7 OLA 2): firma `pending`/reconciliación (firma asíncrona), sello por evento, política de firma M10, auditoría inmutable encadenada, interop Adobe, y `A-07`/`A-11`/`A-12`.
-- **Retomar en:** (1) cerrar los pendientes de Fase B de arriba; (2) **OLA 3** — M05 (motor DMN `dmn-eval-js`), M07 (recordatorios/escalamiento/delegación), M13 (correo real + Mailpit + enlaces de un uso), M14 (webhooks firmados + idempotencia + DLQ + OpenAPI), M15 (control plane + OTel), M16 (OCR `tesseract` + face-match `face-api`); (3) transversal: DTOs/excepciones/paginación restantes, Redis (D10), ceremonia a pantalla completa, CI.
+- **Retomar en:** (1) cerrar los pendientes de Fase B de arriba; (2) **OLA 3** — ~~M05~~ ✅ `5099d4e`, ~~M07~~ ✅ `073452f`, **M13** (correo real + Mailpit + enlaces de un uso) ← siguiente, M14 (webhooks firmados + idempotencia + DLQ + OpenAPI), M15 (control plane + OTel), M16 (OCR `tesseract` + face-match `face-api`); (3) transversal: DTOs/excepciones/paginación restantes, Redis (D10), ceremonia a pantalla completa, CI.
 - Verificación pendiente: login OIDC **completo en navegador** (el `curl` llega al redirect a Keycloak; falta rellenar el form y volver por `/api/auth/callback`). Playwright o manual.
+- `5099d4e` **M05 — motor DMN real (FEEL).** `evaluateDmn` con `feelin` (el evaluador de expresiones de dmn-js) + `fast-xml-parser`; `decide()` evalúa de verdad el `dmnXml` del proceso (hit policies FIRST/UNIQUE/ANY/COLLECT, condiciones multi-entrada). `/decide` acepta `context`. 2 tests nuevos.
+- `073452f` **M07 — recordatorios / escalamiento / delegación.** Timers de Temporal (`waitWithNudges` en 50/75/90 % del SLA) → activity `sendNudge` → `POST /internal/workflows/nudge` → `UserNotification` + `ProcessAuditEvent` reales, dedupe 30 min. Escalamiento sube `priority` y avisa al emisor + observadores. «Fuera de oficina» (`OutOfOffice` + `/me/out-of-office`): fija `Signer.delegatedTo` al crear y `seedTasks` siembra la tarea a nombre del suplente; `delegate()` manual reasigna las tareas abiertas; `sign()` resuelve al delegado (auditoría `onBehalfOf`, la señal al workflow usa el firmante del orden). Bandeja `/tasks` con tarjeta OOO + badges + delegar. Migración `20260911010000`. **Verificado e2e en WSL** con el stack completo (auto-delegación, REMINDER+dedupe, ESCALATION, firma del delegado contada al original, auditoría completa). 23 tests bff / 18 web.
+  - Nota entorno: `bun run worker:dev` (tsx) **no carga `backend/bff/.env`** por sí solo → el worker necesita `WORKER_SHARED_SECRET` en el entorno (`set -a && . ./.env && set +a` antes de lanzarlo, o usar `bun run dev` desde la raíz que ya lo inyecta). Si falta, el activity `seedHumanTasks` falla y el workflow queda FAILED sin sembrar tareas.
 
 ### Sesión 2 — (pendiente)
 - ...
