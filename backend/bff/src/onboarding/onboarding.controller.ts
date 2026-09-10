@@ -11,6 +11,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
+import { StepUp } from '../auth/step-up.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { OnboardingService } from './onboarding.service';
 import { AttachIneDto, CreateOnboardingDto, OnboardingActionDto } from './dto';
@@ -83,6 +84,7 @@ export class OnboardingController {
     return this.onboarding.verifyIne(id, { ...actor(user), notes: body.notes, approve: body.approve });
   }
 
+  @StepUp(600) // A-11 — habilitar una identidad para firmar exige re-auth reciente
   @Post(':id/actions/enable')
   enable(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.onboarding.enable(id, actor(user));

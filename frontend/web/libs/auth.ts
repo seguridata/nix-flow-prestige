@@ -44,7 +44,7 @@ export function newState() {
 
 // ---------- URLs de Keycloak ----------
 
-export function authorizeUrl(challenge: string, state: string): string {
+export function authorizeUrl(challenge: string, state: string, maxAge?: number): string {
   const u = new URL(`${ISSUER()}/protocol/openid-connect/auth`);
   u.searchParams.set("client_id", CLIENT_ID());
   u.searchParams.set("redirect_uri", REDIRECT_URI());
@@ -53,6 +53,9 @@ export function authorizeUrl(challenge: string, state: string): string {
   u.searchParams.set("state", state);
   u.searchParams.set("code_challenge", challenge);
   u.searchParams.set("code_challenge_method", "S256");
+  // A-11 — step-up: fuerza a Keycloak a reautenticar si la sesión es más vieja
+  // que `maxAge` segundos (refresca `auth_time`).
+  if (maxAge && maxAge > 0) u.searchParams.set("max_age", String(maxAge));
   return u.toString();
 }
 

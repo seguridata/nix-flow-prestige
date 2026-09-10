@@ -15,6 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/public.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
+import { StepUp } from '../auth/step-up.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { SignatureRequestsService } from './signature-requests.service';
 import {
@@ -92,6 +93,7 @@ export class SignatureRequestsController {
    * con el PNG del trazo); JSON en los demás casos. El firmante sale del token;
    * el trazo nunca viaja ni se persiste como base64.
    */
+  @StepUp(300) // A-11 — la firma exige autenticación de los últimos 5 min
   @Post(':id/actions/sign')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_STROKE_BYTES } }))
   sign(

@@ -54,6 +54,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     } catch {
       parsed = undefined;
     }
+    // A-11 — step-up: reautenticar con `max_age` y volver a la misma pantalla.
+    if (
+      res.status === 403 &&
+      typeof window !== "undefined" &&
+      (parsed as { error?: string })?.error === "step_up_required"
+    ) {
+      const maxAge = (parsed as { maxAgeSeconds?: number }).maxAgeSeconds ?? 300;
+      const returnTo = window.location.pathname + window.location.search;
+      window.location.href = `/api/auth/login?maxAge=${maxAge}&returnTo=${encodeURIComponent(returnTo)}`;
+    }
     throw new ApiError(
       (parsed as { message?: string })?.message ?? `Error ${res.status} en ${path}`,
       res.status,
