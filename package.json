@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "down": "bun scripts/dev.ts down",
+    "demo": "cd backend/bff && bun prisma/scripts/demo-seed.ts",
+    "demo:reset": "cd backend/bff && bun prisma/scripts/demo-seed.ts --reset",
     "gen-keys": "bun scripts/gen-keys.ts",
     "pki:init": "bun scripts/pki-init.ts",
     "build": "turbo run build",

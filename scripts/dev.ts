@@ -2,8 +2,9 @@
 /**
  * Prestige — un comando para todo el sandbox local.
  *
- *   bun run dev              Docker + Prisma + front (3001) + BFF/worker (3000)
+ *   bun run dev              Docker + Prisma + front (3001) + BFF/worker (3000) + demo
  *   bun run dev -- --reset   borra volúmenes y vuelve a subir
+ *   bun run dev -- --no-demo no siembra el escenario de demostración
  *   bun run down             para la infra (deja volúmenes)
  *   bun run down -- --volumes
  */
@@ -27,6 +28,7 @@ const args = process.argv.slice(2);
 const command = args[0] === "down" ? "down" : "up";
 const reset = args.includes("--reset");
 const volumes = args.includes("--volumes") || args.includes("-v") || reset;
+const wantsDemo = !args.includes("--no-demo") && process.env.DEMO_SEED !== "0";
 
 function log(msg: string) {
   console.log(`\x1b[36m[prestige]\x1b[0m ${msg}`);
@@ -145,15 +147,38 @@ async function redisReady() {
 function printUrls() {
   console.log("");
   log("Listo. URLs:");
-  console.log("  App            http://127.0.0.1:3001");
-  console.log("  BFF            http://127.0.0.1:3000");
+  console.log("  App            http://127.0.0.1:3001   maria/maria123 · carlos/carlos123 · roberto/roberto123");
+  console.log("  BFF · OpenAPI  http://127.0.0.1:3000   ·   /docs");
   console.log("  Cockpit        http://127.0.0.1:3001/operations");
+  console.log("  Mailpit        http://127.0.0.1:8025   (correos de la demo)");
   console.log("  Temporal UI    http://127.0.0.1:8088");
   console.log("  MinIO consola  http://127.0.0.1:9001   prestige / prestige-minio");
   console.log("  Keycloak       http://127.0.0.1:8081   admin / admin");
   console.log("");
+  if (wantsDemo) log("La demo se sembrará en cuanto el BFF responda (usa --no-demo para saltarla).");
   log("Ctrl+C para front + BFF. La infra Docker sigue. Para bajarla: bun run down");
   console.log("");
+}
+
+async function seedDemo() {
+  // Espera a que el BFF y Keycloak estén listos (el front/BFF acaban de
+  // arrancar en paralelo) y siembra el escenario de demostración. Best-effort:
+  // no tumba `bun run dev` si algo falla.
+  const bffUp = await waitFor(
+    "BFF (para la demo)",
+    () => probeHttp("http://127.0.0.1:3000/operations/health"),
+    120_000,
+    false,
+  );
+  const kcUp = await probeHttp(
+    "http://127.0.0.1:8081/realms/prestige/.well-known/openid-configuration",
+  );
+  if (!bffUp || !kcUp) {
+    log("Demo omitida: BFF o Keycloak no respondieron a tiempo. Ejecuta `bun run demo` cuando estén arriba.");
+    return;
+  }
+  log("Sembrando escenario de demostración…");
+  await run(["bun", "prisma/scripts/demo-seed.ts"], { cwd: BFF_DIR });
 }
 
 async function down() {
@@ -233,6 +258,8 @@ async function up() {
     stdout: "inherit",
     stderr: "inherit",
   });
+
+  if (wantsDemo) void seedDemo();
 
   const shutdown = () => {
     child.kill();
