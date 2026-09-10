@@ -414,6 +414,77 @@ model ProcessWatcher {
   @@unique([signatureRequestId, userId])
 }
 
+/// M15 — control plane. Directorio de tenants del lado de la app (Keycloak
+/// sigue siendo la fuente de identidad; esto complementa con metadatos,
+/// membresías y políticas por tenant).
+model Tenant {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships TenantMembership[]
+  policies    Policy[]
+  catalogs    CatalogEntry[]
+}
+
+/// M15 — pertenencia usuario↔tenant + roles efectivos en ese tenant. Habilita
+/// validar `delegateId` / destinatarios contra un directorio real (deuda A-07).
+model TenantMembership {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  name      String?
+  email     String?
+  roles     String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+/// M15 — política versionable por tenant (SLA por defecto, métodos de firma
+/// permitidos, política de firma M10, ventanas de recordatorio, TTL de enlaces…).
+model Policy {
+  id        String   @id @default(uuid())
+  tenantId  String
+  key       String
+  value     Json
+  version   Int      @default(1)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+/// M15 — catálogos por tenant (tipos de documento, motivos de rechazo, áreas…).
+model CatalogEntry {
+  id        String   @id @default(uuid())
+  tenantId  String
+  kind      String
+  key       String
+  label     String
+  meta      Json?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, key])
+  @@index([tenantId, kind])
+}
+
 enum OnboardingKind {
   EMPLEADO
   PROVEEDOR

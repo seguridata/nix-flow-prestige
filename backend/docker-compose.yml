@@ -112,6 +112,19 @@ services:
       timeout: 3s
       retries: 10
 
+  # M15 — colector OpenTelemetry (opcional). `docker compose --profile observability up -d`.
+  # El BFF exporta a http://localhost:4318 si OTEL_EXPORTER_OTLP_TRACES_ENDPOINT lo apunta.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./infra/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+
   # M13 — servidor SMTP de desarrollo. UI web en http://localhost:8025
   mailpit:
     image: axllent/mailpit:v1.20

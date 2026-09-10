@@ -22,6 +22,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { ControlPlaneModule } from './control-plane/control-plane.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     AvailabilityModule,
     NotificationsModule,
     WebhooksModule,
+    ControlPlaneModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

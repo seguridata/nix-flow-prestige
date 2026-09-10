@@ -1,3 +1,6 @@
+// M15 — OTel: PRIMER import; parchea http/express/prisma como efecto de carga,
+// antes de que se evalúen los imports de Nest/Prisma de abajo.
+import './tracing';
 import 'reflect-metadata';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
