@@ -147,13 +147,14 @@ async function redisReady() {
 function printUrls() {
   console.log("");
   log("Listo. URLs:");
-  console.log("  App            http://127.0.0.1:3001   maria/maria123 · carlos/carlos123 · roberto/roberto123");
-  console.log("  BFF · OpenAPI  http://127.0.0.1:3000   ·   /docs");
-  console.log("  Cockpit        http://127.0.0.1:3001/operations");
-  console.log("  Mailpit        http://127.0.0.1:8025   (correos de la demo)");
-  console.log("  Temporal UI    http://127.0.0.1:8088");
-  console.log("  MinIO consola  http://127.0.0.1:9001   prestige / prestige-minio");
-  console.log("  Keycloak       http://127.0.0.1:8081   admin / admin");
+  console.log("  App            http://localhost:3001   maria/maria123 · carlos/carlos123 · roberto/roberto123");
+  console.log("     (usa 'localhost', NO 127.0.0.1 — el redirect OIDC está registrado en localhost)");
+  console.log("  BFF · OpenAPI  http://localhost:3000   ·   /docs");
+  console.log("  Cockpit        http://localhost:3001/operations");
+  console.log("  Mailpit        http://localhost:8025   (correos de la demo)");
+  console.log("  Temporal UI    http://localhost:8088");
+  console.log("  MinIO consola  http://localhost:9001   prestige / prestige-minio");
+  console.log("  Keycloak       http://localhost:8081   admin / admin");
   console.log("");
   if (wantsDemo) log("La demo se sembrará en cuanto el BFF responda (usa --no-demo para saltarla).");
   log("Ctrl+C para front + BFF. La infra Docker sigue. Para bajarla: bun run down");
