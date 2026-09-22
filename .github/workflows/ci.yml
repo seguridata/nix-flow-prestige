@@ -12,6 +12,7 @@ concurrency:
 
 env:
   DATABASE_URL: postgresql://prestige:prestige@localhost:5432/prestige?schema=public
+  SHADOW_DATABASE_URL: postgresql://prestige:prestige@localhost:5432/prestige_shadow?schema=public
   # Claves de desarrollo — sólo para que arranquen tsc/tests/build; NO son secretos reales.
   STORAGE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
   SESSION_SECRET: ci-session-secret-not-used-in-prod-0000000000
@@ -56,12 +57,16 @@ jobs:
         working-directory: backend/bff
         run: bunx prisma migrate deploy
 
+      - name: Create shadow database
+        run: PGPASSWORD=prestige psql -h localhost -U prestige -d prestige -c "CREATE DATABASE prestige_shadow;"
+
       - name: Migration drift check
         working-directory: backend/bff
         run: >-
           bunx prisma migrate diff
           --from-migrations prisma/migrations
           --to-schema-datamodel prisma/schema.prisma
+          --shadow-database-url "$SHADOW_DATABASE_URL"
           --exit-code
 
       - name: Typecheck
@@ -80,6 +85,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --redact --exit-code 1
