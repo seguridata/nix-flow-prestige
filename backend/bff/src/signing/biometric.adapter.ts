@@ -1,4 +1,8 @@
-import { ServiceUnavailableException, Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type { ReconcileResult, SignCommand, SignResult, SignerAdapter } from './signer-adapter';
 
 /**
@@ -59,11 +63,19 @@ export class BiometricSignerAdapter implements SignerAdapter {
       };
     }
 
-    return {
-      algorithm: 'BIOMETRIC-LIVENESS',
-      signatureHash: body.signatureHash ?? command.documentHash,
-      provider: url,
-    };
+    if (body.status === 'completed') {
+      return {
+        algorithm: 'BIOMETRIC-LIVENESS',
+        signatureHash: body.signatureHash ?? command.documentHash,
+        provider: url,
+      };
+    }
+
+    // Cualquier otro estado (failed, rejected, ausente) es un rechazo — nunca
+    // se trata como firma exitosa.
+    throw new UnprocessableEntityException(
+      body.detail ?? `Verificación biométrica no exitosa (status: ${body.status ?? 'desconocido'})`,
+    );
   }
 
   async reconcile(pendingRef: string, command: SignCommand): Promise<ReconcileResult> {

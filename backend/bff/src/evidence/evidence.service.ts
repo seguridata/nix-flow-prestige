@@ -333,13 +333,17 @@ export class EvidenceService {
     };
   }
 
-  async findByRequest(signatureRequestId: string): Promise<EvidenceManifest | null> {
-    return this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
+  async findByRequest(signatureRequestId: string, tenantId?: string): Promise<EvidenceManifest | null> {
+    const found = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
+    if (found && tenantId && found.tenantId !== tenantId) return null;
+    return found;
   }
 
-  async findByManifestId(manifestId: string): Promise<EvidenceManifest> {
+  async findByManifestId(manifestId: string, tenantId?: string): Promise<EvidenceManifest> {
     const found = await this.prisma.evidenceManifest.findUnique({ where: { manifestId } });
-    if (!found) throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
+    if (!found || (tenantId && found.tenantId !== tenantId)) {
+      throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
+    }
     return found;
   }
 
@@ -487,8 +491,8 @@ export class EvidenceService {
    * Ed25519 + clave pública + token TSA + CA + verificador offline. Todo lo
    * necesario para validar sin el BFF.
    */
-  async buildDossier(manifestId: string): Promise<EvidenceDossier> {
-    const m = await this.findByManifestId(manifestId);
+  async buildDossier(manifestId: string, tenantId?: string): Promise<EvidenceDossier> {
+    const m = await this.findByManifestId(manifestId, tenantId);
     const doc = await this.prisma.document.findUnique({
       where: { id: m.documentId },
       select: { objectKey: true, enc: true },

@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { createHash } from 'crypto';
 import type { SignatureMethod, SignerRole, SigningOrder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -379,6 +384,12 @@ export class SignatureRequestsService {
       if (signer.status === 'FIRMADO' || signer.status === 'RECHAZADO') return request;
       const onBehalfOf = signer.signerId !== body.signerId ? signer.signerId : undefined;
       const isReconcileRetry = signer.status === 'PENDIENTE' && Boolean(signer.pendingRef);
+      if (isReconcileRetry) {
+        // Ya hay una firma asíncrona en curso (2FA/biometría esperando al
+        // proveedor). No se vuelve a reclamar ni a invocar al proveedor —
+        // signature-reconcile.service la cierra cuando el proveedor responda.
+        return request;
+      }
 
       if (!request.methods.includes(body.method)) {
         throw new BadRequestException(
@@ -727,13 +738,16 @@ export class SignatureRequestsService {
     });
   }
 
-  async reject(id: string, body: { signerId: string; reason?: string }) {
-    const request = await this.getOrThrow(id);
+  async reject(id: string, body: { signerId: string; reason?: string }, tenantId?: string) {
+    const request = await this.getOrThrow(id, tenantId);
     if (['COMPLETADA', 'RECHAZADA', 'EXPIRADA'].includes(request.status)) return request;
-    await this.prisma.signer.updateMany({
+    const claimed = await this.prisma.signer.updateMany({
       where: { signatureRequestId: id, signerId: body.signerId },
       data: { status: 'RECHAZADO' },
     });
+    if (claimed.count === 0) {
+      throw new ForbiddenException('No eres firmante de esta solicitud');
+    }
     const updated = await this.prisma.signatureRequest.update({
       where: { id },
       data: { status: 'RECHAZADA' },

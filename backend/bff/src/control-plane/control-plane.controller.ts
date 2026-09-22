@@ -77,50 +77,75 @@ export class ControlPlaneController {
   }
 
   @Get('tenants/:tenant/members')
-  members(@Param('tenant') tenant: string) {
+  async members(@Param('tenant') tenant: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.listMembers(tenant);
   }
 
   @Put('tenants/:tenant/members')
-  upsertMember(@Param('tenant') tenant: string, @Body() body: MemberDto) {
+  async upsertMember(
+    @Param('tenant') tenant: string,
+    @Body() body: MemberDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.upsertMember(tenant, body);
   }
 
   @Delete('tenants/:tenant/members/:userId')
-  removeMember(@Param('tenant') tenant: string, @Param('userId') userId: string) {
+  async removeMember(
+    @Param('tenant') tenant: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.removeMember(tenant, userId);
   }
 
   @Get('tenants/:tenant/policies')
-  policies(@Param('tenant') tenant: string) {
+  async policies(@Param('tenant') tenant: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.listPolicies(tenant);
   }
 
   @Put('tenants/:tenant/policies')
-  setPolicy(
+  async setPolicy(
     @Param('tenant') tenant: string,
     @Body() body: PolicyDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.setPolicy(tenant, body.key, body.value, user.actorId);
   }
 
   @Get('tenants/:tenant/catalogs')
-  catalogs(@Param('tenant') tenant: string, @Query('kind') kind?: string) {
+  async catalogs(
+    @Param('tenant') tenant: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('kind') kind?: string,
+  ) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.listCatalog(tenant, kind);
   }
 
   @Put('tenants/:tenant/catalogs')
-  upsertCatalog(@Param('tenant') tenant: string, @Body() body: CatalogDto) {
+  async upsertCatalog(
+    @Param('tenant') tenant: string,
+    @Body() body: CatalogDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.upsertCatalog(tenant, body);
   }
 
   @Delete('tenants/:tenant/catalogs/:kind/:key')
-  removeCatalog(
+  async removeCatalog(
     @Param('tenant') tenant: string,
     @Param('kind') kind: string,
     @Param('key') key: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.cp.assertOwnTenant(tenant, user.tenantId);
     return this.cp.removeCatalog(tenant, kind, key);
   }
 

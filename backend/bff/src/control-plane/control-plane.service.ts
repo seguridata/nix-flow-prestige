@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -44,6 +44,22 @@ export class ControlPlaneService implements OnModuleInit {
       (await this.prisma.tenant.findUnique({ where: { slug: idOrSlug } }));
     if (!t) throw new NotFoundException(`Tenant ${idOrSlug} no encontrado`);
     return t.id;
+  }
+
+  /**
+   * `admin` es un rol de realm de Keycloak, no está acotado por tenant. El
+   * tenant `seguridata` es el operador de la plataforma (ve/administra todos
+   * los tenants); cualquier otro tenant solo puede administrarse a sí mismo.
+   */
+  async assertOwnTenant(tenantIdOrSlug: string, callerTenantId: string): Promise<void> {
+    if (callerTenantId === 'seguridata') return;
+    const t =
+      (await this.prisma.tenant.findUnique({ where: { id: tenantIdOrSlug } })) ??
+      (await this.prisma.tenant.findUnique({ where: { slug: tenantIdOrSlug } }));
+    if (!t) throw new NotFoundException(`Tenant ${tenantIdOrSlug} no encontrado`);
+    if (t.id !== callerTenantId && t.slug !== callerTenantId) {
+      throw new ForbiddenException('No puedes administrar un tenant distinto al tuyo');
+    }
   }
 
   // ---- Membresías ----

@@ -136,7 +136,11 @@ export class SignatureRequestsController {
 
   @Post(':id/actions/reject')
   reject(@Param('id') id: string, @Body() body: RejectDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.signatureRequests.reject(id, { signerId: user.actorId, reason: body.reason });
+    return this.signatureRequests.reject(
+      id,
+      { signerId: user.actorId, reason: body.reason },
+      user.tenantId,
+    );
   }
 
   @Roles('sender', 'admin')
