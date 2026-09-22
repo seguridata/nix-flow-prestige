@@ -28,12 +28,16 @@ model Case {
 model Document {
   id            String   @id @default(uuid())
   caseId        String
+  /// A-07 — tenant denormalizado desde `Case` (como en `EvidenceManifest`) para
+  /// poder aislar por tenant en las lecturas sin join.
+  tenantId      String   @default("seguridata")
   filename      String
   version       Int      @default(1)
-  hash          String
+  hash          String // SHA-256 del contenido en claro
   locked        Boolean  @default(false)
-  contentBase64 String   @db.Text
-  objectKey     String?
+  objectKey     String // clave del objeto cifrado en el storage (obligatoria)
+  enc           Json // metadatos de cifrado en reposo (envelope AES-256-GCM)
+  sizeBytes     Int      @default(0)
   mimeType      String   @default("application/pdf")
   createdAt     DateTime @default(now())
 
@@ -42,6 +46,7 @@ model Document {
   signatureFields   SignatureField[]
 
   @@index([caseId])
+  @@index([tenantId])
 }
 
 enum SignatureMethod {
@@ -66,6 +71,8 @@ enum RequestStatus {
 model SignatureRequest {
   id              String            @id @default(uuid())
   documentId      String
+  /// A-07 — tenant denormalizado desde el `Document`.
+  tenantId        String            @default("seguridata")
   methods         SignatureMethod[]
   order           SigningOrder      @default(SECUENCIAL)
   status          RequestStatus     @default(PENDIENTE)
@@ -73,6 +80,9 @@ model SignatureRequest {
   requestedByName String?
   slaHours        Int               @default(72)
   expiresAt       DateTime?
+  /// M10 — política de firma efectiva al crear la solicitud (versión + snapshot).
+  policyVersion   Int?
+  policySnapshot  Json?
   createdAt       DateTime          @default(now())
 
   document         Document            @relation(fields: [documentId], references: [id])
@@ -84,10 +94,13 @@ model SignatureRequest {
 
   @@index([documentId])
   @@index([status])
+  @@index([tenantId])
 }
 
 enum SignerStatus {
   PENDIENTE
+  /// Fase B — firma en curso (claim atómico); un método asíncrono puede dejarla aquí.
+  EN_PROCESO
   FIRMADO
   RECHAZADO
 }
@@ -110,11 +123,15 @@ model Signer {
   sortOrder           Int              @default(0)
   delegatedTo         String?
   delegatedToName     String?
+  /// Fase B — firma asíncrona: referencia del proveedor + cuándo se inició.
+  pendingRef          String?
+  pendingSince        DateTime?
 
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
 
   @@unique([signatureRequestId, signerId])
   @@index([signerId])
+  @@index([status, pendingSince])
 }
 
 enum SignatureFieldType {
@@ -163,6 +180,15 @@ model EvidenceManifest {
   timestampProvider    String
   timestampIssuedAt    DateTime
   timestampTokenHash   String
+  /// Token RFC 3161 (CMS SignedData, DER en base64) sobre packageHash. Null si TSA_URL no está configurada.
+  timestampToken       String?  @db.Text
+  /// Firma Ed25519 del JSON canónico del manifiesto (append-only, verificable offline).
+  manifestHash         String?
+  manifestSignature    String?
+  manifestSigningKeyId String?
+  /// M10 — política de firma vigente al crear la solicitud (queda dentro del
+  /// manifiesto firmado, así el verificador sabe qué reglas se aplicaron).
+  signaturePolicy      Json?
   validationConclusion String
   validationReasons    Json
   createdAt            DateTime @default(now())
@@ -184,18 +210,41 @@ model HumanTask {
   signerId           String
   name               String
   status             HumanTaskStatus @default(CREADA)
+  /// Prioridad en la bandeja: 0 normal, 1 alta, 2+ escalada.
+  priority           Int             @default(0)
   dueAt              DateTime?
   completedAt        DateTime?
   workflowId         String?
   claimedBy          String?
   claimedAt          DateTime?
   outcome            String?
+  /// M07 — recordatorios/escalamiento sobre timers de Temporal.
+  remindersSent      Int             @default(0)
+  lastReminderAt     DateTime?
+  escalatedAt        DateTime?
+  /// Firmante original cuando la tarea se reasignó por delegación / «fuera de oficina».
+  delegatedFrom      String?
   createdAt          DateTime        @default(now())
 
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
 
   @@index([signerId, status])
   @@index([signatureRequestId])
+  @@index([status, priority])
+}
+
+/// M07 — «fuera de oficina»: mientras esté activo, las firmas asignadas al
+/// usuario se delegan automáticamente en `delegateId` al crearse la solicitud.
+model OutOfOffice {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  delegateId   String
+  delegateName String?
+  reason       String?
+  since        DateTime  @default(now())
+  until        DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model ConsentAcceptance {
@@ -252,6 +301,95 @@ model UserNotification {
   @@index([userId, read, createdAt])
 }
 
+enum OutboxStatus {
+  PENDIENTE
+  ENVIADO
+  FALLIDO
+  DLQ
+}
+
+/// M13 — bandeja de salida de notificaciones (correo real vía nodemailer/Mailpit)
+/// con reintentos exponenciales y cola de mensajes muertos (DLQ).
+model NotificationOutbox {
+  id            String       @id @default(uuid())
+  channel       String       @default("email")
+  toAddress     String
+  subject       String
+  body          String       @db.Text
+  template      String?
+  payload       Json?
+  status        OutboxStatus @default(PENDIENTE)
+  attempts      Int          @default(0)
+  maxAttempts   Int          @default(6)
+  lastError     String?
+  nextAttemptAt DateTime     @default(now())
+  sentAt        DateTime?
+  /// Idempotencia: no encolar dos veces el mismo aviso.
+  dedupeKey     String?      @unique
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, nextAttemptAt])
+}
+
+/// M14 — suscripción a webhooks firmados (HMAC-SHA256 por suscriptor).
+model WebhookSubscription {
+  id          String   @id @default(uuid())
+  tenantId    String   @default("seguridata")
+  url         String
+  secret      String
+  /// Tipos de evento CloudEvents a los que se suscribe (`*` = todos).
+  events      String[]
+  active      Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId, active])
+}
+
+/// M14 — cola de entregas de webhook con reintentos + DLQ (misma mecánica que
+/// NotificationOutbox). Idempotencia por (subscriptionId, eventId).
+model WebhookDelivery {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  eventType      String
+  eventId        String
+  payload        Json
+  status         OutboxStatus @default(PENDIENTE)
+  attempts       Int          @default(0)
+  maxAttempts    Int          @default(8)
+  lastError      String?
+  responseStatus Int?
+  nextAttemptAt  DateTime     @default(now())
+  deliveredAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  subscription WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, eventId])
+  @@index([status, nextAttemptAt])
+}
+
+/// M13 / A-12 — enlaces de un solo uso firmados con expiración para el portal
+/// del firmante externo. Se guarda sólo el hash del token.
+model OneTimeLink {
+  id                 String    @id @default(uuid())
+  purpose            String    @default("sign")
+  signatureRequestId String?
+  signerId           String
+  tokenHash          String    @unique
+  expiresAt          DateTime
+  usedAt             DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([signerId])
+  @@index([signatureRequestId])
+}
+
 model ProcessDefinition {
   id          String   @id @default(uuid())
   key         String
@@ -269,8 +407,14 @@ model ProcessDefinition {
   @@index([key])
 }
 
+/// M11 — auditoría inmutable encadenada. Cada evento lleva `seq` monótono,
+/// `prevHash` (hash del anterior) y `hash` = SHA-256(prevHash + JSON canónico).
+/// La cabeza global vive en `AuditAnchor` y se toma con `FOR UPDATE` al escribir.
 model ProcessAuditEvent {
   id                 String   @id @default(uuid())
+  seq                BigInt?  @unique
+  prevHash           String?
+  hash               String?
   signatureRequestId String?
   documentId         String?
   onboardingId       String?
@@ -283,6 +427,32 @@ model ProcessAuditEvent {
   @@index([signatureRequestId, createdAt])
   @@index([documentId, createdAt])
   @@index([onboardingId, createdAt])
+  @@index([seq])
+}
+
+/// Fase B — sello de tiempo RFC 3161 por evento de firma (además del sello del
+/// paquete en el manifiesto): «esta firma existía en el instante T».
+model SignatureEventTimestamp {
+  id                 String   @id @default(uuid())
+  signatureRequestId String
+  signerId           String
+  /// Hash (hex) sobre el que se pidió el sello — el de la firma PAdES de ese evento.
+  signedHash         String
+  provider           String
+  tokenHash          String
+  token              String   @db.Text
+  issuedAt           DateTime
+  createdAt          DateTime @default(now())
+
+  @@unique([signatureRequestId, signerId])
+}
+
+/// M11 — cabeza (singleton) de la cadena de auditoría global.
+model AuditAnchor {
+  id        String   @id
+  seq       BigInt   @default(0)
+  hash      String   @default("")
+  updatedAt DateTime @updatedAt
 }
 
 model ProcessWatcher {
@@ -293,6 +463,77 @@ model ProcessWatcher {
   createdAt          DateTime @default(now())
 
   @@unique([signatureRequestId, userId])
+}
+
+/// M15 — control plane. Directorio de tenants del lado de la app (Keycloak
+/// sigue siendo la fuente de identidad; esto complementa con metadatos,
+/// membresías y políticas por tenant).
+model Tenant {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships TenantMembership[]
+  policies    Policy[]
+  catalogs    CatalogEntry[]
+}
+
+/// M15 — pertenencia usuario↔tenant + roles efectivos en ese tenant. Habilita
+/// validar `delegateId` / destinatarios contra un directorio real (deuda A-07).
+model TenantMembership {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  name      String?
+  email     String?
+  roles     String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+/// M15 — política versionable por tenant (SLA por defecto, métodos de firma
+/// permitidos, política de firma M10, ventanas de recordatorio, TTL de enlaces…).
+model Policy {
+  id        String   @id @default(uuid())
+  tenantId  String
+  key       String
+  value     Json
+  version   Int      @default(1)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+/// M15 — catálogos por tenant (tipos de documento, motivos de rechazo, áreas…).
+model CatalogEntry {
+  id        String   @id @default(uuid())
+  tenantId  String
+  kind      String
+  key       String
+  label     String
+  meta      Json?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, key])
+  @@index([tenantId, kind])
 }
 
 enum OnboardingKind {
@@ -321,15 +562,23 @@ model OnboardingCase {
   email              String
   curp               String?
   rfc                String?
-  ineFrontBase64     String?          @db.Text
-  ineBackBase64      String?          @db.Text
+  // Objetos cifrados en storage: { key, sha256, size, enc }. Nunca base64 en BD.
+  ineFront           Json?
+  ineBack            Json?
   ineHash            String?
   ineVerified        Boolean          @default(false)
-  selfieBase64       String?          @db.Text
+  /// M16 — OCR/MRZ crudo + campos extraídos de la INE (tesseract.js).
+  ineOcr             Json?
+  /// M16 — resultado del puerto IdentityVerifier (vigencia / CURP / RENAPO).
+  ineCheck           Json?
+  selfie             Json?
   livenessHash       String?
   livenessScore      Float?
   livenessOk         Boolean          @default(false)
   faceMatchOk        Boolean          @default(false)
+  /// M16 — score de face-match 0..1 del puerto BiometricEngine.
+  faceMatchScore     Float?
+  biometricEngine    String?
   biometricSessionId String?
   enabledSignerId    String?
   notes              String?

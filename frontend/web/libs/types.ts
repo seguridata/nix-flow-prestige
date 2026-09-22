@@ -32,6 +32,13 @@ export type SignatureRequestStatus =
   | "RECHAZADA"
   | "EXPIRADA";
 
+/** Miembro del directorio del tenant, para autocompletar firmantes. */
+export interface Colleague {
+  userId: string;
+  name: string | null;
+  email: string | null;
+}
+
 export interface Signer {
   signerId: string;
   name?: string;

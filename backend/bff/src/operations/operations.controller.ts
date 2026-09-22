@@ -34,7 +34,6 @@ export class OperationsController {
     };
   }
 
-  @Public()
   @Get('summary')
   async summary() {
     const [requests, completed, pendingTasks, runs] = await Promise.all([
@@ -46,7 +45,6 @@ export class OperationsController {
     return { requests, completed, pendingTasks, runs };
   }
 
-  @Public()
   @Get('overview')
   async overview() {
     const soon = new Date(Date.now() + 24 * 3600_000);
@@ -117,7 +115,6 @@ export class OperationsController {
     };
   }
 
-  @Public()
   @Get('search')
   async search(@Query('q') q = '') {
     const term = q.trim();

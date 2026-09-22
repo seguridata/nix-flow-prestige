@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import { FilePlus2, FileText, GitBranch, Inbox, LayoutDashboard, ListChecks, Send, ShieldCheck, UserPlus } from "lucide-react";
@@ -58,7 +59,7 @@ export function CommandPalette({
   function go(path: string) {
     onOpenChange(false);
     setQuery("");
-    router.push(path);
+    router.push(path as Route);
   }
 
   return (

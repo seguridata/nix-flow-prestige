@@ -5,8 +5,8 @@ export interface CreateSignatureRequestBody {
   documentId: string;
   methods: SignatureMethod[];
   order: SigningOrder;
-  requestedBy: string;
-  requestedByName: string;
+  slaHours?: number;
+  // requestedBy / tenant salen del token en el BFF.
   signers: { signerId: string; name?: string; email?: string; role?: "FIRMANTE" | "REVISOR" }[];
 }
 
@@ -23,18 +23,23 @@ export function fetchSignatureRequestsForDocument(documentId: string) {
 export function signRequest(
   requestId: string,
   body: {
-    signerId: string;
     method: SignatureMethod;
-    signatureImageBase64?: string;
     consentAccepted?: boolean;
     biometricSessionId?: string;
   },
+  autograph?: Blob,
 ) {
-  return apiClient.post<SignatureRequest>(
-    `/signature-requests/${requestId}/actions/sign`,
-    body,
-    { idempotencyKey: newIdempotencyKey() },
-  );
+  const path = `/signature-requests/${requestId}/actions/sign`;
+  const opts = { idempotencyKey: newIdempotencyKey() };
+  if (autograph) {
+    const form = new FormData();
+    form.append("file", autograph, "trazo.png");
+    form.append("method", body.method);
+    if (body.consentAccepted !== undefined) form.append("consentAccepted", String(body.consentAccepted));
+    if (body.biometricSessionId) form.append("biometricSessionId", body.biometricSessionId);
+    return apiClient.post<SignatureRequest>(path, form, opts);
+  }
+  return apiClient.post<SignatureRequest>(path, body, opts);
 }
 
 export function fetchConsentText() {
@@ -64,11 +69,4 @@ export function delegateRequest(
     body,
     { idempotencyKey: newIdempotencyKey() },
   );
-}
-
-export function createSelfSignDemo(body: { signerId: string; name: string; email?: string }) {
-  return apiClient.post<{
-    document: { id: string };
-    request: SignatureRequest;
-  }>("/demo/self-sign", body);
 }

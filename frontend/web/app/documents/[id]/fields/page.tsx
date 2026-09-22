@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/libs/utils";
 
-import { fetchDocument, fetchDocumentContent } from "@/services/documents-service";
+import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import { fetchSignatureRequestsForDocument } from "@/services/signature-requests-service";
 import { bulkCreateFields, fetchFields } from "@/services/signature-fields-service";
 import type { DraftField, SignerColor } from "@/components/documents/field-editor-types";
@@ -99,11 +99,6 @@ export default function SignatureFieldsPage({
     queryFn: () => fetchDocument(documentId),
   });
 
-  const contentQuery = useQuery({
-    queryKey: ["document-content", documentId],
-    queryFn: () => fetchDocumentContent(documentId),
-  });
-
   const requestsQuery = useQuery({
     queryKey: ["signature-requests", "document", documentId],
     queryFn: () => fetchSignatureRequestsForDocument(documentId),
@@ -117,10 +112,8 @@ export default function SignatureFieldsPage({
   const request = requestsQuery.data?.[0];
   const signers = useMemo(() => request?.signers ?? [], [request]);
 
-  const pdfDataUrl = useMemo(() => {
-    if (!contentQuery.data?.contentBase64) return null;
-    return `data:application/pdf;base64,${contentQuery.data.contentBase64}`;
-  }, [contentQuery.data]);
+  // pdf.js recibe una URL same-origin (usa PDFFetchStream). Ver SignatureFieldCanvas.
+  const pdfUrl = documentContentUrl(documentId);
 
   const [draftFields, setDraftFields] = useState<DraftField[]>([]);
   const [seeded, setSeeded] = useState(false);
@@ -215,7 +208,7 @@ export default function SignatureFieldsPage({
   });
 
   const fieldsOnPage = draftFields.filter((f) => f.page === pageNumber);
-  const canPlace = Boolean(selectedSignerId && pdfDataUrl);
+  const canPlace = Boolean(selectedSignerId && documentQuery.data);
 
   return (
     <AppShell title={`Campos · ${documentQuery.data?.filename ?? "Documento"}`}>
@@ -286,9 +279,13 @@ export default function SignatureFieldsPage({
             </div>
 
             <div className="flex flex-1 items-start justify-center overflow-auto bg-muted p-6">
-              {pdfDataUrl ? (
+              {documentQuery.isError ? (
+                <div className="flex h-[70vh] items-center justify-center text-sm text-muted-foreground">
+                  No se encontró el documento. Puede que haya sido eliminado.
+                </div>
+              ) : documentQuery.data ? (
                 <SignatureFieldCanvas
-                  fileDataUrl={pdfDataUrl}
+                  fileUrl={pdfUrl}
                   pageNumber={pageNumber}
                   pageWidth={Math.round(BASE_WIDTH * zoom)}
                   onNumPages={setNumPages}

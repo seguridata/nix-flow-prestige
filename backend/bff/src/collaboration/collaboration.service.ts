@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditChainService } from './audit-chain.service';
 
 @Injectable()
 export class CollaborationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditChain: AuditChainService,
+  ) {}
 
   listComments(documentId: string) {
     return this.prisma.documentComment.findMany({
@@ -39,6 +43,7 @@ export class CollaborationService {
     return { ok: true };
   }
 
+  /** M11 — todo evento de auditoría entra por la cadena inmutable. */
   audit(event: {
     signatureRequestId?: string;
     documentId?: string;
@@ -48,17 +53,7 @@ export class CollaborationService {
     action: string;
     payload?: unknown;
   }) {
-    return this.prisma.processAuditEvent.create({
-      data: {
-        signatureRequestId: event.signatureRequestId,
-        documentId: event.documentId,
-        onboardingId: event.onboardingId,
-        actorId: event.actorId,
-        actorName: event.actorName,
-        action: event.action,
-        payload: event.payload === undefined ? undefined : (event.payload as object),
-      },
-    });
+    return this.auditChain.append(event);
   }
 
   listAudit(params: { signatureRequestId?: string; documentId?: string; onboardingId?: string }) {

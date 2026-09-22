@@ -1,8 +1,13 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { Public } from '../auth/public.decorator';
+import { Controller, Get } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { InboxService, type InboxItem } from './inbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * `/me/*` — siempre relativo al usuario autenticado. La identidad sale del
+ * token (JwtAuthGuard), nunca de un query param.
+ */
 @Controller('me')
 export class InboxController {
   constructor(
@@ -10,21 +15,39 @@ export class InboxController {
     private readonly prisma: PrismaService,
   ) {}
 
-  @Public()
   @Get('inbox')
-  inboxFor(@Query('signerId') signerId: string): Promise<InboxItem[]> {
-    return this.inbox.forSigner(signerId);
+  inboxFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
+    return this.inbox.forSigner(user.actorId, user.tenantId);
   }
 
-  @Public()
   @Get('sent')
-  sentFor(@Query('requestedBy') requestedBy: string): Promise<InboxItem[]> {
-    return this.inbox.forRequester(requestedBy);
+  sentFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
+    return this.inbox.forRequester(user.actorId, user.tenantId);
   }
 
-  @Public()
+  /**
+   * Directorio del tenant para el autocompletado de firmantes en `/new`.
+   * Solo identidad (userId, nombre, correo) — nunca roles. Cualquier usuario
+   * autenticado del tenant puede leerlo; el filtro sale del token.
+   */
+  @Get('colleagues')
+  colleagues(@CurrentUser() user: AuthenticatedUser) {
+    return this.prisma.tenantMembership.findMany({
+      where: {
+        // `user.tenantId` del JWT puede ser el slug o el id del tenant;
+        // `TenantMembership.tenantId` es el id. Se acepta cualquiera de los dos.
+        tenant: { OR: [{ id: user.tenantId }, { slug: user.tenantId }] },
+        active: true,
+        OR: [{ name: { not: null } }, { email: { not: null } }],
+      },
+      select: { userId: true, name: true, email: true },
+      orderBy: [{ name: 'asc' }, { userId: 'asc' }],
+    });
+  }
+
   @Get('snapshot')
-  async snapshot(@Query('userId') userId: string) {
+  async snapshot(@CurrentUser() user: AuthenticatedUser) {
+    const userId = user.actorId;
     const [unread, pendingTasks, pendingSign] = await Promise.all([
       this.prisma.userNotification.count({ where: { userId, read: false } }),
       this.prisma.humanTask.count({

@@ -12,6 +12,12 @@ export interface InboxItem {
   createdAt: string;
   pendingSigners?: string[];
   signers?: { signerId: string; name?: string | null; status: string }[];
+  /** SECUENCIAL | PARALELO. */
+  order?: string;
+  /** SECUENCIAL: a quién le toca firmar ahora. */
+  currentSignerId?: string;
+  /** ¿Puede firmar ya el dueño de esta bandeja? (false = espera su turno) */
+  myTurn?: boolean;
 }
 
 export function fetchInbox(signerId: string) {

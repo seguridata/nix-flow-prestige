@@ -2,12 +2,23 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvidenceService } from '../evidence/evidence.service';
+import { SignerMailService } from '../notifications/signer-mail.service';
+import { AuditChainService } from '../collaboration/audit-chain.service';
 import {
   CONTRATO_DOS_PARTES,
   PRESTIGE_TASK_QUEUE,
   type ContratoWorkflowInput,
   type ContratoWorkflowState,
+  type NudgeCommand,
 } from '../temporal/shared';
+
+/**
+ * Ventana anti-duplicado para reintentos del activity de Temporal sobre el
+ * MISMO aviso (los reintentos ocurren en segundos). Corta para no tragarse las
+ * marcas legítimas 50/75/90 % cuando el SLA es de pocas horas.
+ */
+const NUDGE_DEDUPE_MS = 90_000;
+const CLOSED_REQUEST = ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'];
 const SIGN_SIGNAL = 'signCompleted';
 const REJECT_SIGNAL = 'rejected';
 const STATE_QUERY = 'getState';
@@ -24,6 +35,8 @@ export class WorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly evidence: EvidenceService,
+    private readonly mail: SignerMailService,
+    private readonly auditChain: AuditChainService,
   ) {}
 
   private async client(): Promise<Client> {
@@ -117,10 +130,14 @@ export class WorkflowService {
     return this.prisma.workflowRun.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
   }
 
-  async listTasks(params: { assignee?: string; candidateGroup?: string }) {
+  async listTasks(params: { assignee?: string; candidateGroup?: string; tenantId?: string }) {
     const tasks = await this.prisma.humanTask.findMany({
-      where: params.assignee ? { signerId: params.assignee } : undefined,
-      orderBy: { createdAt: 'desc' },
+      where: {
+        ...(params.assignee ? { signerId: params.assignee } : {}),
+        // A-07 — HumanTask no lleva tenant; se filtra por el de la solicitud.
+        ...(params.tenantId ? { signatureRequest: { tenantId: params.tenantId } } : {}),
+      },
+      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
     });
     return tasks.map((task) => ({
       id: task.id,
@@ -129,11 +146,16 @@ export class WorkflowService {
       candidateGroups: params.candidateGroup ? [params.candidateGroup] : [],
       dueDate: task.dueAt?.toISOString() ?? null,
       status: task.status,
+      priority: task.priority,
       signerId: task.signerId,
       signatureRequestId: task.signatureRequestId,
       claimedBy: task.claimedBy,
       claimedAt: task.claimedAt?.toISOString() ?? null,
       outcome: task.outcome,
+      remindersSent: task.remindersSent,
+      lastReminderAt: task.lastReminderAt?.toISOString() ?? null,
+      escalatedAt: task.escalatedAt?.toISOString() ?? null,
+      delegatedFrom: task.delegatedFrom,
     }));
   }
 
@@ -174,7 +196,11 @@ export class WorkflowService {
 
   async signalSigned(signatureRequestId: string, signerId: string) {
     await this.prisma.humanTask.updateMany({
-      where: { signatureRequestId, signerId, status: { in: ['CREADA', 'ASIGNADA'] } },
+      where: {
+        signatureRequestId,
+        status: { in: ['CREADA', 'ASIGNADA'] },
+        OR: [{ signerId }, { delegatedFrom: signerId }],
+      },
       data: { status: 'COMPLETADA', completedAt: new Date() },
     });
     await this.signal(signatureRequestId, 'sign', signerId);
@@ -189,17 +215,37 @@ export class WorkflowService {
   }
 
   async seedTasks(input: ContratoWorkflowInput, workflowId?: string) {
-    const dueAt = new Date(Date.now() + input.slaHours * 3600_000);
-    await this.prisma.humanTask.createMany({
-      data: input.signers.map((signer) => ({
-        signatureRequestId: input.signatureRequestId,
-        signerId: signer.signerId,
-        name: `Firma — ${signer.name ?? signer.signerId}`,
-        status: 'ASIGNADA' as const,
-        dueAt,
-        workflowId,
-      })),
+    // Idempotente frente a reintentos del activity de Temporal.
+    const existing = await this.prisma.humanTask.count({
+      where: { signatureRequestId: input.signatureRequestId },
     });
+    if (existing > 0) return;
+
+    const dueAt = new Date(Date.now() + input.slaHours * 3600_000);
+
+    // La delegación (manual o por «fuera de oficina») ya quedó en `Signer`;
+    // aquí sólo se refleja en el asignatario de la tarea.
+    const signerRows = await this.prisma.signer.findMany({
+      where: { signatureRequestId: input.signatureRequestId },
+    });
+    const delegatedBy = new Map(
+      signerRows.filter((s) => s.delegatedTo).map((s) => [s.signerId, s.delegatedTo as string]),
+    );
+
+    for (const signer of input.signers) {
+      const delegate = delegatedBy.get(signer.signerId);
+      await this.prisma.humanTask.create({
+        data: {
+          signatureRequestId: input.signatureRequestId,
+          signerId: delegate ?? signer.signerId,
+          delegatedFrom: delegate ? signer.signerId : null,
+          name: `Firma — ${signer.name ?? signer.signerId}`,
+          status: 'ASIGNADA',
+          dueAt,
+          workflowId,
+        },
+      });
+    }
   }
 
   async expire(signatureRequestId: string) {
@@ -223,6 +269,139 @@ export class WorkflowService {
       where: { signatureRequestId },
       data: { status: 'COMPLETADO' },
     });
+  }
+
+  /**
+   * M07 — un timer del workflow pide un recordatorio (`REMINDER`) o un
+   * escalamiento (`ESCALATION`) sobre las tareas de firma aún abiertas.
+   * Crea notificaciones y eventos de auditoría reales; es idempotente frente a
+   * los reintentos de Temporal gracias a la ventana `NUDGE_DEDUPE_MS`.
+   */
+  async nudge(cmd: NudgeCommand) {
+    const request = await this.prisma.signatureRequest.findUnique({
+      where: { id: cmd.signatureRequestId },
+      include: { document: true },
+    });
+    if (!request || CLOSED_REQUEST.includes(request.status)) {
+      return { skipped: true as const, reminded: 0, escalated: 0 };
+    }
+
+    const openTasks = await this.prisma.humanTask.findMany({
+      where: {
+        signatureRequestId: cmd.signatureRequestId,
+        status: { in: ['CREADA', 'ASIGNADA'] },
+        // En orden SECUENCIAL el workflow apunta al firmante del orden; si está
+        // «fuera de oficina» la tarea vive bajo el suplente (`delegatedFrom`).
+        ...(cmd.signerId
+          ? { OR: [{ signerId: cmd.signerId }, { delegatedFrom: cmd.signerId }] }
+          : {}),
+      },
+    });
+    if (openTasks.length === 0) return { skipped: false as const, reminded: 0, escalated: 0 };
+
+    const now = Date.now();
+    const docTitle = request.document?.filename ?? 'un documento';
+    let reminded = 0;
+    let escalated = 0;
+
+    let escalationRecipients: string[] = [];
+    if (cmd.kind === 'ESCALATION') {
+      const watchers = await this.prisma.processWatcher.findMany({
+        where: { signatureRequestId: cmd.signatureRequestId },
+      });
+      escalationRecipients = [
+        ...new Set([
+          ...(request.requestedBy ? [request.requestedBy] : []),
+          ...watchers.map((w) => w.userId),
+        ]),
+      ];
+    }
+
+    for (const task of openTasks) {
+      if (cmd.kind === 'REMINDER') {
+        if (task.lastReminderAt && now - task.lastReminderAt.getTime() < NUDGE_DEDUPE_MS) continue;
+        await this.prisma.humanTask.update({
+          where: { id: task.id },
+          data: { remindersSent: { increment: 1 }, lastReminderAt: new Date() },
+        });
+        await this.notifyUser(
+          task.signerId,
+          'Recordatorio de firma',
+          `Sigue pendiente tu firma de «${docTitle}».`,
+          '/inbox',
+        );
+        await this.auditSystem(cmd.signatureRequestId, request.documentId, 'SIGNATURE_REMINDER', {
+          signerId: task.signerId,
+          ratio: cmd.ratio,
+          remindersSent: task.remindersSent + 1,
+        });
+        await this.mail
+          .sendReminder(cmd.signatureRequestId, task.signerId, cmd.ratio ?? 0.5)
+          .catch(() => undefined);
+        reminded += 1;
+      } else {
+        if (task.escalatedAt && now - task.escalatedAt.getTime() < NUDGE_DEDUPE_MS) continue;
+        await this.prisma.humanTask.update({
+          where: { id: task.id },
+          data: { escalatedAt: new Date(), priority: Math.max(task.priority, 2) },
+        });
+        for (const uid of [...new Set([...escalationRecipients, task.signerId])]) {
+          await this.notifyUser(
+            uid,
+            'Escalamiento de firma',
+            `La firma de ${task.signerId} en «${docTitle}» venció su SLA.`,
+            uid === task.signerId ? '/inbox' : '/sent',
+          );
+        }
+        await this.auditSystem(cmd.signatureRequestId, request.documentId, 'SIGNATURE_ESCALATED', {
+          signerId: task.signerId,
+          ratio: cmd.ratio,
+          notified: [...new Set([...escalationRecipients, task.signerId])],
+        });
+        await this.mail
+          .sendEscalation(cmd.signatureRequestId, task.delegatedFrom ?? task.signerId, cmd.ratio ?? 0.9)
+          .catch(() => undefined);
+        escalated += 1;
+      }
+    }
+
+    return { skipped: false as const, reminded, escalated };
+  }
+
+  /**
+   * M07 — reasigna las tareas de firma abiertas de `fromSignerId` a
+   * `toSignerId` (delegación / «fuera de oficina»), dejando traza del origen.
+   */
+  async reassignForDelegation(signatureRequestId: string, fromSignerId: string, toSignerId: string) {
+    await this.prisma.humanTask.updateMany({
+      where: {
+        signatureRequestId,
+        // Re-delegación: la tarea puede estar ya bajo un suplente anterior.
+        OR: [{ signerId: fromSignerId }, { delegatedFrom: fromSignerId }],
+        status: { in: ['CREADA', 'ASIGNADA'] },
+      },
+      data: {
+        signerId: toSignerId,
+        delegatedFrom: fromSignerId,
+        claimedBy: null,
+        claimedAt: null,
+        status: 'ASIGNADA',
+      },
+    });
+  }
+
+  private notifyUser(userId: string, title: string, body: string, href?: string) {
+    return this.prisma.userNotification.create({ data: { userId, title, body, href } });
+  }
+
+  private auditSystem(
+    signatureRequestId: string,
+    documentId: string | undefined,
+    action: string,
+    payload: Record<string, unknown>,
+  ) {
+    // M11 — por la cadena inmutable, igual que el resto de la auditoría.
+    return this.auditChain.append({ signatureRequestId, documentId, actorId: 'system', action, payload });
   }
 
   private async signal(signatureRequestId: string, kind: 'sign' | 'reject', signerId: string) {

@@ -1,0 +1,134 @@
+{
+  "info": {
+    "name": "Prestige BFF — caso ancla + webhooks (M14)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Flujo de punta a punta: token OIDC -> caso -> documento -> solicitud de firma -> firma -> evidencia -> webhooks. El contrato completo está en /docs (Swagger) y /docs-json (OpenAPI). Variables: baseUrl, keycloakUrl, token."
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "keycloakUrl", "value": "http://localhost:8081/realms/prestige/protocol/openid-connect/token" },
+    { "key": "token", "value": "" },
+    { "key": "caseId", "value": "" },
+    { "key": "documentId", "value": "" },
+    { "key": "requestId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 · Obtener token (password grant, sólo dev)",
+      "request": {
+        "method": "POST",
+        "url": "{{keycloakUrl}}",
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "grant_type", "value": "password" },
+            { "key": "client_id", "value": "prestige-web" },
+            { "key": "username", "value": "roberto" },
+            { "key": "password", "value": "roberto123" }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": { "exec": ["pm.collectionVariables.set('token', pm.response.json().access_token);"] }
+        }
+      ]
+    },
+    {
+      "name": "1 · Crear caso",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/cases",
+        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\n  \"title\": \"Contrato demo\"\n}" }
+      },
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.collectionVariables.set('caseId', pm.response.json().id);"] } }
+      ]
+    },
+    {
+      "name": "2 · Subir documento (multipart)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "caseId", "value": "{{caseId}}" },
+            { "key": "file", "type": "file", "src": "contrato.pdf" }
+          ]
+        }
+      },
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.collectionVariables.set('documentId', pm.response.json().id);"] } }
+      ]
+    },
+    {
+      "name": "3 · Crear solicitud de firma",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/signature-requests",
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"documentId\": \"{{documentId}}\",\n  \"methods\": [\"DIGITAL\"],\n  \"order\": \"SECUENCIAL\",\n  \"slaHours\": 72,\n  \"signers\": [\n    { \"signerId\": \"maria\", \"name\": \"María\", \"email\": \"maria@demo.mx\" }\n  ]\n}"
+        }
+      },
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.collectionVariables.set('requestId', pm.response.json().id);"] } }
+      ]
+    },
+    {
+      "name": "4 · Firmar (JSON; consentimiento incluido)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/signature-requests/{{requestId}}/actions/sign",
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"method\": \"DIGITAL\",\n  \"consentAccepted\": true\n}"
+        }
+      }
+    },
+    {
+      "name": "5 · Estado de la solicitud",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/signature-requests/{{requestId}}/status"
+      }
+    },
+    {
+      "name": "6 · Portal externo — resolver enlace de un solo uso",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/public/links/PEGA_AQUI_EL_TOKEN_DEL_CORREO"
+      }
+    },
+    {
+      "name": "7 · Webhooks — alta de suscripción (admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/webhooks/subscriptions",
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"url\": \"https://tu-endpoint/webhooks/prestige\",\n  \"events\": [\"mx.seguridata.prestige.request.completed\", \"mx.seguridata.prestige.evidence.sealed\"],\n  \"description\": \"integración X\"\n}"
+        }
+      }
+    },
+    {
+      "name": "8 · Webhooks — entregas y DLQ (admin)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/webhooks/deliveries?status=DLQ"
+      }
+    }
+  ]
+}

@@ -7,9 +7,14 @@ import { EvidenceService } from '../evidence/evidence.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { SigningRouter } from '../signing/signing.router';
 import { PdfStampService } from '../signing/pdf-stamp.service';
+import { requestTimestamp } from '../signing/tsa/rfc3161';
+import { StorageService } from '../storage/storage.service';
+import type { EncMeta } from '../storage/object-crypto';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../consent/consent';
 import { CONTRATO_DOS_PARTES } from '../temporal/shared';
 import { CollaborationService } from '../collaboration/collaboration.service';
+import { SignerMailService } from '../notifications/signer-mail.service';
+import { SignaturePolicyService } from '../signing/signature-policy';
 
 export type { SignatureMethod, SigningOrder, SignerRole };
 
@@ -24,7 +29,10 @@ export class SignatureRequestsService {
     private readonly workflow: WorkflowService,
     private readonly signing: SigningRouter,
     private readonly stamp: PdfStampService,
+    private readonly storage: StorageService,
     private readonly collab: CollaborationService,
+    private readonly mail: SignerMailService,
+    private readonly policyService: SignaturePolicyService,
   ) {}
 
   consentText() {
@@ -35,31 +43,148 @@ export class SignatureRequestsService {
     return this.signing.capabilities();
   }
 
+  signaturePolicy(tenantId: string) {
+    return this.policyService.resolve(tenantId);
+  }
+
+  /**
+   * Normaliza la identidad de los firmantes contra `TenantMembership`. Si el
+   * `signerId` o el correo entrante coincide (sin distinguir mayúsculas) con un
+   * miembro activo del tenant, se adopta su `userId` canónico y se completan
+   * nombre/correo que falten. Los que no coinciden quedan como firmantes
+   * externos (solo correo + enlace de un solo uso), como antes.
+   */
+  private async resolveSigners(
+    tenantId: string,
+    signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[],
+  ) {
+    const members = await this.prisma.tenantMembership.findMany({
+      // `tenantId` (del JWT) puede venir como slug o como id; `TenantMembership`
+      // guarda el id. Se acepta cualquiera.
+      where: { tenant: { OR: [{ id: tenantId }, { slug: tenantId }] }, active: true },
+      select: { userId: true, name: true, email: true },
+    });
+    const byKey = new Map<string, { userId: string; name: string | null; email: string | null }>();
+    for (const m of members) {
+      byKey.set(m.userId.toLowerCase(), m);
+      if (m.email) byKey.set(m.email.toLowerCase(), m);
+    }
+    return signers.map((s) => {
+      const hit =
+        byKey.get(s.signerId.trim().toLowerCase()) ??
+        (s.email ? byKey.get(s.email.trim().toLowerCase()) : undefined);
+      if (!hit) return s;
+      return {
+        ...s,
+        signerId: hit.userId,
+        name: s.name ?? hit.name ?? undefined,
+        email: s.email ?? hit.email ?? undefined,
+      };
+    });
+  }
+
+  /**
+   * SECUENCIAL — tras cerrar una firma y quedar la solicitud EN_FIRMA, avisa al
+   * siguiente firmante pendiente del orden ("es tu turno"): notificación in-app,
+   * correo de invitación, prioridad alta en su tarea y evento de auditoría.
+   * Idempotente: si ya hay un `SIGNATURE_TURN` para ese firmante, no repite.
+   */
+  private async notifyNextInSequence(request: {
+    id: string;
+    documentId: string;
+    signers: { signerId: string; name: string | null; status: string; sortOrder: number }[];
+  }) {
+    const next = [...request.signers]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .find((s) => s.status === 'PENDIENTE');
+    if (!next) return;
+
+    const already = await this.prisma.processAuditEvent.count({
+      where: {
+        signatureRequestId: request.id,
+        action: 'SIGNATURE_TURN',
+        payload: { path: ['signerId'], equals: next.signerId },
+      },
+    });
+    if (already > 0) return;
+
+    const doc = await this.prisma.document.findUnique({
+      where: { id: request.documentId },
+      select: { filename: true },
+    });
+    const docTitle = doc?.filename ?? 'un documento';
+
+    await this.collab.notify(
+      next.signerId,
+      'Es tu turno de firmar',
+      `Ya puedes firmar «${docTitle}».`,
+      '/inbox',
+    );
+    await this.mail.sendInvite(request.id, next.signerId).catch(() => undefined);
+    await this.prisma.humanTask.updateMany({
+      where: {
+        signatureRequestId: request.id,
+        status: { in: ['CREADA', 'ASIGNADA'] },
+        OR: [{ signerId: next.signerId }, { delegatedFrom: next.signerId }],
+      },
+      data: { priority: 2 },
+    });
+    await this.collab.audit({
+      signatureRequestId: request.id,
+      documentId: request.documentId,
+      actorId: 'system',
+      action: 'SIGNATURE_TURN',
+      payload: { signerId: next.signerId, sortOrder: next.sortOrder },
+    });
+  }
+
   async create(body: {
     documentId: string;
     methods: SignatureMethod[];
     order?: SigningOrder;
     requestedBy?: string;
     requestedByName?: string;
+    tenantId: string;
     slaHours?: number;
     signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[];
   }) {
     if (!body.methods?.length) {
       throw new BadRequestException('Debes autorizar al menos un método de firma');
     }
-    const slaHours = body.slaHours ?? 72;
+    // A-07 — el documento debe ser del tenant del solicitante.
+    const doc = await this.prisma.document.findFirst({
+      where: { id: body.documentId, tenantId: body.tenantId },
+      select: { id: true, tenantId: true, caseId: true },
+    });
+    if (!doc) throw new NotFoundException(`Documento ${body.documentId} no encontrado`);
+
+    // M10 — política de firma del tenant: valida los métodos y aplica defaults.
+    const policy = await this.policyService.resolve(body.tenantId);
+    const enforced = this.policyService.enforce(policy, {
+      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA')[],
+      order: body.order,
+      slaHours: body.slaHours,
+    });
+    const slaHours = enforced.slaHours;
     const expiresAt = new Date(Date.now() + slaHours * 3600_000);
+    // Resuelve la identidad de cada firmante contra el directorio del tenant:
+    // si coincide un miembro registrado, se usa su `userId` canónico para que
+    // la solicitud caiga en su bandeja (que filtra por username, no por correo).
+    const signers = await this.resolveSigners(doc.tenantId, body.signers);
     const created = await this.prisma.signatureRequest.create({
       data: {
         documentId: body.documentId,
+        tenantId: doc.tenantId,
         methods: body.methods,
-        order: body.order ?? 'SECUENCIAL',
+        order: enforced.order,
         requestedBy: body.requestedBy,
         requestedByName: body.requestedByName,
         slaHours,
         expiresAt,
+        policyVersion: policy.version,
+        policySnapshot: policy as unknown as object,
         signers: {
-          create: body.signers.map((s, index) => ({
+          create: signers.map((s, index) => ({
             signerId: s.signerId,
             name: s.name,
             email: s.email,
@@ -71,8 +196,15 @@ export class SignatureRequestsService {
       include: INCLUDE_SIGNERS,
     });
 
-    const document = await this.prisma.document.findUnique({ where: { id: body.documentId } });
-    await this.workflow.startInstance(CONTRATO_DOS_PARTES, document?.caseId ?? created.id, {
+    // M07 — «fuera de oficina»: fija la delegación en `Signer` ANTES de arrancar
+    // el flujo, para que las tareas humanas se siembren ya a nombre del suplente.
+    await this.applyOutOfOffice(
+      created.id,
+      created.documentId,
+      created.signers.map((s) => ({ signerId: s.signerId, name: s.name })),
+    );
+
+    await this.workflow.startInstance(CONTRATO_DOS_PARTES, doc.caseId ?? created.id, {
       signatureRequestId: created.id,
       documentId: created.documentId,
       order: created.order,
@@ -86,9 +218,20 @@ export class SignatureRequestsService {
       actorId: body.requestedBy ?? 'system',
       actorName: body.requestedByName,
       action: 'REQUEST_CREATED',
-      payload: { methods: body.methods, order: created.order, slaHours },
+      payload: {
+        methods: body.methods,
+        order: created.order,
+        slaHours,
+        policyVersion: policy.version,
+        policySource: policy.source,
+      },
     });
-    for (const signer of created.signers) {
+    // Aviso in-app: en SECUENCIAL solo al primer firmante del orden; los demás
+    // reciben el suyo al pasarles el turno (`notifyNextInSequence`). En PARALELO,
+    // a todos de una vez.
+    const notifyAtCreate =
+      created.order === 'SECUENCIAL' ? created.signers.slice(0, 1) : created.signers;
+    for (const signer of notifyAtCreate) {
       await this.collab.notify(
         signer.signerId,
         'Documento por firmar',
@@ -97,12 +240,27 @@ export class SignatureRequestsService {
       );
     }
 
-    return created;
+    // M13 — correo de invitación con enlace de un solo uso.
+    if (created.order === 'SECUENCIAL') {
+      const first = created.signers[0];
+      if (first) await this.mail.sendInvite(created.id, first.signerId).catch(() => undefined);
+    } else {
+      await this.mail.sendInvites(created.id).catch(() => undefined);
+    }
+
+    return this.getOrThrow(created.id);
   }
 
-  list(signerId?: string, status?: string, documentId?: string, requestedBy?: string) {
+  list(
+    signerId?: string,
+    status?: string,
+    documentId?: string,
+    requestedBy?: string,
+    tenantId?: string,
+  ) {
     return this.prisma.signatureRequest.findMany({
       where: {
+        tenantId,
         documentId,
         requestedBy,
         status: status ? (status as never) : undefined,
@@ -115,9 +273,9 @@ export class SignatureRequestsService {
     });
   }
 
-  async getOrThrow(id: string) {
-    const found = await this.prisma.signatureRequest.findUnique({
-      where: { id },
+  async getOrThrow(id: string, tenantId?: string) {
+    const found = await this.prisma.signatureRequest.findFirst({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       include: INCLUDE_SIGNERS,
     });
     if (!found) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
@@ -157,21 +315,33 @@ export class SignatureRequestsService {
     body: {
       signerId: string;
       method: SignatureMethod;
-      signatureImageBase64?: string;
       biometricSessionId?: string;
       consentAccepted?: boolean;
+      /** IP y user-agent REALES de la conexión (los pone el controller, no el cliente). */
+      ip?: string;
+      userAgent?: string;
     },
+    autographImage?: Buffer,
   ) {
     const before = await this.prisma.signatureRequest.findUnique({ where: { id } });
     const wasAlreadyClosed = before ? ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'].includes(before.status) : false;
     const signerBefore = before
-      ? await this.prisma.signer.findFirst({ where: { signatureRequestId: id, signerId: body.signerId } })
+      ? ((await this.prisma.signer.findFirst({
+          where: { signatureRequestId: id, signerId: body.signerId },
+        })) ??
+        (await this.prisma.signer.findFirst({
+          where: { signatureRequestId: id, delegatedTo: body.signerId },
+        })))
       : null;
     const alreadySigned = signerBefore?.status === 'FIRMADO';
 
     if (!wasAlreadyClosed && !alreadySigned) {
       if (body.consentAccepted) {
-        await this.recordConsent(id, { signerId: body.signerId });
+        await this.recordConsent(id, {
+          signerId: body.signerId,
+          ip: body.ip,
+          userAgent: body.userAgent,
+        });
       } else {
         const consent = await this.prisma.consentAcceptance.findUnique({
           where: {
@@ -199,11 +369,16 @@ export class SignatureRequestsService {
         return request;
       }
 
-      const signer = request.signers.find((s) => s.signerId === body.signerId);
+      // El firmante puede actuar por sí mismo o como delegado (`delegatedTo`).
+      const signer =
+        request.signers.find((s) => s.signerId === body.signerId) ??
+        request.signers.find((s) => s.delegatedTo === body.signerId);
       if (!signer) {
         throw new NotFoundException(`Firmante ${body.signerId} no está en la solicitud ${id}`);
       }
-      if (signer.status === 'FIRMADO') return request;
+      if (signer.status === 'FIRMADO' || signer.status === 'RECHAZADO') return request;
+      const onBehalfOf = signer.signerId !== body.signerId ? signer.signerId : undefined;
+      const isReconcileRetry = signer.status === 'PENDIENTE' && Boolean(signer.pendingRef);
 
       if (!request.methods.includes(body.method)) {
         throw new BadRequestException(
@@ -222,37 +397,104 @@ export class SignatureRequestsService {
         }
       }
 
+      // Reclamo ATÓMICO del hueco: PENDIENTE → EN_PROCESO. Si otra petición
+      // concurrente ya lo tomó (o ya firmó / rechazó), salimos sin re-firmar ni
+      // pisar el PDF. La firma se marca FIRMADO sólo si el adaptador NO devuelve
+      // `pending` (métodos asíncronos vuelven a PENDIENTE con un `pendingRef`).
+      const claim = await tx.signer.updateMany({
+        where: { id: signer.id, status: 'PENDIENTE' },
+        data: { status: 'EN_PROCESO', usedMethod: body.method },
+      });
+      if (claim.count === 0) return request;
+
+      // Recuadro de firma: el del firmante en el orden (aunque hoy firme un
+      // delegado), o cualquiera del documento.
+      const field =
+        (await tx.signatureField.findFirst({
+          where: { documentId: request.documentId, signerId: signer.signerId, type: 'SIGNATURE' },
+        })) ??
+        (await tx.signatureField.findFirst({
+          where: { documentId: request.documentId, type: 'SIGNATURE' },
+        }));
+
+      // El PDF actual, descifrado desde el storage.
+      const currentPdf = await this.storage.getObject(
+        request.document.objectKey,
+        request.document.enc as unknown as EncMeta,
+      );
+
       const signed = await this.signing.sign({
         method: body.method,
         signerId: body.signerId,
+        signerName: (onBehalfOf ? signer.delegatedToName : signer.name) ?? signer.name ?? undefined,
+        documentId: request.documentId,
         documentHash: request.document.hash,
-        signatureImageBase64: body.signatureImageBase64,
+        pdfBytes: currentPdf,
+        signatureImage: autographImage,
+        field: field
+          ? {
+              page: field.page,
+              xPct: field.xPct,
+              yPct: field.yPct,
+              widthPct: field.widthPct,
+              heightPct: field.heightPct,
+            }
+          : undefined,
         biometricSessionId: body.biometricSessionId,
       });
 
-      if (body.method === 'AUTOGRAFA' && body.signatureImageBase64) {
-        const field =
-          (await tx.signatureField.findFirst({
-            where: { documentId: request.documentId, signerId: body.signerId, type: 'SIGNATURE' },
-          })) ??
-          (await tx.signatureField.findFirst({
-            where: { documentId: request.documentId, type: 'SIGNATURE' },
-          }));
-        const stamped = await this.stamp.stampAutograph(
-          request.document.contentBase64,
-          body.signatureImageBase64,
-          field ?? undefined,
-        );
-        const hash = createHash('sha256').update(stamped, 'base64').digest('hex');
+      // Fase B — firma asíncrona: el adaptador la inició pero falta la
+      // confirmación del proveedor (2FA / biometría). Volvemos a PENDIENTE con
+      // un `pendingRef` para que el reconciliador la cierre luego.
+      if (signed.pending) {
+        await tx.signer.update({
+          where: { id: signer.id },
+          data: {
+            status: 'PENDIENTE',
+            usedMethod: body.method,
+            pendingRef: signed.pendingRef ?? `pending-${signer.id}`,
+            pendingSince: new Date(),
+          },
+        });
+        const stillPending = await tx.signatureRequest.update({
+          where: { id },
+          data: { status: 'EN_FIRMA' },
+          include: INCLUDE_SIGNERS,
+        });
+        return Object.assign(stillPending, { lastSignResult: signed, pendingResult: true as const });
+      }
+
+      // Si el adaptador incrustó la firma (DIGITAL PAdES / AUTÓGRAFA), la nueva
+      // versión del PDF se guarda cifrada en el storage.
+      if (signed.signedPdf?.length) {
+        const stored = await this.storage.putObject({
+          prefix: 'documents',
+          filename: request.document.filename,
+          bytes: signed.signedPdf,
+          contentType: 'application/pdf',
+        });
         await tx.document.update({
           where: { id: request.documentId },
-          data: { contentBase64: stamped, hash, version: { increment: 1 } },
+          data: {
+            objectKey: stored.objectKey,
+            enc: stored.enc as unknown as object,
+            hash: stored.sha256,
+            sizeBytes: stored.sizeBytes,
+            version: { increment: 1 },
+          },
         });
       }
 
+      // Firma concluida: EN_PROCESO → FIRMADO (limpia el pendiente si lo había).
       await tx.signer.update({
         where: { id: signer.id },
-        data: { status: 'FIRMADO', signedAt: new Date(), usedMethod: body.method },
+        data: {
+          status: 'FIRMADO',
+          signedAt: new Date(),
+          usedMethod: body.method,
+          pendingRef: null,
+          pendingSince: null,
+        },
       });
 
       const remaining = request.signers.filter((s) => s.id !== signer.id);
@@ -266,24 +508,100 @@ export class SignatureRequestsService {
       return Object.assign(updated, { lastSignResult: signed });
     });
 
+    // Fase B — firma asíncrona iniciada: audita y espera al reconciliador.
+    if ((result as { pendingResult?: boolean }).pendingResult) {
+      const sr = (result as { lastSignResult?: import('../signing/signer-adapter').SignResult })
+        .lastSignResult;
+      await this.collab.audit({
+        signatureRequestId: result.id,
+        documentId: result.documentId,
+        actorId: body.signerId,
+        action: 'SIGNATURE_PENDING',
+        payload: { method: body.method, provider: sr?.provider, pendingRef: sr?.pendingRef, detail: sr?.detail },
+      });
+      if (result.requestedBy && result.requestedBy !== body.signerId) {
+        await this.collab.notify(
+          result.requestedBy,
+          `${body.signerId} inició su firma`,
+          `Firma ${body.method} en curso; falta la confirmación del proveedor.`,
+          `/documents/${result.documentId}`,
+        );
+      }
+      return result;
+    }
+
     if (!wasAlreadyClosed && !alreadySigned) {
       const now = new Date().toISOString();
-      const signerName = result.signers.find((s) => s.signerId === body.signerId)?.name ?? undefined;
+      // El firmante «de la fila»: por sí mismo o el que lo delegó.
+      const filledSigner =
+        result.signers.find((s) => s.signerId === body.signerId) ??
+        result.signers.find((s) => s.delegatedTo === body.signerId);
+      const onBehalfOf =
+        filledSigner && filledSigner.signerId !== body.signerId ? filledSigner.signerId : undefined;
+      const effectiveSignerId = onBehalfOf ?? body.signerId;
+      const signerName =
+        (onBehalfOf ? filledSigner?.delegatedToName : filledSigner?.name) ?? filledSigner?.name ?? undefined;
       this.realtime.notifyDocumentEvent(result.documentId, {
         type: 'SIGNATURE_APPLIED',
         actorId: body.signerId,
         actorName: signerName,
         at: now,
       });
-      await this.workflow.signalSigned(result.id, body.signerId);
+      const sr = (result as { lastSignResult?: import('../signing/signer-adapter').SignResult })
+        .lastSignResult;
+
+      // Fase B — sello de tiempo RFC 3161 POR EVENTO sobre el hash de esta firma
+      // (además del sello del paquete). Best-effort: un fallo de la TSA no
+      // bloquea la firma.
+      let eventTimestamp: { provider: string; tokenHash: string; issuedAt: string } | undefined;
+      if (sr?.signatureHash && /^[0-9a-f]{64}$/i.test(sr.signatureHash)) {
+        try {
+          const ts = await requestTimestamp(Buffer.from(sr.signatureHash, 'hex'));
+          if (ts) {
+            const tokenHash = createHash('sha256').update(ts.token).digest('hex');
+            const issuedAt = new Date(ts.info.genTime);
+            await this.prisma.signatureEventTimestamp.upsert({
+              where: { signatureRequestId_signerId: { signatureRequestId: result.id, signerId: effectiveSignerId } },
+              create: {
+                signatureRequestId: result.id,
+                signerId: effectiveSignerId,
+                signedHash: sr.signatureHash,
+                provider: ts.tsaUrl,
+                tokenHash,
+                token: ts.token.toString('base64'),
+                issuedAt,
+              },
+              update: { signedHash: sr.signatureHash, provider: ts.tsaUrl, tokenHash, token: ts.token.toString('base64'), issuedAt },
+            });
+            eventTimestamp = { provider: ts.tsaUrl, tokenHash, issuedAt: issuedAt.toISOString() };
+          }
+        } catch (error) {
+          // sin sello por evento; el sello del paquete sigue vigente
+          void error;
+        }
+      }
+
       await this.collab.audit({
         signatureRequestId: result.id,
         documentId: result.documentId,
         actorId: body.signerId,
         actorName: signerName,
         action: 'SIGNATURE_APPLIED',
-        payload: { method: body.method },
+        payload: {
+          method: body.method,
+          onBehalfOf,
+          algorithm: sr?.algorithm,
+          provider: sr?.provider,
+          signatureHash: sr?.signatureHash,
+          certificate: sr?.certificate,
+          eventTimestamp,
+        },
       });
+
+      // La señal al workflow (que puede disparar el sellado) va DESPUÉS de que
+      // el evento SIGNATURE_APPLIED con su sello por evento esté persistido.
+      await this.workflow.signalSigned(result.id, effectiveSignerId);
+
       if (result.requestedBy && result.requestedBy !== body.signerId) {
         await this.collab.notify(
           result.requestedBy,
@@ -291,6 +609,9 @@ export class SignatureRequestsService {
           `Método ${body.method}. Estado: ${result.status}.`,
           `/documents/${result.documentId}`,
         );
+      }
+      if (result.status === 'EN_FIRMA' && result.order === 'SECUENCIAL') {
+        await this.notifyNextInSequence(result).catch(() => undefined);
       }
       if (result.status === 'COMPLETADA') {
         this.realtime.notifyDocumentEvent(result.documentId, {
@@ -300,10 +621,110 @@ export class SignatureRequestsService {
           at: now,
         });
         await this.evidence.generateForRequest(result.id);
+        await this.mail.sendCompleted(result.id).catch(() => undefined);
       }
     }
 
     return result;
+  }
+
+  /**
+   * Fase B — cierra una firma que quedó `pending` cuando el proveedor asíncrono
+   * confirma (o rechaza). Idempotente: si el firmante ya no está pendiente, no
+   * hace nada.
+   */
+  async finalizePending(
+    signatureRequestId: string,
+    signerId: string,
+    r: { status: 'completed' | 'failed'; signatureHash?: string; signedPdf?: Buffer; reason?: string },
+  ) {
+    const request = await this.prisma.signatureRequest.findUnique({
+      where: { id: signatureRequestId },
+      include: { ...INCLUDE_SIGNERS, document: true },
+    });
+    if (!request || ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'].includes(request.status)) return;
+    const signer = request.signers.find(
+      (s) => (s.signerId === signerId || s.delegatedTo === signerId) && s.status === 'PENDIENTE' && s.pendingRef,
+    );
+    if (!signer) return;
+
+    if (r.status === 'failed') {
+      await this.prisma.signer.update({
+        where: { id: signer.id },
+        data: { status: 'RECHAZADO', pendingRef: null, pendingSince: null },
+      });
+      await this.prisma.signatureRequest.update({
+        where: { id: signatureRequestId },
+        data: { status: 'RECHAZADA' },
+      });
+      await this.workflow.signalRejected(signatureRequestId, signer.signerId);
+      await this.collab.audit({
+        signatureRequestId,
+        documentId: request.documentId,
+        actorId: signer.signerId,
+        action: 'SIGNATURE_FAILED',
+        payload: { reason: r.reason, reconciled: true },
+      });
+      return;
+    }
+
+    // completed
+    const signatureHash = r.signatureHash ?? request.document.hash;
+    const completed = await this.prisma.$transaction(async (tx) => {
+      if (r.signedPdf?.length) {
+        const stored = await this.storage.putObject({
+          prefix: 'documents',
+          filename: request.document.filename,
+          bytes: r.signedPdf,
+          contentType: 'application/pdf',
+        });
+        await tx.document.update({
+          where: { id: request.documentId },
+          data: {
+            objectKey: stored.objectKey,
+            enc: stored.enc as unknown as object,
+            hash: stored.sha256,
+            sizeBytes: stored.sizeBytes,
+            version: { increment: 1 },
+          },
+        });
+      }
+      await tx.signer.update({
+        where: { id: signer.id },
+        data: { status: 'FIRMADO', signedAt: new Date(), pendingRef: null, pendingSince: null },
+      });
+      const remaining = request.signers.filter((s) => s.id !== signer.id);
+      const allSigned = remaining.every((s) => s.status === 'FIRMADO');
+      return tx.signatureRequest.update({
+        where: { id: signatureRequestId },
+        data: { status: allSigned ? 'COMPLETADA' : 'EN_FIRMA' },
+        include: INCLUDE_SIGNERS,
+      });
+    });
+
+    await this.collab.audit({
+      signatureRequestId,
+      documentId: request.documentId,
+      actorId: signer.signerId,
+      actorName: signer.name ?? undefined,
+      action: 'SIGNATURE_APPLIED',
+      payload: { method: signer.usedMethod, signatureHash, reconciled: true },
+    });
+    await this.workflow.signalSigned(signatureRequestId, signer.signerId);
+    if (completed.status === 'COMPLETADA') {
+      await this.evidence.generateForRequest(signatureRequestId);
+      await this.mail.sendCompleted(signatureRequestId).catch(() => undefined);
+    }
+  }
+
+  /** Firmantes con una firma asíncrona a la espera (para el reconciliador). */
+  pendingSignatures(olderThanSeconds = 20) {
+    const cutoff = new Date(Date.now() - olderThanSeconds * 1000);
+    return this.prisma.signer.findMany({
+      where: { status: 'PENDIENTE', pendingRef: { not: null }, pendingSince: { lt: cutoff } },
+      include: { signatureRequest: { include: { document: true } } },
+      take: 50,
+    });
   }
 
   async reject(id: string, body: { signerId: string; reason?: string }) {
@@ -343,7 +764,7 @@ export class SignatureRequestsService {
 
   async delegate(
     id: string,
-    body: { fromSignerId: string; toSignerId: string; toName?: string },
+    body: { fromSignerId: string; toSignerId: string; toName?: string; reason?: string; auto?: boolean },
   ) {
     const request = await this.getOrThrow(id);
     const signer = request.signers.find((s) => s.signerId === body.fromSignerId);
@@ -351,16 +772,27 @@ export class SignatureRequestsService {
     if (signer.status !== 'PENDIENTE') {
       throw new BadRequestException('Solo se puede delegar una firma pendiente');
     }
+    if (body.toSignerId === body.fromSignerId) {
+      throw new BadRequestException('No puedes delegarte una firma a ti mismo');
+    }
     await this.prisma.signer.update({
       where: { id: signer.id },
       data: { delegatedTo: body.toSignerId, delegatedToName: body.toName },
     });
+    // Las tareas humanas abiertas pasan a la bandeja del delegado.
+    await this.workflow.reassignForDelegation(id, body.fromSignerId, body.toSignerId);
     await this.collab.audit({
       signatureRequestId: id,
       documentId: request.documentId,
-      actorId: body.fromSignerId,
+      actorId: body.auto ? 'system' : body.fromSignerId,
       action: 'DELEGATED',
-      payload: { toSignerId: body.toSignerId, toName: body.toName },
+      payload: {
+        fromSignerId: body.fromSignerId,
+        toSignerId: body.toSignerId,
+        toName: body.toName,
+        reason: body.reason,
+        auto: Boolean(body.auto),
+      },
     });
     await this.collab.notify(
       body.toSignerId,
@@ -369,5 +801,52 @@ export class SignatureRequestsService {
       `/documents/${request.documentId}`,
     );
     return this.getOrThrow(id);
+  }
+
+  /**
+   * M07 — al crear la solicitud, fija en `Signer.delegatedTo` la delegación de
+   * cada firmante con una regla «fuera de oficina» vigente. Las tareas humanas
+   * (WorkflowService.seedTasks) se siembran luego ya a nombre del suplente.
+   */
+  private async applyOutOfOffice(
+    requestId: string,
+    documentId: string,
+    signers: { signerId: string; name?: string | null }[],
+  ) {
+    if (signers.length === 0) return;
+    const now = new Date();
+    const rules = await this.prisma.outOfOffice.findMany({
+      where: {
+        userId: { in: signers.map((s) => s.signerId) },
+        since: { lte: now },
+        OR: [{ until: null }, { until: { gt: now } }],
+      },
+    });
+    for (const rule of rules) {
+      if (rule.delegateId === rule.userId) continue;
+      await this.prisma.signer.updateMany({
+        where: { signatureRequestId: requestId, signerId: rule.userId, status: 'PENDIENTE' },
+        data: { delegatedTo: rule.delegateId, delegatedToName: rule.delegateName },
+      });
+      await this.collab.audit({
+        signatureRequestId: requestId,
+        documentId,
+        actorId: 'system',
+        action: 'DELEGATED',
+        payload: {
+          fromSignerId: rule.userId,
+          toSignerId: rule.delegateId,
+          toName: rule.delegateName,
+          reason: rule.reason,
+          auto: true,
+        },
+      });
+      await this.collab.notify(
+        rule.delegateId,
+        'Te delegaron una firma',
+        `${signers.find((s) => s.signerId === rule.userId)?.name ?? rule.userId} está fuera de oficina y te delegó un documento.`,
+        `/documents/${documentId}`,
+      );
+    }
   }
 }

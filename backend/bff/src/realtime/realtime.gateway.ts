@@ -4,11 +4,31 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { Server, Socket } from 'socket.io';
+import { RedisService } from '../redis/redis.service';
+
+const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const issuer = process.env.KEYCLOAK_ISSUER;
+const jwks = issuer
+  ? createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`))
+  : undefined;
+
+interface SocketUser {
+  actorId: string;
+  name?: string;
+  tenantId: string;
+}
 
 export type DocumentEventType = 'SIGNATURE_APPLIED' | 'REQUEST_COMPLETED' | 'DOCUMENT_VIEWED';
 
@@ -38,15 +58,31 @@ function roomFor(documentId: string) {
  */
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:3001',
+    origin: corsOrigins,
     credentials: true,
   },
 })
-export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
+
+  constructor(private readonly redis: RedisService) {}
+
+  /**
+   * D10 — con `REDIS_URL`, el servidor Socket.IO usa el adaptador Redis: las
+   * salas y los `emit` se propagan entre réplicas del BFF. Sin Redis, cada
+   * instancia funciona aislada (suficiente en single-node).
+   */
+  afterInit(server: Server): void {
+    const pub = this.redis.duplicate();
+    const sub = this.redis.duplicate();
+    if (pub && sub) {
+      server.adapter(createAdapter(pub, sub));
+      this.logger.log('Socket.IO usando el adaptador Redis (multi-réplica)');
+    }
+  }
 
   // documentId -> (actorId -> presence info)
   private readonly presence = new Map<string, Map<string, PresenceEntry>>();
@@ -54,13 +90,37 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   // socketId -> (documentId -> actorId), para poder limpiar todo al desconectar.
   private readonly socketMemberships = new Map<string, Map<string, string>>();
 
-  handleConnection(client: Socket) {
-    this.socketMemberships.set(client.id, new Map());
+  // socketId -> usuario autenticado del handshake
+  private readonly socketUsers = new Map<string, SocketUser>();
+
+  /**
+   * Autentica el handshake: el cliente envía el access token en
+   * `handshake.auth.token` (o `Authorization: Bearer`). Sin token válido se
+   * rechaza la conexión.
+   */
+  async handleConnection(client: Socket) {
+    try {
+      const token =
+        (client.handshake.auth?.token as string | undefined) ??
+        client.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
+      if (!token || !jwks || !issuer) throw new Error('token ausente o issuer no configurado');
+      const { payload } = await jwtVerify(token, jwks, { issuer });
+      this.socketUsers.set(client.id, {
+        actorId: (payload.preferred_username as string) ?? payload.sub ?? '',
+        name: payload.name as string | undefined,
+        tenantId: (payload.tenant as string) ?? 'seguridata',
+      });
+      this.socketMemberships.set(client.id, new Map());
+    } catch (err) {
+      this.logger.debug(`WS handshake rechazado: ${(err as Error).message}`);
+      client.disconnect(true);
+    }
   }
 
   handleDisconnect(client: Socket) {
     const memberships = this.socketMemberships.get(client.id);
     this.socketMemberships.delete(client.id);
+    this.socketUsers.delete(client.id);
     if (!memberships) return;
 
     for (const [documentId, actorId] of memberships) {
@@ -72,10 +132,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('join-document')
   handleJoinDocument(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { documentId: string; actorId: string; actorName?: string },
+    @MessageBody() body: { documentId: string },
   ) {
-    const { documentId, actorId, actorName } = body ?? {};
-    if (!documentId || !actorId) return;
+    const documentId = body?.documentId;
+    const user = this.socketUsers.get(client.id);
+    // La identidad sale del handshake autenticado, nunca del payload del mensaje.
+    if (!documentId || !user) return;
+    const actorId = user.actorId;
+    const actorName = user.name ?? actorId;
 
     client.join(roomFor(documentId));
 
@@ -105,9 +169,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('leave-document')
   handleLeaveDocument(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { documentId: string; actorId: string },
+    @MessageBody() body: { documentId: string },
   ) {
-    const { documentId, actorId } = body ?? {};
+    const documentId = body?.documentId;
+    const actorId = this.socketUsers.get(client.id)?.actorId;
     if (!documentId || !actorId) return;
 
     client.leave(roomFor(documentId));

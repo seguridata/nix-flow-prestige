@@ -58,7 +58,9 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
     const document = {
       id: req.documentId,
       hash: 'abc',
-      contentBase64: Buffer.from('%PDF-1.4').toString('base64'),
+      objectKey: 'documents/2026-01-01/obj-1.pdf',
+      enc: { v: 1, alg: 'AES-256-GCM', iv: 'x', tag: 'x', dek: { wrapped: 'x', iv: 'x', tag: 'x' } },
+      filename: 'contrato.pdf',
       caseId: 'case-1',
     };
     if (!includeSigners) return { ...req, document };
@@ -69,19 +71,24 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
     return { ...req, signers: requestSigners, document };
   }
 
+  const findReq = ({
+    where,
+    include,
+  }: {
+    where: { id: string };
+    include?: { signers?: unknown };
+  }) => {
+    const req = requests.get(where.id);
+    if (!req) return null;
+    return hydrate(req, Boolean(include?.signers));
+  };
+
   const api = {
     signatureRequest: {
-      findUnique: async ({
-        where,
-        include,
-      }: {
-        where: { id: string };
-        include?: { signers?: unknown };
-      }) => {
-        const req = requests.get(where.id);
-        if (!req) return null;
-        return hydrate(req, Boolean(include?.signers));
-      },
+      findUnique: async (args: { where: { id: string }; include?: { signers?: unknown } }) =>
+        findReq(args),
+      findFirst: async (args: { where: { id: string }; include?: { signers?: unknown } }) =>
+        findReq(args),
       update: async ({
         where,
         data,
@@ -125,6 +132,19 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
         Object.assign(s, data);
         return { ...s };
       },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: { not?: string } };
+        data: Partial<FakeSignerRow>;
+      }) => {
+        const s = signers.get(where.id);
+        if (!s) return { count: 0 };
+        if (where.status?.not && s.status === where.status.not) return { count: 0 };
+        Object.assign(s, data);
+        return { count: 1 };
+      },
     },
     // El servicio real hace `this.prisma.$transaction(async (tx) => {...})`.
     // Como el fixture es un mapa en memoria compartido (sin motor SQL real
@@ -142,7 +162,9 @@ function createFakePrisma(seed: { requests: FakeRequestRow[]; signers: FakeSigne
       findUnique: async () => ({
         id: DOCUMENT_ID,
         hash: 'abc',
-        contentBase64: Buffer.from('%PDF-1.4').toString('base64'),
+        objectKey: 'documents/2026-01-01/obj-1.pdf',
+        enc: { v: 1, alg: 'AES-256-GCM', iv: 'x', tag: 'x', dek: { wrapped: 'x', iv: 'x', tag: 'x' } },
+        filename: 'contrato.pdf',
         caseId: 'case-1',
       }),
       update: async () => ({}),
@@ -165,8 +187,29 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     sign: vi.fn().mockResolvedValue({ algorithm: 'HMAC-SHA256', signatureHash: 'x', provider: 'test' }),
     capabilities: vi.fn().mockReturnValue([]),
   };
-  const stamp = { stampAutograph: vi.fn().mockResolvedValue('c3RhbXBlZA==') };
+  const stamp = { stampAutograph: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 stamped')) };
+  const storage = {
+    getObject: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4')),
+    putObject: vi.fn().mockResolvedValue({
+      objectKey: 'documents/2026-01-01/obj-2.pdf',
+      sha256: 'def',
+      sizeBytes: 15,
+      enc: { v: 1, alg: 'AES-256-GCM', iv: 'y', tag: 'y', dek: { wrapped: 'y', iv: 'y', tag: 'y' } },
+    }),
+  };
   const collab = { notify: vi.fn(), audit: vi.fn() };
+  const mail = {
+    sendInvites: vi.fn().mockResolvedValue(undefined),
+    sendCompleted: vi.fn().mockResolvedValue(undefined),
+    sendReminder: vi.fn().mockResolvedValue(undefined),
+  };
+  const policyService = {
+    resolve: vi.fn().mockResolvedValue({ version: 0, source: 'default', allowedMethods: ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA'] }),
+    enforce: vi.fn((_p: unknown, r: { order?: string; slaHours?: number }) => ({
+      order: r.order ?? 'SECUENCIAL',
+      slaHours: r.slaHours ?? 72,
+    })),
+  };
 
   const service = new SignatureRequestsService(
     prisma,
@@ -175,7 +218,10 @@ function makeService(seed: { requests: FakeRequestRow[]; signers: FakeSignerRow[
     workflow as never,
     signing as never,
     stamp as never,
+    storage as never,
     collab as never,
+    mail as never,
+    policyService as never,
   );
   return { service, requests, signers, realtime, evidence };
 }

@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { CheckCircle2, Clock, FilePlus2, FlaskConical } from "lucide-react";
+import { CheckCircle2, Clock, FilePlus2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -13,29 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useSession } from "@/store/session-store";
 import { fetchSent } from "@/services/inbox-service";
-import { cancelRequest, createSelfSignDemo } from "@/services/signature-requests-service";
+import { cancelRequest } from "@/services/signature-requests-service";
 
 export default function SentPage() {
-  const { signerId, name, email } = useSession();
-  const router = useRouter();
+  const { signerId } = useSession();
   const queryClient = useQueryClient();
 
   const { data: items, isLoading } = useQuery({
     queryKey: ["sent", signerId],
     queryFn: () => fetchSent(signerId),
-  });
-
-  const demoMutation = useMutation({
-    mutationFn: () => createSelfSignDemo({ signerId, name, email }),
-    onSuccess: (result) => {
-      toast.success("Prueba lista. Ábrela y firma con el lienzo autógrafo.");
-      queryClient.invalidateQueries({ queryKey: ["sent", signerId] });
-      queryClient.invalidateQueries({ queryKey: ["inbox", signerId] });
-      router.push(`/documents/${result.document.id}`);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "No se pudo crear la prueba.");
-    },
   });
 
   const cancelMutation = useMutation({
@@ -71,14 +56,6 @@ export default function SentPage() {
               Quién ya firmó, quién falta y cancelación del flujo.
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => demoMutation.mutate()}
-            disabled={demoMutation.isPending}
-          >
-            <FlaskConical className="size-4" />
-            {demoMutation.isPending ? "Generando…" : "Generar prueba para firmar"}
-          </Button>
         </div>
 
         {isLoading ? (
@@ -141,14 +118,11 @@ export default function SentPage() {
           <Card className="glass p-10 text-center">
             <p className="font-medium">Todavía no enviaste documentos</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              Crea un envío o genera una prueba para firmar tú mismo.
+              Crea un envío para mandar un documento a firma.
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <Button asChild>
                 <Link href="/new">Nuevo envío</Link>
-              </Button>
-              <Button variant="outline" onClick={() => demoMutation.mutate()} disabled={demoMutation.isPending}>
-                Generar prueba
               </Button>
             </div>
           </Card>

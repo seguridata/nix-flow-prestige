@@ -2,13 +2,14 @@
 /**
  * Prestige — un comando para todo el sandbox local.
  *
- *   bun run dev              Docker + Prisma + front (3001) + BFF/worker (3000)
+ *   bun run dev              Docker + Prisma + front (3001) + BFF/worker (3000) + demo
  *   bun run dev -- --reset   borra volúmenes y vuelve a subir
+ *   bun run dev -- --no-demo no siembra el escenario de demostración
  *   bun run down             para la infra (deja volúmenes)
  *   bun run down -- --volumes
  */
 
-import { copyFileSync, existsSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -27,6 +28,7 @@ const args = process.argv.slice(2);
 const command = args[0] === "down" ? "down" : "up";
 const reset = args.includes("--reset");
 const volumes = args.includes("--volumes") || args.includes("-v") || reset;
+const wantsDemo = !args.includes("--no-demo") && process.env.DEMO_SEED !== "0";
 
 function log(msg: string) {
   console.log(`\x1b[36m[prestige]\x1b[0m ${msg}`);
@@ -39,10 +41,11 @@ function fail(msg: string): never {
 
 async function run(
   cmd: string[],
-  opts: { cwd?: string; quiet?: boolean } = {},
+  opts: { cwd?: string; quiet?: boolean; env?: Record<string, string> } = {},
 ): Promise<number> {
   const proc = Bun.spawn(cmd, {
     cwd: opts.cwd ?? ROOT,
+    env: opts.env ? { ...process.env, ...opts.env } : undefined,
     stdin: "ignore",
     stdout: opts.quiet ? "pipe" : "inherit",
     stderr: opts.quiet ? "pipe" : "inherit",
@@ -61,11 +64,37 @@ async function output(cmd: string[]): Promise<{ code: number; text: string }> {
   return { code, text: text.trim() };
 }
 
+function envKeys(text: string): Set<string> {
+  return new Set(
+    text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"))
+      .map((l) => l.split("=")[0].trim()),
+  );
+}
+
 function ensureEnv(example: string, dest: string) {
-  if (existsSync(dest)) return;
   if (!existsSync(example)) fail(`Falta ${example}`);
-  copyFileSync(example, dest);
-  log(`Creado ${dest.slice(ROOT.length + 1)} desde example`);
+  const rel = dest.slice(ROOT.length + 1);
+  if (!existsSync(dest)) {
+    copyFileSync(example, dest);
+    log(`Creado ${rel} desde example`);
+    return;
+  }
+  // El .env ya existe: añade solo las claves nuevas que trae el example.
+  const exampleText = readFileSync(example, "utf8");
+  const have = envKeys(readFileSync(dest, "utf8"));
+  const missing = exampleText
+    .split(/\r?\n/)
+    .filter((l) => {
+      const key = l.split("=")[0].trim();
+      return l.includes("=") && !l.trim().startsWith("#") && key && !have.has(key);
+    });
+  if (missing.length) {
+    appendFileSync(dest, `\n# --- claves añadidas automáticamente desde ${rel}.example ---\n${missing.join("\n")}\n`);
+    log(`${rel}: añadidas ${missing.length} clave(s) nueva(s) (${missing.map((l) => l.split("=")[0]).join(", ")})`);
+  }
 }
 
 async function requireCmd(bin: string, hint: string) {
@@ -119,15 +148,71 @@ async function redisReady() {
 function printUrls() {
   console.log("");
   log("Listo. URLs:");
-  console.log("  App            http://127.0.0.1:3001");
-  console.log("  BFF            http://127.0.0.1:3000");
-  console.log("  Cockpit        http://127.0.0.1:3001/operations");
-  console.log("  Temporal UI    http://127.0.0.1:8088");
-  console.log("  MinIO consola  http://127.0.0.1:9001   prestige / prestige-minio");
-  console.log("  Keycloak       http://127.0.0.1:8081   admin / admin");
+  console.log("  App            http://localhost:3001   maria/maria123 · carlos/carlos123 · roberto/roberto123");
+  console.log("     (usa 'localhost', NO 127.0.0.1 — el redirect OIDC está registrado en localhost)");
+  console.log("  BFF · OpenAPI  http://localhost:3000   ·   /docs");
+  console.log("  Cockpit        http://localhost:3001/operations");
+  console.log("  Mailpit        http://localhost:8025   (correos de la demo)");
+  console.log("  Temporal UI    http://localhost:8088");
+  console.log("  MinIO consola  http://localhost:9001   prestige / prestige-minio");
+  console.log("  Keycloak       http://localhost:8081   admin / admin");
   console.log("");
+  if (wantsDemo) log("La demo se sembrará en cuanto el BFF responda (usa --no-demo para saltarla).");
   log("Ctrl+C para front + BFF. La infra Docker sigue. Para bajarla: bun run down");
   console.log("");
+}
+
+async function seedDemo() {
+  // Espera a que el BFF y Keycloak estén listos (el front/BFF acaban de
+  // arrancar en paralelo) y siembra el escenario de demostración. Best-effort:
+  // no tumba `bun run dev` si algo falla, pero espera de verdad y avisa fuerte.
+  //
+  // El BFF hace un `tsc` completo en frío antes de escuchar; en Windows eso
+  // puede pasar de 2 min. Por eso el margen es amplio (5 min) y el seed
+  // reintenta: aunque `/operations/health` ya responda, Temporal/Prisma pueden
+  // tardar unos segundos más en aceptar escrituras.
+  const bffUp = await waitFor(
+    "BFF (para la demo)",
+    () => probeHttp("http://127.0.0.1:3000/operations/health"),
+    300_000,
+    false,
+  );
+  const kcUp = await waitFor(
+    "Keycloak (para la demo)",
+    () =>
+      probeHttp(
+        "http://127.0.0.1:8081/realms/prestige/.well-known/openid-configuration",
+      ),
+    60_000,
+    false,
+  );
+  if (!bffUp || !kcUp) {
+    console.log("");
+    log("\x1b[33mDemo NO sembrada:\x1b[0m el BFF o Keycloak no respondieron a tiempo.");
+    log("Cuando veas `Prestige BFF escuchando en http://localhost:3000`, corre:  \x1b[1mbun run demo\x1b[0m");
+    return;
+  }
+
+  const MAX = 3;
+  for (let intento = 1; intento <= MAX; intento++) {
+    log(`Sembrando escenario de demostración… (intento ${intento}/${MAX})`);
+    const code = await run(["bun", "prisma/scripts/demo-seed.ts"], {
+      cwd: BFF_DIR,
+      // El seed habla IPv4 explícito: evita el cuelgue de `localhost` → ::1
+      // cuando IPv6 no enruta al proceso Node en Windows.
+      env: { DEMO_BFF_URL: "http://127.0.0.1:3000" },
+    });
+    if (code === 0) {
+      log("Demo sembrada. Recarga el front.");
+      return;
+    }
+    if (intento < MAX) {
+      log(`El seed falló (code ${code}). Reintento en 10 s…`);
+      await Bun.sleep(10_000);
+    }
+  }
+  console.log("");
+  log("\x1b[33mDemo NO sembrada tras 3 intentos.\x1b[0m Revisa el error de arriba y reintenta con:  \x1b[1mbun run demo\x1b[0m");
 }
 
 async function down() {
@@ -161,6 +246,9 @@ async function up() {
 
   log("bun install…");
   if ((await run(["bun", "install"])) !== 0) fail("bun install falló");
+
+  log("PKI interna (CA de firma DIGITAL)…");
+  if ((await run(["bun", "scripts/pki-init.ts"])) !== 0) fail("pki:init falló");
 
   log("Levantando Postgres, Keycloak, Temporal, MinIO, Redis…");
   if ((await run([...COMPOSE, "up", "-d"])) !== 0) fail("docker compose up falló");
@@ -204,6 +292,8 @@ async function up() {
     stdout: "inherit",
     stderr: "inherit",
   });
+
+  if (wantsDemo) void seedDemo();
 
   const shutdown = () => {
     child.kill();

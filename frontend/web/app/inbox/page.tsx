@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { FileText, FlaskConical, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBadge } from "@/components/documents/status-badge";
@@ -15,7 +13,6 @@ import { Card } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useSession } from "@/store/session-store";
 import { fetchInbox } from "@/services/inbox-service";
-import { createSelfSignDemo } from "@/services/signature-requests-service";
 
 function initialsOf(name: string) {
   return name
@@ -27,47 +24,26 @@ function initialsOf(name: string) {
 }
 
 export default function InboxPage() {
-  const { signerId, name, email } = useSession();
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const demoMutation = useMutation({
-    mutationFn: () => createSelfSignDemo({ signerId, name, email }),
-    onSuccess: (result) => {
-      toast.success("Prueba lista para firmar.");
-      queryClient.invalidateQueries({ queryKey: ["inbox", signerId] });
-      router.push(`/documents/${result.document.id}`);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "No se pudo crear la prueba.");
-    },
-  });
+  const { signerId, name } = useSession();
   const { data: items, isLoading } = useQuery({
     queryKey: ["inbox", signerId],
     queryFn: () => fetchInbox(signerId),
   });
-  const pendingCount = items?.filter((item) => item.myStatus === "PENDIENTE").length ?? 0;
+  // "Pendiente de tu firma" = te toca YA (en secuencial, no cuentes los que
+  // esperan turno).
+  const pendingCount =
+    items?.filter((item) => item.myStatus === "PENDIENTE" && item.myTurn !== false).length ?? 0;
   const firstName = name.split(" ")[0];
 
   return (
     <AppShell
       title="Bandeja"
       actions={
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => demoMutation.mutate()}
-            disabled={demoMutation.isPending}
-          >
-            <FlaskConical className="size-4" />
-            {demoMutation.isPending ? "Generando…" : "Prueba para firmar"}
-          </Button>
-          <Button asChild variant="secondary" size="sm">
-            <Link href="/new">
-              <Plus className="size-4" /> Nuevo envío
-            </Link>
-          </Button>
-        </div>
+        <Button asChild variant="secondary" size="sm">
+          <Link href="/new">
+            <Plus className="size-4" /> Nuevo envío
+          </Link>
+        </Button>
       }
     >
       <div className="mx-auto max-w-5xl">
@@ -98,7 +74,10 @@ export default function InboxPage() {
           </div>
         ) : items && items.length > 0 ? (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            {items.map((item, index) => (
+            {items.map((item, index) => {
+              const waitingTurn = item.myStatus === "PENDIENTE" && item.myTurn === false;
+              const actionable = item.myStatus === "PENDIENTE" && !waitingTurn;
+              return (
               <motion.div
                 key={item.signatureRequestId}
                 initial={{ opacity: 0, y: 10 }}
@@ -110,7 +89,13 @@ export default function InboxPage() {
                     <div className="flex size-11 items-center justify-center rounded-md bg-muted">
                       <FileText className="size-5" strokeWidth={1.75} />
                     </div>
-                    <StatusBadge status={item.myStatus} />
+                    {waitingTurn ? (
+                      <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                        En espera de turno
+                      </span>
+                    ) : (
+                      <StatusBadge status={item.myStatus} />
+                    )}
                   </div>
                   <h2 className="mt-5 text-lg font-semibold">{item.caseTitle || item.documentTitle}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{item.documentTitle}</p>
@@ -122,8 +107,14 @@ export default function InboxPage() {
                   </div>
                   <div className="mt-6 flex gap-2">
                     <Button asChild className="flex-1">
-                      <Link href={`/documents/${item.documentId}`}>
-                        {item.myStatus === "PENDIENTE" ? "Revisar y firmar" : "Ver expediente"}
+                      <Link
+                        href={
+                          actionable
+                            ? `/documents/${item.documentId}/firmar`
+                            : `/documents/${item.documentId}`
+                        }
+                      >
+                        {actionable ? "Revisar y firmar" : "Ver expediente"}
                       </Link>
                     </Button>
                     <Sheet>
@@ -144,7 +135,8 @@ export default function InboxPage() {
                   </div>
                 </Card>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <Card className="glass overflow-hidden p-0">
@@ -152,10 +144,10 @@ export default function InboxPage() {
             <div className="px-6 py-8 text-center">
               <p className="text-base font-medium">No hay documentos por firmar</p>
               <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-                Cuando alguien te envíe un contrato, aparecerá aquí. También puedes generar una prueba para firmarte a ti mismo.
+                Cuando alguien te envíe un contrato para firmar, aparecerá aquí.
               </p>
-              <Button className="mt-4" onClick={() => demoMutation.mutate()} disabled={demoMutation.isPending}>
-                Generar prueba para firmar
+              <Button asChild className="mt-4">
+                <Link href="/new">Enviar un documento a firma</Link>
               </Button>
             </div>
           </Card>
