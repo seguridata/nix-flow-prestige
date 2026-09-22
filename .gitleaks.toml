@@ -1,0 +1,17 @@
+title = "gitleaks config — Nix Flow Prestige"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Falsos positivos conocidos en historial git"
+
+# backend/bff/.env.example (commit 36058a76) tenia STORAGE_MASTER_KEY/
+# WORKER_SHARED_SECRET con valores base64 de 32 bytes reales pero de
+# DESARROLLO, nunca usados en ningun ambiente real (verificado: no
+# aparecen en ningun otro archivo del repo). Ya se reemplazaron por
+# placeholders explicitos (ver commit 1060b10), pero el valor viejo
+# permanece en el historial de git y gitleaks lo sigue detectando ahi.
+commits = [
+  "36058a7619a4a4693169c4a2563f7c2a2807201c",
+]
