@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,7 +8,8 @@ import { CheckCircle2, ChevronLeft, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import { useSession } from "@/store/session-store";
-import { fetchDocument, fetchDocumentObjectUrl } from "@/services/documents-service";
+import { signerBlockedBy } from "@/libs/signing-turn";
+import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import {
   fetchConsentText,
   fetchSignatureRequestsForDocument,
@@ -40,10 +41,8 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   const [submitting, setSubmitting] = useState(false);
 
   const doc = useQuery({ queryKey: ["document", documentId], queryFn: () => fetchDocument(documentId) });
-  const pdfUrl = useQuery({
-    queryKey: ["document-content", documentId],
-    queryFn: () => fetchDocumentObjectUrl(documentId),
-  });
+  // URL same-origin: el navegador la sirve con su visor nativo, sin blob que revocar.
+  const pdfSrc = documentContentUrl(documentId);
   const requests = useQuery({
     queryKey: ["signature-requests", documentId],
     queryFn: () => fetchSignatureRequestsForDocument(documentId),
@@ -51,18 +50,16 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   const consentText = useQuery({ queryKey: ["consent-text"], queryFn: fetchConsentText });
   const caps = useQuery({ queryKey: ["signing-capabilities"], queryFn: fetchSigningCapabilities });
 
-  useEffect(() => {
-    return () => {
-      if (pdfUrl.data) URL.revokeObjectURL(pdfUrl.data);
-    };
-  }, [pdfUrl.data]);
-
   const mine = useMemo(() => {
     for (const r of requests.data ?? []) {
-      const s = r.signers.find((x) => x.signerId === signerId || x.delegatedTo === signerId);
-      if (s && s.status === "PENDIENTE" && ["PENDIENTE", "EN_FIRMA"].includes(r.status)) {
-        return { request: r, signer: s };
+      const s = r.signers.find(
+        (x) => x.signerId === signerId || x.delegatedTo === signerId,
+      );
+      if (!s || s.status !== "PENDIENTE" || !["PENDIENTE", "EN_FIRMA"].includes(r.status)) {
+        continue;
       }
+      // Secuencial: `blockedBy` = firmante anterior aún pendiente (o null si me toca).
+      return { request: r, signer: s, blockedBy: signerBlockedBy(r, signerId) };
     }
     return null;
   }, [requests.data, signerId]);
@@ -74,12 +71,12 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   }, [mine, caps.data]);
 
   async function submit() {
-    if (!mine || !method) return;
+    if (!mine || mine.blockedBy || !method) return;
     setSubmitting(true);
     try {
       await signRequest(
         mine.request.id,
-        { signerId, method, consentAccepted: consent },
+        { method, consentAccepted: consent },
         method === "AUTOGRAFA" ? stroke ?? undefined : undefined,
       );
       setStep("listo");
@@ -91,7 +88,7 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  const loading = doc.isLoading || requests.isLoading || pdfUrl.isLoading;
+  const loading = doc.isLoading || requests.isLoading;
 
   return (
     <main className="flex min-h-dvh flex-col bg-background">
@@ -119,19 +116,31 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
             <Link href={`/documents/${documentId}`}>Ver el expediente</Link>
           </Button>
         </div>
+      ) : mine?.blockedBy && step !== "listo" ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
+          <h1 className="text-lg font-semibold">Aún no es tu turno de firmar</h1>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Este documento se firma en orden secuencial. Falta que firme{" "}
+            <span className="font-medium text-foreground">
+              {mine.blockedBy.name ?? mine.blockedBy.signerId}
+            </span>
+            . Te avisaremos en cuanto puedas firmar.
+          </p>
+          <Button asChild variant="outline">
+            <Link href={`/documents/${documentId}`}>Ver el expediente</Link>
+          </Button>
+        </div>
       ) : (
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_380px]">
           {/* PDF */}
           <div className="min-h-[40vh] border-b border-border bg-muted/40 lg:border-b-0 lg:border-r">
-            {pdfUrl.data ? (
-              <object data={pdfUrl.data} type="application/pdf" className="h-full min-h-[60vh] w-full">
-                <div className="p-6 text-sm">
-                  <a href={pdfUrl.data} target="_blank" rel="noreferrer" className="underline">
-                    Abrir el PDF
-                  </a>
-                </div>
-              </object>
-            ) : null}
+            <object data={pdfSrc} type="application/pdf" className="h-full min-h-[60vh] w-full">
+              <div className="p-6 text-sm">
+                <a href={pdfSrc} target="_blank" rel="noreferrer" className="underline">
+                  Abrir el PDF
+                </a>
+              </div>
+            </object>
           </div>
 
           {/* Panel de pasos */}

@@ -25,6 +25,26 @@ export class InboxController {
     return this.inbox.forRequester(user.actorId, user.tenantId);
   }
 
+  /**
+   * Directorio del tenant para el autocompletado de firmantes en `/new`.
+   * Solo identidad (userId, nombre, correo) — nunca roles. Cualquier usuario
+   * autenticado del tenant puede leerlo; el filtro sale del token.
+   */
+  @Get('colleagues')
+  colleagues(@CurrentUser() user: AuthenticatedUser) {
+    return this.prisma.tenantMembership.findMany({
+      where: {
+        // `user.tenantId` del JWT puede ser el slug o el id del tenant;
+        // `TenantMembership.tenantId` es el id. Se acepta cualquiera de los dos.
+        tenant: { OR: [{ id: user.tenantId }, { slug: user.tenantId }] },
+        active: true,
+        OR: [{ name: { not: null } }, { email: { not: null } }],
+      },
+      select: { userId: true, name: true, email: true },
+      orderBy: [{ name: 'asc' }, { userId: 'asc' }],
+    });
+  }
+
   @Get('snapshot')
   async snapshot(@CurrentUser() user: AuthenticatedUser) {
     const userId = user.actorId;

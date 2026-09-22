@@ -23,7 +23,6 @@ export function fetchSignatureRequestsForDocument(documentId: string) {
 export function signRequest(
   requestId: string,
   body: {
-    signerId: string;
     method: SignatureMethod;
     consentAccepted?: boolean;
     biometricSessionId?: string;
@@ -35,7 +34,6 @@ export function signRequest(
   if (autograph) {
     const form = new FormData();
     form.append("file", autograph, "trazo.png");
-    form.append("signerId", body.signerId);
     form.append("method", body.method);
     if (body.consentAccepted !== undefined) form.append("consentAccepted", String(body.consentAccepted));
     if (body.biometricSessionId) form.append("biometricSessionId", body.biometricSessionId);

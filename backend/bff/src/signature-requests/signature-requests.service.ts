@@ -47,6 +47,97 @@ export class SignatureRequestsService {
     return this.policyService.resolve(tenantId);
   }
 
+  /**
+   * Normaliza la identidad de los firmantes contra `TenantMembership`. Si el
+   * `signerId` o el correo entrante coincide (sin distinguir mayúsculas) con un
+   * miembro activo del tenant, se adopta su `userId` canónico y se completan
+   * nombre/correo que falten. Los que no coinciden quedan como firmantes
+   * externos (solo correo + enlace de un solo uso), como antes.
+   */
+  private async resolveSigners(
+    tenantId: string,
+    signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[],
+  ) {
+    const members = await this.prisma.tenantMembership.findMany({
+      // `tenantId` (del JWT) puede venir como slug o como id; `TenantMembership`
+      // guarda el id. Se acepta cualquiera.
+      where: { tenant: { OR: [{ id: tenantId }, { slug: tenantId }] }, active: true },
+      select: { userId: true, name: true, email: true },
+    });
+    const byKey = new Map<string, { userId: string; name: string | null; email: string | null }>();
+    for (const m of members) {
+      byKey.set(m.userId.toLowerCase(), m);
+      if (m.email) byKey.set(m.email.toLowerCase(), m);
+    }
+    return signers.map((s) => {
+      const hit =
+        byKey.get(s.signerId.trim().toLowerCase()) ??
+        (s.email ? byKey.get(s.email.trim().toLowerCase()) : undefined);
+      if (!hit) return s;
+      return {
+        ...s,
+        signerId: hit.userId,
+        name: s.name ?? hit.name ?? undefined,
+        email: s.email ?? hit.email ?? undefined,
+      };
+    });
+  }
+
+  /**
+   * SECUENCIAL — tras cerrar una firma y quedar la solicitud EN_FIRMA, avisa al
+   * siguiente firmante pendiente del orden ("es tu turno"): notificación in-app,
+   * correo de invitación, prioridad alta en su tarea y evento de auditoría.
+   * Idempotente: si ya hay un `SIGNATURE_TURN` para ese firmante, no repite.
+   */
+  private async notifyNextInSequence(request: {
+    id: string;
+    documentId: string;
+    signers: { signerId: string; name: string | null; status: string; sortOrder: number }[];
+  }) {
+    const next = [...request.signers]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .find((s) => s.status === 'PENDIENTE');
+    if (!next) return;
+
+    const already = await this.prisma.processAuditEvent.count({
+      where: {
+        signatureRequestId: request.id,
+        action: 'SIGNATURE_TURN',
+        payload: { path: ['signerId'], equals: next.signerId },
+      },
+    });
+    if (already > 0) return;
+
+    const doc = await this.prisma.document.findUnique({
+      where: { id: request.documentId },
+      select: { filename: true },
+    });
+    const docTitle = doc?.filename ?? 'un documento';
+
+    await this.collab.notify(
+      next.signerId,
+      'Es tu turno de firmar',
+      `Ya puedes firmar «${docTitle}».`,
+      '/inbox',
+    );
+    await this.mail.sendInvite(request.id, next.signerId).catch(() => undefined);
+    await this.prisma.humanTask.updateMany({
+      where: {
+        signatureRequestId: request.id,
+        status: { in: ['CREADA', 'ASIGNADA'] },
+        OR: [{ signerId: next.signerId }, { delegatedFrom: next.signerId }],
+      },
+      data: { priority: 2 },
+    });
+    await this.collab.audit({
+      signatureRequestId: request.id,
+      documentId: request.documentId,
+      actorId: 'system',
+      action: 'SIGNATURE_TURN',
+      payload: { signerId: next.signerId, sortOrder: next.sortOrder },
+    });
+  }
+
   async create(body: {
     documentId: string;
     methods: SignatureMethod[];
@@ -76,6 +167,10 @@ export class SignatureRequestsService {
     });
     const slaHours = enforced.slaHours;
     const expiresAt = new Date(Date.now() + slaHours * 3600_000);
+    // Resuelve la identidad de cada firmante contra el directorio del tenant:
+    // si coincide un miembro registrado, se usa su `userId` canónico para que
+    // la solicitud caiga en su bandeja (que filtra por username, no por correo).
+    const signers = await this.resolveSigners(doc.tenantId, body.signers);
     const created = await this.prisma.signatureRequest.create({
       data: {
         documentId: body.documentId,
@@ -89,7 +184,7 @@ export class SignatureRequestsService {
         policyVersion: policy.version,
         policySnapshot: policy as unknown as object,
         signers: {
-          create: body.signers.map((s, index) => ({
+          create: signers.map((s, index) => ({
             signerId: s.signerId,
             name: s.name,
             email: s.email,
@@ -131,7 +226,12 @@ export class SignatureRequestsService {
         policySource: policy.source,
       },
     });
-    for (const signer of created.signers) {
+    // Aviso in-app: en SECUENCIAL solo al primer firmante del orden; los demás
+    // reciben el suyo al pasarles el turno (`notifyNextInSequence`). En PARALELO,
+    // a todos de una vez.
+    const notifyAtCreate =
+      created.order === 'SECUENCIAL' ? created.signers.slice(0, 1) : created.signers;
+    for (const signer of notifyAtCreate) {
       await this.collab.notify(
         signer.signerId,
         'Documento por firmar',
@@ -140,8 +240,13 @@ export class SignatureRequestsService {
       );
     }
 
-    // M13 — correo de invitación con enlace de un solo uso a cada firmante.
-    await this.mail.sendInvites(created.id).catch(() => undefined);
+    // M13 — correo de invitación con enlace de un solo uso.
+    if (created.order === 'SECUENCIAL') {
+      const first = created.signers[0];
+      if (first) await this.mail.sendInvite(created.id, first.signerId).catch(() => undefined);
+    } else {
+      await this.mail.sendInvites(created.id).catch(() => undefined);
+    }
 
     return this.getOrThrow(created.id);
   }
@@ -504,6 +609,9 @@ export class SignatureRequestsService {
           `Método ${body.method}. Estado: ${result.status}.`,
           `/documents/${result.documentId}`,
         );
+      }
+      if (result.status === 'EN_FIRMA' && result.order === 'SECUENCIAL') {
+        await this.notifyNextInSequence(result).catch(() => undefined);
       }
       if (result.status === 'COMPLETADA') {
         this.realtime.notifyDocumentEvent(result.documentId, {

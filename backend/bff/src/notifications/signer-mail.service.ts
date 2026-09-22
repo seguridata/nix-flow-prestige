@@ -50,20 +50,30 @@ export class SignerMailService {
     const ctx = await this.context(signatureRequestId);
     if (!ctx) return;
     for (const signer of ctx.request.signers) {
-      // Si la firma está delegada, el suplente ya recibió aviso in-app; el correo
-      // externo requeriría su dirección (no la capturamos en la delegación).
-      if (signer.delegatedTo) continue;
-      const to = signer.email;
-      if (!to) continue;
-      const url = await this.linkUrlFor(signatureRequestId, signer.signerId);
-      const t = templates.signInvite({
-        signerName: signer.name ?? undefined,
-        requesterName: ctx.request.requestedByName ?? undefined,
-        documentTitle: ctx.documentTitle,
-        url,
-      });
-      await this.enqueue(to, t, 'signInvite', `invite:${signatureRequestId}:${signer.signerId}`);
+      await this.sendInvite(signatureRequestId, signer.signerId);
     }
+  }
+
+  /**
+   * Invitación con enlace de un solo uso para UN firmante. En orden secuencial
+   * se usa al crear (solo el primero) y luego al pasar el turno a cada
+   * siguiente. Idempotente por `dedupeKey`.
+   */
+  async sendInvite(signatureRequestId: string, signerId: string) {
+    const ctx = await this.context(signatureRequestId);
+    if (!ctx) return;
+    const signer = ctx.request.signers.find((s) => s.signerId === signerId);
+    // Si la firma está delegada, el suplente ya recibió aviso in-app; el correo
+    // externo requeriría su dirección (no la capturamos en la delegación).
+    if (!signer || signer.delegatedTo || !signer.email) return;
+    const url = await this.linkUrlFor(signatureRequestId, signer.signerId);
+    const t = templates.signInvite({
+      signerName: signer.name ?? undefined,
+      requesterName: ctx.request.requestedByName ?? undefined,
+      documentTitle: ctx.documentTitle,
+      url,
+    });
+    await this.enqueue(signer.email, t, 'signInvite', `invite:${signatureRequestId}:${signer.signerId}`);
   }
 
   async sendReminder(signatureRequestId: string, signerId: string, ratio: number) {

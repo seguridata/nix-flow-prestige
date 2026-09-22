@@ -29,7 +29,10 @@ export default function InboxPage() {
     queryKey: ["inbox", signerId],
     queryFn: () => fetchInbox(signerId),
   });
-  const pendingCount = items?.filter((item) => item.myStatus === "PENDIENTE").length ?? 0;
+  // "Pendiente de tu firma" = te toca YA (en secuencial, no cuentes los que
+  // esperan turno).
+  const pendingCount =
+    items?.filter((item) => item.myStatus === "PENDIENTE" && item.myTurn !== false).length ?? 0;
   const firstName = name.split(" ")[0];
 
   return (
@@ -71,7 +74,10 @@ export default function InboxPage() {
           </div>
         ) : items && items.length > 0 ? (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            {items.map((item, index) => (
+            {items.map((item, index) => {
+              const waitingTurn = item.myStatus === "PENDIENTE" && item.myTurn === false;
+              const actionable = item.myStatus === "PENDIENTE" && !waitingTurn;
+              return (
               <motion.div
                 key={item.signatureRequestId}
                 initial={{ opacity: 0, y: 10 }}
@@ -83,7 +89,13 @@ export default function InboxPage() {
                     <div className="flex size-11 items-center justify-center rounded-md bg-muted">
                       <FileText className="size-5" strokeWidth={1.75} />
                     </div>
-                    <StatusBadge status={item.myStatus} />
+                    {waitingTurn ? (
+                      <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                        En espera de turno
+                      </span>
+                    ) : (
+                      <StatusBadge status={item.myStatus} />
+                    )}
                   </div>
                   <h2 className="mt-5 text-lg font-semibold">{item.caseTitle || item.documentTitle}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{item.documentTitle}</p>
@@ -97,12 +109,12 @@ export default function InboxPage() {
                     <Button asChild className="flex-1">
                       <Link
                         href={
-                          item.myStatus === "PENDIENTE"
+                          actionable
                             ? `/documents/${item.documentId}/firmar`
                             : `/documents/${item.documentId}`
                         }
                       >
-                        {item.myStatus === "PENDIENTE" ? "Revisar y firmar" : "Ver expediente"}
+                        {actionable ? "Revisar y firmar" : "Ver expediente"}
                       </Link>
                     </Button>
                     <Sheet>
@@ -123,7 +135,8 @@ export default function InboxPage() {
                   </div>
                 </Card>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <Card className="glass overflow-hidden p-0">

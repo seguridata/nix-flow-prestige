@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/store/session-store";
+import { signerBlockedBy } from "@/libs/signing-turn";
 import { useDocumentRealtime } from "@/hooks/use-document-realtime";
-import { fetchDocument, fetchDocumentObjectUrl } from "@/services/documents-service";
+import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import {
   cancelRequest,
   delegateRequest,
@@ -55,18 +56,6 @@ export default function DocumentDetailPage({
     queryFn: () => fetchDocument(documentId),
   });
 
-  const contentQuery = useQuery({
-    queryKey: ["document-content", documentId],
-    queryFn: () => fetchDocumentObjectUrl(documentId),
-  });
-  // El object URL apunta a un blob en memoria: liberarlo al cambiar o desmontar.
-  useEffect(() => {
-    const url = contentQuery.data;
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [contentQuery.data]);
-
   const requestsQuery = useQuery({
     queryKey: ["signature-requests", "document", documentId],
     queryFn: () => fetchSignatureRequestsForDocument(documentId),
@@ -76,8 +65,12 @@ export default function DocumentDetailPage({
 
   const request = requestsQuery.data?.[0];
   const me = request?.signers.find((s) => s.signerId === signerId);
+  // Secuencial: firmante anterior aún pendiente que bloquea mi turno (o null).
+  const blockedBy = request ? signerBlockedBy(request, signerId) : null;
+  const canSignNow = me?.status === "PENDIENTE" && !blockedBy;
 
-  const pdfDataUrl = contentQuery.data ?? null;
+  // URL same-origin al PDF; el navegador la abre con su visor nativo.
+  const pdfDataUrl = documentContentUrl(documentId);
 
   const [methodDialogOpen, setMethodDialogOpen] = useState(false);
   const [delegateTo, setDelegateTo] = useState("");
@@ -118,7 +111,7 @@ export default function DocumentDetailPage({
       if (!request) throw new Error("No hay solicitud de firma para este documento");
       return signRequest(
         request.id,
-        { signerId, method: payload.method, consentAccepted: payload.consentAccepted },
+        { method: payload.method, consentAccepted: payload.consentAccepted },
         payload.autograph,
       );
     },
@@ -280,7 +273,7 @@ export default function DocumentDetailPage({
               ))}
             </div>
 
-            {me?.status === "PENDIENTE" ? (
+            {canSignNow ? (
               <Button
                 className="mt-6 w-full"
                 size="lg"
@@ -289,6 +282,14 @@ export default function DocumentDetailPage({
               >
                 {signMutation.isPending ? "Firmando…" : "Firmar documento ahora"}
               </Button>
+            ) : blockedBy ? (
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Orden secuencial: te toca cuando firme{" "}
+                <span className="font-medium text-foreground">
+                  {blockedBy.name ?? blockedBy.signerId}
+                </span>
+                .
+              </p>
             ) : me?.status === "FIRMADO" ? (
               <p className="mt-6 text-center text-sm text-success">
                 Ya firmaste este documento

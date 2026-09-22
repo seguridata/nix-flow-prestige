@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
 import { Fingerprint, PenTool, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -15,11 +16,13 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SignerAutocomplete } from "@/components/new/signer-autocomplete";
 import { cn } from "@/libs/utils";
 import { createCase } from "@/services/cases-service";
 import { createDocument } from "@/services/documents-service";
 import { createSignatureRequest } from "@/services/signature-requests-service";
-import type { SignatureMethod } from "@/libs/types";
+import { fetchColleagues } from "@/services/directory-service";
+import type { Colleague, SignatureMethod } from "@/libs/types";
 
 const signerSchema = z.object({
   name: z.string().min(2, "Nombre requerido"),
@@ -60,6 +63,16 @@ export default function NewSignatureRequestPage() {
   });
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "signers" });
+
+  // Directorio del tenant para autocompletar firmantes. Degrada en silencio:
+  // si falla, los inputs siguen siendo texto libre.
+  const colleaguesQuery = useQuery({ queryKey: ["colleagues"], queryFn: fetchColleagues });
+  const colleagues: Colleague[] = colleaguesQuery.data ?? [];
+
+  const pickInto = (index: number) => (c: Colleague) => {
+    form.setValue(`signers.${index}.name`, c.name ?? "", { shouldValidate: true, shouldDirty: true });
+    form.setValue(`signers.${index}.email`, c.email ?? "", { shouldValidate: true, shouldDirty: true });
+  };
 
   function toggleMethod(method: SignatureMethod) {
     setMethods((prev) =>
@@ -231,13 +244,24 @@ export default function NewSignatureRequestPage() {
                         </div>
                         <div className="flex-1">
                           <Label className="mb-1 block text-xs">Nombre</Label>
-                          <Input placeholder="María González" {...form.register(`signers.${index}.name`)} />
+                          <SignerAutocomplete
+                            register={form.register(`signers.${index}.name`)}
+                            value={form.watch(`signers.${index}.name`) ?? ""}
+                            colleagues={colleagues}
+                            onPick={pickInto(index)}
+                            placeholder="María González"
+                            aria-label="Nombre del firmante"
+                          />
                         </div>
                         <div className="flex-1">
                           <Label className="mb-1 block text-xs">Correo</Label>
-                          <Input
+                          <SignerAutocomplete
+                            register={form.register(`signers.${index}.email`)}
+                            value={form.watch(`signers.${index}.email`) ?? ""}
+                            colleagues={colleagues}
+                            onPick={pickInto(index)}
                             placeholder="maria@empresa.com"
-                            {...form.register(`signers.${index}.email`)}
+                            aria-label="Correo del firmante"
                           />
                         </div>
                         <div>

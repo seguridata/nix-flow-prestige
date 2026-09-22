@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/libs/utils";
 
-import { fetchDocument } from "@/services/documents-service";
+import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import { fetchSignatureRequestsForDocument } from "@/services/signature-requests-service";
 import { bulkCreateFields, fetchFields } from "@/services/signature-fields-service";
 import type { DraftField, SignerColor } from "@/components/documents/field-editor-types";
@@ -113,7 +113,7 @@ export default function SignatureFieldsPage({
   const signers = useMemo(() => request?.signers ?? [], [request]);
 
   // pdf.js recibe una URL same-origin (usa PDFFetchStream). Ver SignatureFieldCanvas.
-  const pdfUrl = `/api/bff/documents/${documentId}/content`;
+  const pdfUrl = documentContentUrl(documentId);
 
   const [draftFields, setDraftFields] = useState<DraftField[]>([]);
   const [seeded, setSeeded] = useState(false);

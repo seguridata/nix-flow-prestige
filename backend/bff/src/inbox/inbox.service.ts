@@ -15,6 +15,12 @@ export interface InboxItem {
   createdAt: string;
   pendingSigners?: string[];
   signers?: { signerId: string; name?: string | null; status: string }[];
+  /** Orden de la solicitud: SECUENCIAL | PARALELO. */
+  order?: string;
+  /** SECUENCIAL: firmante al que le toca ahora (primer PENDIENTE del orden). */
+  currentSignerId?: string;
+  /** ¿Puede firmar ya el destinatario de esta bandeja? */
+  myTurn?: boolean;
 }
 
 /**
@@ -42,6 +48,17 @@ export class InboxService {
         );
         const kase = document ? await this.cases.find(document.caseId, tenantId) : null;
 
+        const currentSignerId =
+          request.order === 'SECUENCIAL'
+            ? [...request.signers]
+                .sort((a, b) => a.sortOrder - b.sortOrder)
+                .find((s) => s.status === 'PENDIENTE')?.signerId
+            : undefined;
+        const myStatus = signer?.status ?? 'PENDIENTE';
+        const myTurn =
+          myStatus === 'PENDIENTE' &&
+          (request.order !== 'SECUENCIAL' || currentSignerId === signer?.signerId);
+
         return {
           signatureRequestId: request.id,
           documentId: request.documentId,
@@ -49,9 +66,12 @@ export class InboxService {
           caseTitle: kase?.title ?? '',
           requestedByName: request.requestedByName ?? 'Prestige',
           status: request.status,
-          myStatus: signer?.status ?? 'PENDIENTE',
+          myStatus,
           methods: request.methods,
           createdAt: request.createdAt.toISOString(),
+          order: request.order,
+          currentSignerId,
+          myTurn,
         } satisfies InboxItem;
       }),
     );

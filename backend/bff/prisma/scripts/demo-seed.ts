@@ -219,7 +219,9 @@ async function main() {
   ]));
   c.ok(`caso "${DEMO_CASE}" + 3 documentos`);
 
-  // ---- Solicitud 1: SECUENCIAL, en progreso (maria firmó, roberto pendiente) ----
+  // ---- Solicitud 1: SECUENCIAL en progreso — muestra el paso de turno.
+  // maría firma → a roberto le TOCA (recibe "es tu turno" + correo) → carlos
+  // queda EN ESPERA DE TURNO (sin aviso todavía).
   const req1 = await R<{ id: string }>('POST', '/signature-requests', {
     documentId: docA.id,
     methods: ['DIGITAL'],
@@ -228,10 +230,11 @@ async function main() {
     signers: [
       { signerId: 'maria', name: 'María González', email: 'maria@seguridata.mx', role: 'FIRMANTE' },
       { signerId: 'roberto', name: 'Roberto Díaz', email: 'roberto@seguridata.mx', role: 'FIRMANTE' },
+      { signerId: 'carlos', name: 'Carlos Ramírez', email: 'carlos@seguridata.mx', role: 'FIRMANTE' },
     ],
   });
   await M('POST', `/signature-requests/${req1.id}/actions/sign`, { method: 'DIGITAL', consentAccepted: true });
-  c.ok('solicitud 1 (Contrato marco) — SECUENCIAL, maría firmó, roberto pendiente');
+  c.ok('solicitud 1 (Contrato marco) — SECUENCIAL: maría firmó · turno de roberto · carlos en espera');
 
   // ---- Solicitud 2: PARALELO, COMPLETADA + evidencia ----
   const req2 = await R<{ id: string }>('POST', '/signature-requests', {

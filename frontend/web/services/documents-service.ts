@@ -1,4 +1,4 @@
-import { apiClient, ApiError } from "./api-client";
+import { apiClient } from "./api-client";
 import type { DocumentRecord } from "@/libs/types";
 
 export function fetchDocument(id: string) {
@@ -6,21 +6,12 @@ export function fetchDocument(id: string) {
 }
 
 /**
- * Descarga el PDF descifrado (vía proxy /api/bff, que adjunta el token) y
- * devuelve un object URL para `<embed>` / react-pdf. Quien lo recibe debe
- * hacer `URL.revokeObjectURL` al desmontar.
+ * El contenido del PDF se sirve por su URL same-origin
+ * `/api/bff/documents/:id/content` (el proxy adjunta el token). Los visores
+ * (`<object>`, react-pdf) la consumen directo: sin blob en memoria que
+ * revocar, sin el lector XHR de pdf.js.
  */
-export async function fetchDocumentObjectUrl(id: string): Promise<string> {
-  const res = await fetch(`/api/bff/documents/${id}/content`, { cache: "no-store" });
-  if (!res.ok) {
-    if (res.status === 401 && typeof window !== "undefined") {
-      window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
-    }
-    throw new ApiError(`No se pudo cargar el documento (${res.status})`, res.status);
-  }
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
-}
+export const documentContentUrl = (id: string) => `/api/bff/documents/${id}/content`;
 
 /** Alta de documento por multipart. El PDF nunca se serializa como base64. */
 export function createDocument(params: { caseId: string; file: File; filename?: string }) {
