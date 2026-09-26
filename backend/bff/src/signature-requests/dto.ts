@@ -17,9 +17,10 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
-const METHODS = ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA', 'ACCEPT'] as const;
+const METHODS = ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA', 'ACCEPT', 'PASSKEY'] as const;
 const ORDERS = ['SECUENCIAL', 'PARALELO'] as const;
 const ROLES = ['FIRMANTE', 'REVISOR'] as const;
+const KYC_POLICIES = ['NONE', 'ONCE', 'EVERY_SIGN'] as const;
 
 const toBool = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value === 'true' || value === '1' : Boolean(value);
@@ -53,6 +54,12 @@ export class CreateSignatureRequestDto {
 
   @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => SignerInputDto)
   signers!: SignerInputDto[];
+
+  @IsOptional() @Transform(toBool) @IsBoolean()
+  requirePasskey?: boolean;
+
+  @IsOptional() @IsIn(KYC_POLICIES)
+  kycPolicy?: (typeof KYC_POLICIES)[number];
 }
 
 /** Cuerpo de `POST /signature-requests/:id/actions/sign` (multipart o JSON). El firmante sale del token. */

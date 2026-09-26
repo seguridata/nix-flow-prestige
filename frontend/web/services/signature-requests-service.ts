@@ -8,6 +8,8 @@ export interface CreateSignatureRequestBody {
   slaHours?: number;
   // requestedBy / tenant salen del token en el BFF.
   signers: { signerId: string; name?: string; email?: string; role?: "FIRMANTE" | "REVISOR" }[];
+  requirePasskey?: boolean;
+  kycPolicy?: "NONE" | "ONCE" | "EVERY_SIGN";
 }
 
 export function createSignatureRequest(body: CreateSignatureRequestBody) {

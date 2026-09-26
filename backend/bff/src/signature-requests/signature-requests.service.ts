@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
-import type { SignatureMethod, SignerRole, SigningOrder } from '@prisma/client';
+import type { KycPolicy, SignatureMethod, SignerRole, SigningOrder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -23,9 +23,11 @@ import { SignerMailService } from '../notifications/signer-mail.service';
 import { SignaturePolicyService } from '../signing/signature-policy';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
 
-export type { SignatureMethod, SigningOrder, SignerRole };
+export type { SignatureMethod, SigningOrder, SignerRole, KycPolicy };
 
 const INCLUDE_SIGNERS = { signers: { orderBy: { sortOrder: 'asc' as const } } };
+/** Sprint 4 — vigencia de un alta HABILITADO para `kycPolicy=ONCE` (SPEC §9). */
+const KYC_ONCE_MAX_AGE_MS = 90 * 24 * 3600_000;
 
 @Injectable()
 export class SignatureRequestsService {
@@ -155,6 +157,8 @@ export class SignatureRequestsService {
     tenantId: string;
     slaHours?: number;
     signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[];
+    requirePasskey?: boolean;
+    kycPolicy?: KycPolicy;
   }) {
     if (!body.methods?.length) {
       throw new BadRequestException('Debes autorizar al menos un método de firma');
@@ -169,7 +173,7 @@ export class SignatureRequestsService {
     // M10 — política de firma del tenant: valida los métodos y aplica defaults.
     const policy = await this.policyService.resolve(body.tenantId);
     const enforced = this.policyService.enforce(policy, {
-      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT')[],
+      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT' | 'PASSKEY')[],
       order: body.order,
       slaHours: body.slaHours,
     });
@@ -191,6 +195,8 @@ export class SignatureRequestsService {
         expiresAt,
         policyVersion: policy.version,
         policySnapshot: policy as unknown as object,
+        requirePasskey: body.requirePasskey ?? false,
+        kycPolicy: body.kycPolicy ?? 'NONE',
         signers: {
           create: signers.map((s, index) => ({
             signerId: s.signerId,
@@ -417,6 +423,33 @@ export class SignatureRequestsService {
           signatureRequestId: request.id,
           signerId: signer.signerId,
         });
+      }
+
+      if (request.kycPolicy && request.kycPolicy !== 'NONE') {
+        const email = signer.email?.toLowerCase();
+        // EVERY_SIGN exige que el alta se HABILITARA después de crear ESTA
+        // solicitud (obliga a repetir la verificación); ONCE acepta cualquier
+        // alta HABILITADO dentro de los últimos 90 días.
+        const freshCutoff =
+          request.kycPolicy === 'EVERY_SIGN' ? request.createdAt : new Date(Date.now() - KYC_ONCE_MAX_AGE_MS);
+        const verified =
+          email &&
+          (await tx.onboardingCase.findFirst({
+            where: {
+              tenantId: request.tenantId,
+              email: { equals: email, mode: 'insensitive' },
+              status: 'HABILITADO',
+              updatedAt: { gte: freshCutoff },
+            },
+            orderBy: { updatedAt: 'desc' },
+          }));
+        if (!verified) {
+          throw new ForbiddenException(
+            request.kycPolicy === 'EVERY_SIGN'
+              ? 'Esta solicitud exige verificar identidad (INE + prueba de vida) después de haberse creado; pide a RH que repita el alta'
+              : 'Esta solicitud exige una verificación de identidad vigente (últimos 90 días); pide a RH que complete el alta',
+          );
+        }
       }
 
       if (request.order === 'SECUENCIAL') {

@@ -45,6 +45,12 @@ const METHOD_OPTIONS: { value: SignatureMethod; label: string; icon: typeof Fing
   { value: "ACCEPT", label: "Acepto", icon: CheckCircle2 },
 ];
 
+const KYC_OPTIONS: { value: "NONE" | "ONCE" | "EVERY_SIGN"; label: string }[] = [
+  { value: "NONE", label: "Sin verificación" },
+  { value: "ONCE", label: "Una vez (≤90 días)" },
+  { value: "EVERY_SIGN", label: "Cada firma" },
+];
+
 const STEPS = ["Documento", "Firmantes", "Método y envío"] as const;
 
 export default function NewSignatureRequestPage() {
@@ -52,6 +58,8 @@ export default function NewSignatureRequestPage() {
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [methods, setMethods] = useState<SignatureMethod[]>(["DIGITAL"]);
+  const [requirePasskey, setRequirePasskey] = useState(false);
+  const [kycPolicy, setKycPolicy] = useState<"NONE" | "ONCE" | "EVERY_SIGN">("NONE");
   const [submitting, setSubmitting] = useState(false);
 
   const form = useForm<FormValues>({
@@ -115,6 +123,8 @@ export default function NewSignatureRequestPage() {
         documentId: document.id,
         methods,
         order: values.sequential ? "SECUENCIAL" : "PARALELO",
+        requirePasskey,
+        kycPolicy,
         signers: values.signers.map((s) => ({
           signerId: s.email,
           name: s.name,
@@ -349,6 +359,37 @@ export default function NewSignatureRequestPage() {
                         </button>
                       );
                     })}
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border border-border p-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Exigir passkey antes de firmar</p>
+                      <p className="text-xs text-muted-foreground">
+                        El firmante debe verificar presencia con su passkey, sin importar el método que
+                        elija.
+                      </p>
+                    </div>
+                    <Switch checked={requirePasskey} onCheckedChange={setRequirePasskey} />
+                  </div>
+
+                  <div className="rounded-md border border-border p-4">
+                    <p className="text-sm font-medium text-foreground">Política de identidad (KYC)</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Exige una verificación de identidad (INE + prueba de vida) vigente antes de firmar.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {KYC_OPTIONS.map(({ value, label }) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          size="sm"
+                          variant={kycPolicy === value ? "default" : "outline"}
+                          onClick={() => setKycPolicy(value)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="rounded-md bg-muted p-4 text-sm text-muted-foreground">

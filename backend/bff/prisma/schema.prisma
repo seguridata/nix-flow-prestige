@@ -65,6 +65,16 @@ enum SignatureMethod {
   PASSKEY
 }
 
+/// Sprint 4 — política de identidad exigida antes de aceptar `complete`.
+/// NONE: sin chequeo. ONCE: basta un alta HABILITADO reciente (90 días) del
+/// firmante. EVERY_SIGN: el alta HABILITADO debe ser posterior a la
+/// creación de ESTA solicitud (obliga a repetir la verificación).
+enum KycPolicy {
+  NONE
+  ONCE
+  EVERY_SIGN
+}
+
 enum SigningOrder {
   SECUENCIAL
   PARALELO
@@ -96,6 +106,8 @@ model SignatureRequest {
   /// Sprint 3 — si es true, `sign()` exige una PasskeyAssertion verificada y
   /// sin consumir para este firmante antes de aceptar cualquier método.
   requirePasskey  Boolean           @default(false)
+  /// Sprint 4 — ver enum KycPolicy.
+  kycPolicy       KycPolicy         @default(NONE)
   createdAt       DateTime          @default(now())
 
   document         Document            @relation(fields: [documentId], references: [id])
