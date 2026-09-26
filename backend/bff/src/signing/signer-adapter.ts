@@ -21,6 +21,10 @@ export interface SignCommand {
   signerId: string;
   signerName?: string;
   documentId: string;
+  /** Tenant del documento — lo necesita PasskeySignerAdapter para `consume()`. */
+  tenantId: string;
+  /** La `SignatureRequest` de esta ceremonia — una PasskeyAssertion está atada a una, no a un documento en general. */
+  signatureRequestId: string;
   /** SHA-256 (hex) del PDF actual en claro. */
   documentHash: string;
   /** Bytes del PDF actual. Los adaptadores que incrustan firma devuelven `signedPdf`. */
@@ -30,6 +34,8 @@ export interface SignCommand {
   /** Recuadro donde pintar la apariencia visible de la firma. */
   field?: SignatureFieldRect;
   biometricSessionId?: string;
+  /** Verificación WebAuthn ya resuelta en `/passkey/finish`, pendiente de consumir. */
+  passkeyAssertionId?: string;
 }
 
 export interface SignResult {

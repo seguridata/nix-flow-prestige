@@ -5,6 +5,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -62,8 +63,22 @@ export class SignActionDto {
   @IsOptional() @IsString() @MaxLength(200)
   biometricSessionId?: string;
 
+  @IsOptional() @IsString() @MaxLength(200)
+  passkeyAssertionId?: string;
+
   @IsOptional() @Transform(toBool) @IsBoolean()
   consentAccepted?: boolean;
+}
+
+export class PasskeyFinishDto {
+  @IsString() @MinLength(1) @MaxLength(200)
+  assertionId!: string;
+
+  // La respuesta WebAuthn del navegador no tiene una forma fija que valga la
+  // pena describir campo a campo con class-validator: se valida
+  // criptográficamente dentro de `PasskeyCeremonyService.finish`, no aquí.
+  @IsObject()
+  response!: Record<string, unknown>;
 }
 
 /**

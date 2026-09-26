@@ -1,3 +1,5 @@
+import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
+
 const BASE = "/api/public-sign";
 
 export interface PublicLinkContext {
@@ -13,6 +15,7 @@ export interface PublicLinkContext {
   myStatus: string | null;
   signerName: string | null;
   requestedByName: string | null;
+  requirePasskey: boolean;
 }
 
 async function parse<T>(res: Response): Promise<T> {
@@ -38,7 +41,12 @@ export function acceptPublicConsent(token: string, userAgent?: string) {
 
 export function signPublicLink(
   token: string,
-  body: { method: string; consentAccepted?: boolean; biometricSessionId?: string },
+  body: {
+    method: string;
+    consentAccepted?: boolean;
+    biometricSessionId?: string;
+    passkeyAssertionId?: string;
+  },
   autograph?: Blob,
 ) {
   const url = `${BASE}/${encodeURIComponent(token)}/sign`;
@@ -48,6 +56,7 @@ export function signPublicLink(
     form.append("method", body.method);
     if (body.consentAccepted !== undefined) form.append("consentAccepted", String(body.consentAccepted));
     if (body.biometricSessionId) form.append("biometricSessionId", body.biometricSessionId);
+    if (body.passkeyAssertionId) form.append("passkeyAssertionId", body.passkeyAssertionId);
     return fetch(url, { method: "POST", body: form }).then(parse);
   }
   return fetch(url, {
@@ -55,4 +64,18 @@ export function signPublicLink(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   }).then(parse);
+}
+
+export function beginPasskey(token: string) {
+  return fetch(`${BASE}/${encodeURIComponent(token)}/passkey/begin`, { method: "POST" }).then(
+    parse<{ assertionId: string; options: PublicKeyCredentialRequestOptionsJSON }>,
+  );
+}
+
+export function finishPasskey(token: string, assertionId: string, response: unknown) {
+  return fetch(`${BASE}/${encodeURIComponent(token)}/passkey/finish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ assertionId, response }),
+  }).then(parse<{ ok: true }>);
 }

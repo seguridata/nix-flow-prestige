@@ -40,6 +40,7 @@
     "@signpdf/signer-p12": "^3.3.0",
     "@signpdf/signpdf": "^3.3.0",
     "@signpdf/utils": "^3.3.0",
+    "@simplewebauthn/server": "^14.0.3",
     "@socket.io/redis-adapter": "^8.3.0",
     "@temporalio/activity": "^1.11.7",
     "@temporalio/client": "^1.11.7",

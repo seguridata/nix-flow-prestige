@@ -15,8 +15,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { OneTimeLinkService } from '../notifications/one-time-link.service';
+import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
 import { SignatureRequestsService } from './signature-requests.service';
-import { ConsentAcceptDto, SignActionDto } from './dto';
+import { ConsentAcceptDto, PasskeyFinishDto, SignActionDto } from './dto';
 
 const MAX_STROKE_BYTES = 2 * 1024 * 1024;
 
@@ -33,6 +34,7 @@ export class PublicSignController {
     private readonly links: OneTimeLinkService,
     private readonly signatureRequests: SignatureRequestsService,
     private readonly prisma: PrismaService,
+    private readonly passkeys: PasskeyCeremonyService,
   ) {}
 
   @Public()
@@ -61,6 +63,7 @@ export class PublicSignController {
       myStatus: signer?.status ?? null,
       signerName: signer?.delegatedToName ?? signer?.name ?? null,
       requestedByName: request?.requestedByName ?? null,
+      requirePasskey: request?.requirePasskey ?? false,
     };
   }
 
@@ -79,6 +82,24 @@ export class PublicSignController {
       ip,
       userAgent,
     });
+  }
+
+  @Public()
+  @Post(':token/passkey/begin')
+  async passkeyBegin(@Param('token') token: string) {
+    const link = await this.links.resolve(token);
+    if (!link.signatureRequestId) throw new BadRequestException('El enlace no tiene solicitud asociada');
+    return this.passkeys.begin({ signatureRequestId: link.signatureRequestId, signerId: link.signerId });
+  }
+
+  @Public()
+  @Post(':token/passkey/finish')
+  async passkeyFinish(@Param('token') token: string, @Body() body: PasskeyFinishDto) {
+    // Reafirma que el token sigue vivo (no consumido) antes de dejar
+    // verificar una aserción sobre esa ceremonia; no lo consume — eso lo
+    // hace `sign()`.
+    await this.links.resolve(token);
+    return this.passkeys.finish({ assertionId: body.assertionId, response: body.response as never });
   }
 
   @Public()
@@ -108,6 +129,7 @@ export class PublicSignController {
         method: body.method,
         consentAccepted: body.consentAccepted,
         biometricSessionId: body.biometricSessionId,
+        passkeyAssertionId: body.passkeyAssertionId,
         ip,
         userAgent,
       },

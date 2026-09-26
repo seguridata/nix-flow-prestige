@@ -36,6 +36,7 @@ function makeService(opts: { turnAlreadyAudited?: boolean } = {}) {
     collab,
     mail,
     undefined as never,
+    undefined as never,
   );
   const call = (req: Req) =>
     (svc as unknown as { notifyNextInSequence: (r: Req) => Promise<void> }).notifyNextInSequence(req);

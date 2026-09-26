@@ -3,22 +3,26 @@
 import { use, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import {
+  beginPasskey,
+  finishPasskey,
   resolvePublicLink,
   signPublicLink,
   type PublicLinkContext,
 } from "@/services/public-sign-service";
 
-type Method = "DIGITAL" | "AUTOGRAFA" | "ACCEPT";
+type Method = "DIGITAL" | "AUTOGRAFA" | "ACCEPT" | "PASSKEY";
 
 export default function FirmarPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [consent, setConsent] = useState(false);
   const [method, setMethod] = useState<Method | null>(null);
   const [stroke, setStroke] = useState<Blob | null>(null);
+  const [assertionId, setAssertionId] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const link = useQuery({
@@ -27,11 +31,25 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
     retry: false,
   });
 
+  const verifyPasskey = useMutation({
+    mutationFn: async () => {
+      const { assertionId: id, options } = await beginPasskey(token);
+      const response = await startAuthentication({ optionsJSON: options });
+      await finishPasskey(token, id, response);
+      return id;
+    },
+    onSuccess: (id) => {
+      setAssertionId(id);
+      toast.success("Passkey verificada.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const sign = useMutation({
     mutationFn: () =>
       signPublicLink(
         token,
-        { method: method!, consentAccepted: consent },
+        { method: method!, consentAccepted: consent, passkeyAssertionId: assertionId ?? undefined },
         method === "AUTOGRAFA" ? stroke ?? undefined : undefined,
       ),
     onSuccess: () => {
@@ -40,6 +58,8 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const passkeySatisfied = !link.data?.requirePasskey || Boolean(assertionId) || method === "PASSKEY";
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-4 py-10">
@@ -73,7 +93,17 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
           method={method}
           setMethod={setMethod}
           setStroke={setStroke}
-          canSubmit={consent && !!method && (method !== "AUTOGRAFA" || !!stroke) && !sign.isPending}
+          onVerifyPasskey={() => verifyPasskey.mutate()}
+          verifyingPasskey={verifyPasskey.isPending}
+          passkeyVerified={Boolean(assertionId)}
+          canSubmit={
+            consent &&
+            !!method &&
+            (method !== "AUTOGRAFA" || !!stroke) &&
+            method !== "PASSKEY" &&
+            passkeySatisfied &&
+            !sign.isPending
+          }
           onSubmit={() => sign.mutate()}
           pending={sign.isPending}
         />
@@ -89,6 +119,9 @@ function FirmarForm({
   method,
   setMethod,
   setStroke,
+  onVerifyPasskey,
+  verifyingPasskey,
+  passkeyVerified,
   canSubmit,
   onSubmit,
   pending,
@@ -99,13 +132,23 @@ function FirmarForm({
   method: Method | null;
   setMethod: (m: Method) => void;
   setStroke: (b: Blob | null) => void;
+  onVerifyPasskey: () => void;
+  verifyingPasskey: boolean;
+  passkeyVerified: boolean;
   canSubmit: boolean;
   onSubmit: () => void;
   pending: boolean;
 }) {
+  const labels: Record<Method, string> = {
+    DIGITAL: "Firma digital (PAdES)",
+    AUTOGRAFA: "Firma autógrafa",
+    ACCEPT: "Acepto",
+    PASSKEY: "Passkey",
+  };
   const methods = (ctx.methods.length ? ctx.methods : ["DIGITAL"]).filter(
-    (m): m is Method => m === "DIGITAL" || m === "AUTOGRAFA" || m === "ACCEPT",
+    (m): m is Method => m === "DIGITAL" || m === "AUTOGRAFA" || m === "ACCEPT" || m === "PASSKEY",
   );
+
   return (
     <Card className="space-y-5 p-6">
       <div>
@@ -129,6 +172,22 @@ function FirmarForm({
         </span>
       </label>
 
+      {ctx.requirePasskey ? (
+        <div className="rounded-md border border-border bg-muted/40 p-3">
+          <p className="text-sm font-medium">Esta firma exige verificación con passkey</p>
+          <Button
+            type="button"
+            size="sm"
+            className="mt-2"
+            variant={passkeyVerified ? "outline" : "default"}
+            disabled={verifyingPasskey || passkeyVerified}
+            onClick={onVerifyPasskey}
+          >
+            {passkeyVerified ? "Passkey verificada ✓" : verifyingPasskey ? "Verificando…" : "Verificar con passkey"}
+          </Button>
+        </div>
+      ) : null}
+
       <div>
         <p className="mb-2 text-sm font-medium">Método de firma</p>
         <div className="flex flex-wrap gap-2">
@@ -140,7 +199,7 @@ function FirmarForm({
               variant={method === m ? "default" : "outline"}
               onClick={() => setMethod(m)}
             >
-              {m === "DIGITAL" ? "Firma digital (PAdES)" : m === "AUTOGRAFA" ? "Firma autógrafa" : "Acepto"}
+              {labels[m]}
             </Button>
           ))}
         </div>

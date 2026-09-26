@@ -21,6 +21,7 @@ import { CONTRATO_DOS_PARTES } from '../temporal/shared';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SignerMailService } from '../notifications/signer-mail.service';
 import { SignaturePolicyService } from '../signing/signature-policy';
+import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
 
 export type { SignatureMethod, SigningOrder, SignerRole };
 
@@ -39,6 +40,7 @@ export class SignatureRequestsService {
     private readonly collab: CollaborationService,
     private readonly mail: SignerMailService,
     private readonly policyService: SignaturePolicyService,
+    private readonly passkeys: PasskeyCeremonyService,
   ) {}
 
   consentText() {
@@ -322,6 +324,8 @@ export class SignatureRequestsService {
       signerId: string;
       method: SignatureMethod;
       biometricSessionId?: string;
+      /** Verificación WebAuthn ya resuelta en `/passkey/finish`, pendiente de consumir. */
+      passkeyAssertionId?: string;
       consentAccepted?: boolean;
       /** IP y user-agent REALES de la conexión (los pone el controller, no el cliente). */
       ip?: string;
@@ -398,6 +402,23 @@ export class SignatureRequestsService {
         );
       }
 
+      if (request.requirePasskey && body.method !== 'PASSKEY') {
+        if (!body.passkeyAssertionId) {
+          throw new ForbiddenException('Esta solicitud exige verificación con passkey antes de firmar');
+        }
+        // `consume` usa `this.prisma` (fuera de `tx`): si la solicitud se
+        // recarga después y algo más abajo revienta, la aserción queda
+        // gastada sin firma aplicada — aceptable, un caso raro que solo
+        // obliga a pedir una passkey nueva; no vale la pena pasar `tx` a un
+        // servicio de otro módulo solo para este borde.
+        await this.passkeys.consume({
+          assertionId: body.passkeyAssertionId,
+          tenantId: request.tenantId,
+          signatureRequestId: request.id,
+          signerId: signer.signerId,
+        });
+      }
+
       if (request.order === 'SECUENCIAL') {
         const pendingBefore = request.signers
           .filter((s) => s.sortOrder < signer.sortOrder)
@@ -455,6 +476,8 @@ export class SignatureRequestsService {
         signerId: body.signerId,
         signerName: (onBehalfOf ? signer.delegatedToName : signer.name) ?? signer.name ?? undefined,
         documentId: request.documentId,
+        tenantId: request.tenantId,
+        signatureRequestId: request.id,
         documentHash: request.document.hash,
         pdfBytes: currentPdf,
         signatureImage: autographImage,
@@ -468,6 +491,7 @@ export class SignatureRequestsService {
             }
           : undefined,
         biometricSessionId: body.biometricSessionId,
+        passkeyAssertionId: body.passkeyAssertionId,
       });
 
       // Fase B — firma asíncrona: el adaptador la inició pero falta la

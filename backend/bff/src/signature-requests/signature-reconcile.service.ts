@@ -61,6 +61,8 @@ export class SignatureReconcileService {
           signerId: signer.signerId,
           signerName: signer.name ?? undefined,
           documentId: req.documentId,
+          tenantId: req.tenantId,
+          signatureRequestId: req.id,
           documentHash: req.document.hash,
           pdfBytes,
         })

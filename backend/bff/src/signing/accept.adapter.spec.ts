@@ -8,6 +8,8 @@ describe('AcceptSignerAdapter', () => {
       method: 'ACCEPT',
       signerId: 'ana@seguridata.mx',
       documentId: 'doc-1',
+      tenantId: 'seguridata',
+      signatureRequestId: 'sr-1',
       documentHash: 'a'.repeat(64),
       pdfBytes: Buffer.from('%PDF-1.4 ignorado'),
     });
@@ -20,7 +22,14 @@ describe('AcceptSignerAdapter', () => {
 
   it('el hash de firma depende del documento y del firmante (distinto firmante -> distinto hash)', async () => {
     const adapter = new AcceptSignerAdapter();
-    const base = { method: 'ACCEPT' as const, documentId: 'doc-1', documentHash: 'b'.repeat(64), pdfBytes: Buffer.alloc(0) };
+    const base = {
+      method: 'ACCEPT' as const,
+      documentId: 'doc-1',
+      tenantId: 'seguridata',
+      signatureRequestId: 'sr-1',
+      documentHash: 'b'.repeat(64),
+      pdfBytes: Buffer.alloc(0),
+    };
 
     const a = await adapter.sign({ ...base, signerId: 'ana' });
     const b = await adapter.sign({ ...base, signerId: 'carlos' });

@@ -3,11 +3,13 @@ import { AcceptSignerAdapter } from './accept.adapter';
 import { AutographSignerAdapter } from './autograph.adapter';
 import { BiometricSignerAdapter } from './biometric.adapter';
 import { DigitalSignerAdapter } from './digital.adapter';
+import { PasskeySignerAdapter } from './passkey.adapter';
 import { SigningRouter } from './signing.router';
 import { PdfStampService } from './pdf-stamp.service';
 import { SignaturePolicyService } from './signature-policy';
 import { KEY_CUSTODIAN } from './pki/key-custodian';
 import { Pkcs11KeyCustodian, SoftwareKeyCustodian } from './pki/software-key-custodian';
+import { WebauthnModule } from '../webauthn/webauthn.module';
 
 const keyCustodianProvider = {
   provide: KEY_CUSTODIAN,
@@ -18,6 +20,7 @@ const keyCustodianProvider = {
 };
 
 @Module({
+  imports: [WebauthnModule],
   providers: [
     keyCustodianProvider,
     SoftwareKeyCustodian,
@@ -26,6 +29,7 @@ const keyCustodianProvider = {
     AutographSignerAdapter,
     BiometricSignerAdapter,
     AcceptSignerAdapter,
+    PasskeySignerAdapter,
     SigningRouter,
     PdfStampService,
     SignaturePolicyService,

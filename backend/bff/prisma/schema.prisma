@@ -62,6 +62,7 @@ enum SignatureMethod {
   AUTOGRAFA
   BIOMETRICA
   ACCEPT
+  PASSKEY
 }
 
 enum SigningOrder {
@@ -92,6 +93,9 @@ model SignatureRequest {
   /// M10 — política de firma efectiva al crear la solicitud (versión + snapshot).
   policyVersion   Int?
   policySnapshot  Json?
+  /// Sprint 3 — si es true, `sign()` exige una PasskeyAssertion verificada y
+  /// sin consumir para este firmante antes de aceptar cualquier método.
+  requirePasskey  Boolean           @default(false)
   createdAt       DateTime          @default(now())
 
   document         Document            @relation(fields: [documentId], references: [id])
@@ -397,6 +401,59 @@ model OneTimeLink {
 
   @@index([signerId])
   @@index([signatureRequestId])
+}
+
+/// Sprint 3 — credencial WebAuthn de un usuario interno. Vive mientras exista
+/// el autenticador; el contador sube en cada aserción y detecta clones/replay.
+model PasskeyCredential {
+  id           String   @id @default(uuid())
+  tenantId     String
+  userId       String?
+  signerId     String?
+  credentialId Bytes    @unique
+  publicKey    Bytes
+  counter      BigInt   @default(0)
+  transports   String[]
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, userId])
+  @@index([tenantId, signerId])
+}
+
+/// Sprint 3 — un desafío de firma concreto: nace en `passkey/begin`, se
+/// verifica en `passkey/finish` (`verifiedAt`), se gasta en `sign()`
+/// (`consumedAt`). Las tres fechas separan "existe" de "se probó" de "ya se
+/// usó".
+model PasskeyAssertion {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  signatureRequestId String
+  signerId           String
+  nonce              String
+  /// El challenge en base64url EXACTO que `generateAuthenticationOptions`
+  /// mandó al navegador — no se recalcula al verificar, se compara contra esto.
+  challengeHash      String
+  credentialId       Bytes?
+  createdAt          DateTime  @default(now())
+  expiresAt          DateTime
+  verifiedAt         DateTime?
+  consumedAt         DateTime?
+
+  @@index([signatureRequestId, signerId, consumedAt])
+}
+
+/// Sprint 3 — challenge efímero del registro de una passkey interna
+/// (Keycloak). Vive en Postgres, no en Redis: Redis es opcional en este
+/// entorno.
+model PasskeyRegistrationChallenge {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  challenge String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([tenantId, userId])
 }
 
 model ProcessDefinition {

@@ -4,6 +4,7 @@ import { AcceptSignerAdapter } from './accept.adapter';
 import { AutographSignerAdapter } from './autograph.adapter';
 import { BiometricSignerAdapter } from './biometric.adapter';
 import { DigitalSignerAdapter } from './digital.adapter';
+import { PasskeySignerAdapter } from './passkey.adapter';
 import type {
   ReconcileResult,
   SignCommand,
@@ -21,8 +22,15 @@ export class SigningRouter {
     autograph: AutographSignerAdapter,
     biometric: BiometricSignerAdapter,
     accept: AcceptSignerAdapter,
+    passkey: PasskeySignerAdapter,
   ) {
-    this.byMethod = { DIGITAL: digital, AUTOGRAFA: autograph, BIOMETRICA: biometric, ACCEPT: accept };
+    this.byMethod = {
+      DIGITAL: digital,
+      AUTOGRAFA: autograph,
+      BIOMETRICA: biometric,
+      ACCEPT: accept,
+      PASSKEY: passkey,
+    };
   }
 
   capabilities() {

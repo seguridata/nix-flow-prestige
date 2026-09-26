@@ -4,13 +4,14 @@ import { EvidenceModule } from '../evidence/evidence.module';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { SigningModule } from '../signing/signing.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { WebauthnModule } from '../webauthn/webauthn.module';
 import { SignatureRequestsController } from './signature-requests.controller';
 import { PublicSignController } from './public-sign.controller';
 import { SignatureRequestsService } from './signature-requests.service';
 import { SignatureReconcileService } from './signature-reconcile.service';
 
 @Module({
-  imports: [RealtimeModule, EvidenceModule, WorkflowModule, SigningModule, NotificationsModule],
+  imports: [RealtimeModule, EvidenceModule, WorkflowModule, SigningModule, NotificationsModule, WebauthnModule],
   controllers: [SignatureRequestsController, PublicSignController],
   providers: [SignatureRequestsService, SignatureReconcileService],
   exports: [SignatureRequestsService],

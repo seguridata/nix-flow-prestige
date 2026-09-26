@@ -25,6 +25,7 @@ function makeService(members: { userId: string; name: string | null; email: stri
     undefined as never,
     undefined as never,
     undefined as never,
+    undefined as never,
   );
   return (tenantId: string, signers: Signer[]) =>
     (svc as unknown as { resolveSigners: (t: string, s: Signer[]) => Promise<Signer[]> }).resolveSigners(

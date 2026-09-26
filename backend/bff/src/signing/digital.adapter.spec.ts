@@ -34,6 +34,8 @@ describe('DigitalSignerAdapter — PAdES real', () => {
       signerId: 'ana@seguridata.mx',
       signerName: 'Ana Prueba',
       documentId: 'doc-1',
+      tenantId: 'seguridata',
+      signatureRequestId: 'sr-1',
       documentHash: 'abc',
       pdfBytes: pdf,
       field: { page: 1, xPct: 0.1, yPct: 0.8, widthPct: 0.4, heightPct: 0.1 },
@@ -72,6 +74,8 @@ describe('DigitalSignerAdapter — PAdES real', () => {
       method: 'DIGITAL',
       signerId: 'x',
       documentId: 'd',
+      tenantId: 'seguridata',
+      signatureRequestId: 'sr-1',
       documentHash: 'h',
       pdfBytes: pdf,
     });
