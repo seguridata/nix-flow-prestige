@@ -553,6 +553,31 @@ export class EvidenceService {
       const p = join(verifierDir, f);
       if (existsSync(p)) files.push({ path: `verificador/${f}`, content: readFileSync(p) });
     }
+
+    // SPEC.md §12 — bitácora legible del proceso, encadenada, en texto plano
+    // (no hace falta abrir Postgres para auditar un expediente descargado).
+    const events = await this.prisma.processAuditEvent.findMany({
+      where: { signatureRequestId: m.signatureRequestId },
+      orderBy: { createdAt: 'asc' },
+    });
+    files.push({
+      path: 'events.jsonl',
+      content:
+        events
+          .map((e) =>
+            JSON.stringify({
+              at: e.createdAt.toISOString(),
+              action: e.action,
+              actorId: e.actorId,
+              actorName: e.actorName,
+              prevHash: e.prevHash,
+              hash: e.hash,
+              payload: e.payload,
+            }),
+          )
+          .join('\n') + (events.length ? '\n' : ''),
+    });
+
     files.push({
       path: 'LEEME.txt',
       content:
@@ -562,8 +587,18 @@ export class EvidenceService {
         '  cd verificador && npm install && node verify.mjs ..\n\n' +
         'Comprueba: hash del manifiesto, firma Ed25519, cadena de custodia SHA-256,\n' +
         'signedHash/packageHash, firma PAdES/PKCS#7 del PDF (cadena a la CA) y el\n' +
-        'sello de tiempo RFC 3161 sobre packageHash.\n',
+        'sello de tiempo RFC 3161 sobre packageHash. `events.jsonl` es la bitácora\n' +
+        'encadenada (prevHash/hash) del proceso completo.\n',
     });
+
+    // pack.sha256 — sha256 de cada archivo del expediente hasta este punto;
+    // se verifica con `sha256sum -c pack.sha256` desde dentro del ZIP
+    // extraído (objetivo medible #4 de REPORTE.md).
+    const packSha256 =
+      files
+        .map((f) => `${createHash('sha256').update(f.content).digest('hex')}  ${f.path}`)
+        .join('\n') + '\n';
+    files.push({ path: 'pack.sha256', content: packSha256 });
 
     return { manifestId: m.manifestId, files };
   }

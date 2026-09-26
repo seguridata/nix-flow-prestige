@@ -148,9 +148,37 @@ export class SignatureRequestsService {
     });
   }
 
+  /** Sprint 5 — defaults reutilizables. `templateId` llena lo que el cuerpo no traiga explícito. */
+  async createTemplate(body: {
+    tenantId: string;
+    name: string;
+    order?: SigningOrder;
+    kycPolicy?: KycPolicy;
+    allowedMethods: SignatureMethod[];
+    requirePasskey?: boolean;
+    slaHours?: number;
+  }) {
+    return this.prisma.envelopeTemplate.create({
+      data: {
+        tenantId: body.tenantId,
+        name: body.name,
+        order: body.order ?? 'SECUENCIAL',
+        kycPolicy: body.kycPolicy ?? 'NONE',
+        allowedMethods: body.allowedMethods,
+        requirePasskey: body.requirePasskey ?? false,
+        slaHours: body.slaHours ?? 72,
+      },
+    });
+  }
+
+  listTemplates(tenantId: string) {
+    return this.prisma.envelopeTemplate.findMany({ where: { tenantId }, orderBy: { name: 'asc' } });
+  }
+
   async create(body: {
     documentId: string;
-    methods: SignatureMethod[];
+    templateId?: string;
+    methods?: SignatureMethod[];
     order?: SigningOrder;
     requestedBy?: string;
     requestedByName?: string;
@@ -160,9 +188,21 @@ export class SignatureRequestsService {
     requirePasskey?: boolean;
     kycPolicy?: KycPolicy;
   }) {
-    if (!body.methods?.length) {
+    let template: { order: SigningOrder; kycPolicy: KycPolicy; allowedMethods: SignatureMethod[]; requirePasskey: boolean; slaHours: number } | null = null;
+    if (body.templateId) {
+      template = await this.prisma.envelopeTemplate.findFirst({
+        where: { id: body.templateId, tenantId: body.tenantId },
+      });
+      if (!template) throw new NotFoundException(`Plantilla ${body.templateId} no encontrada`);
+    }
+
+    const methods = body.methods?.length ? body.methods : (template?.allowedMethods ?? []);
+    if (!methods.length) {
       throw new BadRequestException('Debes autorizar al menos un método de firma');
     }
+    const requirePasskey = body.requirePasskey ?? template?.requirePasskey ?? false;
+    const kycPolicy = body.kycPolicy ?? template?.kycPolicy ?? 'NONE';
+
     // A-07 — el documento debe ser del tenant del solicitante.
     const doc = await this.prisma.document.findFirst({
       where: { id: body.documentId, tenantId: body.tenantId },
@@ -173,9 +213,9 @@ export class SignatureRequestsService {
     // M10 — política de firma del tenant: valida los métodos y aplica defaults.
     const policy = await this.policyService.resolve(body.tenantId);
     const enforced = this.policyService.enforce(policy, {
-      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT' | 'PASSKEY')[],
-      order: body.order,
-      slaHours: body.slaHours,
+      methods: methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT' | 'PASSKEY')[],
+      order: body.order ?? template?.order,
+      slaHours: body.slaHours ?? template?.slaHours,
     });
     const slaHours = enforced.slaHours;
     const expiresAt = new Date(Date.now() + slaHours * 3600_000);
@@ -187,7 +227,7 @@ export class SignatureRequestsService {
       data: {
         documentId: body.documentId,
         tenantId: doc.tenantId,
-        methods: body.methods,
+        methods,
         order: enforced.order,
         requestedBy: body.requestedBy,
         requestedByName: body.requestedByName,
@@ -195,8 +235,8 @@ export class SignatureRequestsService {
         expiresAt,
         policyVersion: policy.version,
         policySnapshot: policy as unknown as object,
-        requirePasskey: body.requirePasskey ?? false,
-        kycPolicy: body.kycPolicy ?? 'NONE',
+        requirePasskey,
+        kycPolicy,
         signers: {
           create: signers.map((s, index) => ({
             signerId: s.signerId,
@@ -233,7 +273,7 @@ export class SignatureRequestsService {
       actorName: body.requestedByName,
       action: 'REQUEST_CREATED',
       payload: {
-        methods: body.methods,
+        methods,
         order: created.order,
         slaHours,
         policyVersion: policy.version,

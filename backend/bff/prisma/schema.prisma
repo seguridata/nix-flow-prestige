@@ -468,6 +468,24 @@ model PasskeyRegistrationChallenge {
   @@index([tenantId, userId])
 }
 
+/// Sprint 5 — defaults reutilizables al crear un envelope (SPEC.md §10).
+/// `POST /signature-requests` puede mandar `templateId`: sus valores llenan
+/// lo que el cuerpo no traiga explícito; un override explícito siempre gana.
+model EnvelopeTemplate {
+  id             String            @id @default(uuid())
+  tenantId       String
+  name           String
+  order          SigningOrder      @default(SECUENCIAL)
+  kycPolicy      KycPolicy         @default(NONE)
+  allowedMethods SignatureMethod[]
+  requirePasskey Boolean           @default(false)
+  slaHours       Int               @default(72)
+  createdAt      DateTime          @default(now())
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
 model ProcessDefinition {
   id          String   @id @default(uuid())
   key         String

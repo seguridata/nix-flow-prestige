@@ -23,6 +23,7 @@ import {
   ConsentAcceptDto,
   CreateSignatureRequestDto,
   DelegateDto,
+  EnvelopeTemplateDto,
   ListSignatureRequestsQueryDto,
   RejectDto,
   SignActionDto,
@@ -97,6 +98,18 @@ export class SignatureRequestsController {
   @Get('policy')
   policy(@CurrentUser() user: AuthenticatedUser) {
     return this.signatureRequests.signaturePolicy(user.tenantId);
+  }
+
+  /** Sprint 5 — plantillas de envelope del tenant. */
+  @Get('templates')
+  listTemplates(@CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.listTemplates(user.tenantId);
+  }
+
+  @Roles('sender', 'admin')
+  @Post('templates')
+  createTemplate(@Body() body: EnvelopeTemplateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.signatureRequests.createTemplate({ ...body, tenantId: user.tenantId });
   }
 
   @Get(':id/status')
