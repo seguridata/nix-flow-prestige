@@ -12,7 +12,7 @@ import {
   type PublicLinkContext,
 } from "@/services/public-sign-service";
 
-type Method = "DIGITAL" | "AUTOGRAFA";
+type Method = "DIGITAL" | "AUTOGRAFA" | "ACCEPT";
 
 export default function FirmarPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
@@ -104,7 +104,7 @@ function FirmarForm({
   pending: boolean;
 }) {
   const methods = (ctx.methods.length ? ctx.methods : ["DIGITAL"]).filter(
-    (m): m is Method => m === "DIGITAL" || m === "AUTOGRAFA",
+    (m): m is Method => m === "DIGITAL" || m === "AUTOGRAFA" || m === "ACCEPT",
   );
   return (
     <Card className="space-y-5 p-6">
@@ -140,7 +140,7 @@ function FirmarForm({
               variant={method === m ? "default" : "outline"}
               onClick={() => setMethod(m)}
             >
-              {m === "DIGITAL" ? "Firma digital (PAdES)" : "Firma autógrafa"}
+              {m === "DIGITAL" ? "Firma digital (PAdES)" : m === "AUTOGRAFA" ? "Firma autógrafa" : "Acepto"}
             </Button>
           ))}
         </div>
