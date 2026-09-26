@@ -22,7 +22,7 @@ export interface DocumentRecord {
   locked: boolean;
 }
 
-export type SignatureMethod = "DIGITAL" | "AUTOGRAFA" | "BIOMETRICA";
+export type SignatureMethod = "DIGITAL" | "AUTOGRAFA" | "BIOMETRICA" | "ACCEPT";
 export type SigningOrder = "SECUENCIAL" | "PARALELO";
 export type SignerStatus = "PENDIENTE" | "FIRMADO" | "RECHAZADO";
 export type SignatureRequestStatus =

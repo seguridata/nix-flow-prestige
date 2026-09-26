@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
-import { Fingerprint, PenTool, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Fingerprint, PenTool, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -42,6 +42,7 @@ const METHOD_OPTIONS: { value: SignatureMethod; label: string; icon: typeof Fing
   { value: "DIGITAL", label: "Digital", icon: ShieldCheck },
   { value: "AUTOGRAFA", label: "Autógrafa", icon: PenTool },
   { value: "BIOMETRICA", label: "Biométrica", icon: Fingerprint },
+  { value: "ACCEPT", label: "Acepto", icon: CheckCircle2 },
 ];
 
 const STEPS = ["Documento", "Firmantes", "Método y envío"] as const;

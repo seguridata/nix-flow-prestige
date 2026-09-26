@@ -16,7 +16,7 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
-const METHODS = ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA'] as const;
+const METHODS = ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA', 'ACCEPT'] as const;
 const ORDERS = ['SECUENCIAL', 'PARALELO'] as const;
 const ROLES = ['FIRMANTE', 'REVISOR'] as const;
 

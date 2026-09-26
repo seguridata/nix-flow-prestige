@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { SignatureMethod } from '@prisma/client';
+import { AcceptSignerAdapter } from './accept.adapter';
 import { AutographSignerAdapter } from './autograph.adapter';
 import { BiometricSignerAdapter } from './biometric.adapter';
 import { DigitalSignerAdapter } from './digital.adapter';
@@ -19,8 +20,9 @@ export class SigningRouter {
     digital: DigitalSignerAdapter,
     autograph: AutographSignerAdapter,
     biometric: BiometricSignerAdapter,
+    accept: AcceptSignerAdapter,
   ) {
-    this.byMethod = { DIGITAL: digital, AUTOGRAFA: autograph, BIOMETRICA: biometric };
+    this.byMethod = { DIGITAL: digital, AUTOGRAFA: autograph, BIOMETRICA: biometric, ACCEPT: accept };
   }
 
   capabilities() {

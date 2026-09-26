@@ -61,6 +61,7 @@ enum SignatureMethod {
   DIGITAL
   AUTOGRAFA
   BIOMETRICA
+  ACCEPT
 }
 
 enum SigningOrder {

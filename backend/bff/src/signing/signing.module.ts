@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AcceptSignerAdapter } from './accept.adapter';
 import { AutographSignerAdapter } from './autograph.adapter';
 import { BiometricSignerAdapter } from './biometric.adapter';
 import { DigitalSignerAdapter } from './digital.adapter';
@@ -24,6 +25,7 @@ const keyCustodianProvider = {
     DigitalSignerAdapter,
     AutographSignerAdapter,
     BiometricSignerAdapter,
+    AcceptSignerAdapter,
     SigningRouter,
     PdfStampService,
     SignaturePolicyService,

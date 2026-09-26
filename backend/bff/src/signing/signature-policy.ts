@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type SignatureMethodName = 'DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA';
+export type SignatureMethodName = 'DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT';
 
 export interface SignaturePolicy {
   /** Versión de la política (del `Policy` del tenant, o 0 = por defecto). */
@@ -24,7 +24,7 @@ export interface SignaturePolicy {
 export const DEFAULT_SIGNATURE_POLICY: SignaturePolicy = {
   version: 0,
   source: 'default',
-  allowedMethods: ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA'],
+  allowedMethods: ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA', 'ACCEPT'],
   defaultSlaHours: 72,
   defaultOrder: 'SECUENCIAL',
   requireTimestamp: true,

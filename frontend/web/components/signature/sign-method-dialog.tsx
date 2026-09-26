@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Fingerprint, PenTool, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Fingerprint, PenTool, ShieldCheck } from "lucide-react";
 
 import {
   Dialog,
@@ -31,8 +31,13 @@ const METHOD_INFO: Record<
   },
   DIGITAL: {
     label: "Digital",
-    description: "Certificado / HSM. Hoy HMAC interno hasta conectar el PKI.",
+    description: "Certificado PAdES emitido por la CA interna, hasta conectar el HSM.",
     icon: ShieldCheck,
+  },
+  ACCEPT: {
+    label: "Acepto",
+    description: "Confirmas sobre el hash congelado. Sin trazo ni certificado.",
+    icon: CheckCircle2,
   },
 };
 

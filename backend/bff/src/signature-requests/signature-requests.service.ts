@@ -167,7 +167,7 @@ export class SignatureRequestsService {
     // M10 — política de firma del tenant: valida los métodos y aplica defaults.
     const policy = await this.policyService.resolve(body.tenantId);
     const enforced = this.policyService.enforce(policy, {
-      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA')[],
+      methods: body.methods as unknown as ('DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT')[],
       order: body.order,
       slaHours: body.slaHours,
     });
