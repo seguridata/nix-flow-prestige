@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { OneTimeLinkService } from '../notifications/one-time-link.service';
@@ -27,7 +28,12 @@ const MAX_STROKE_BYTES = 2 * 1024 * 1024;
  * un solo uso (32 bytes, solo su SHA-256 en base, con caducidad). Resolver
  * y registrar consentimiento no lo consumen; la firma sí, y de forma
  * atómica. No es una ruta que haya quedado abierta por ahora.
+ *
+ * Sprint 6 — límite más estricto que el default global (120/min): esta
+ * superficie es no autenticada y atada a un secreto de un solo uso, el
+ * blanco natural de fuerza bruta contra el token en la URL.
  */
+@Throttle({ default: { limit: 20, ttl: 60_000 } })
 @Controller('public/links')
 export class PublicSignController {
   constructor(
