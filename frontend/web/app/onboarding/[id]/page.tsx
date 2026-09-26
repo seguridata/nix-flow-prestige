@@ -28,6 +28,8 @@ interface OnboardingDetail {
   faceMatchOk: boolean;
   enabledSignerId?: string | null;
   notes?: string | null;
+  biometricConsentAt?: string | null;
+  biometricConsentVersion?: string | null;
 }
 
 export default function OnboardingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +40,11 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   const [cameraOn, setCameraOn] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [confirmEnable, setConfirmEnable] = useState(false);
+  const [biometricConsent, setBiometricConsent] = useState(false);
+  const notice = useQuery({
+    queryKey: ["biometric-consent"],
+    queryFn: () => apiClient.get<{ version: string; text: string }>("/onboarding/biometric-consent"),
+  });
 
   const query = useQuery({
     queryKey: ["onboarding", id],
@@ -53,6 +60,16 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
     queryClient.invalidateQueries({ queryKey: ["onboarding-audit", id] });
     queryClient.invalidateQueries({ queryKey: ["onboarding"] });
   }
+
+  const acceptConsent = useMutation({
+    mutationFn: () => apiClient.post(`/onboarding/${id}/biometric-consent`, { biometricConsent: true }),
+    onSuccess: () => {
+      toast.success("Consentimiento del titular registrado.");
+      setBiometricConsent(false);
+      invalidate();
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "No se pudo registrar el consentimiento"),
+  });
 
   const ine = useMutation({
     mutationFn: (payload: { part: "front" | "back"; file: File }) => {
@@ -145,6 +162,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
 
   const row = query.data;
   const closed = row?.status === "HABILITADO" || row?.status === "RECHAZADO";
+  const consented = Boolean(row?.biometricConsentAt);
 
   return (
     <AppShell title={row?.fullName ?? "Onboarding"}>
@@ -152,19 +170,22 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
         <div>
           <Stepper
             steps={[
+              { id: "consent", label: "Consentimiento" },
               { id: "datos", label: "Datos" },
               { id: "ine", label: "INE" },
               { id: "vida", label: "Prueba de vida" },
               { id: "rh", label: "RH" },
             ]}
             current={
-              row?.status === "HABILITADO"
-                ? 4
-                : row?.status === "EN_REVISION" || row?.status === "PRUEBA_VIDA"
-                  ? 3
-                  : row?.status === "INE"
-                    ? 2
-                    : 1
+              !consented
+                ? 0
+                : row?.status === "HABILITADO"
+                  ? 5
+                  : row?.status === "EN_REVISION" || row?.status === "PRUEBA_VIDA"
+                    ? 4
+                    : row?.status === "INE"
+                      ? 3
+                      : 2
             }
           />
           <div className="mt-6 flex items-center justify-between gap-3">
@@ -177,6 +198,42 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
           </div>
 
           <Card className="mt-6 p-6">
+            <h2 className="text-sm font-semibold">Consentimiento del titular</h2>
+            {consented ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Aceptado por escrito el {new Date(row!.biometricConsentAt!).toLocaleString("es-MX")}
+                {row?.biometricConsentVersion ? ` · versión ${row.biometricConsentVersion}` : ""}. Sin esta constancia
+                no se guarda la INE ni la captura facial.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
+                  {notice.data?.text ?? "Cargando el texto del consentimiento…"}
+                </p>
+                <label className="mt-3 flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={biometricConsent}
+                    onChange={(event) => setBiometricConsent(event.target.checked)}
+                  />
+                  <span>
+                    El titular acepta por escrito el tratamiento de su biometría y de su INE (versión{" "}
+                    {notice.data?.version ?? "…"}). La casilla no viene marcada.
+                  </span>
+                </label>
+                <Button
+                  className="mt-3"
+                  disabled={!biometricConsent || !notice.data || acceptConsent.isPending}
+                  onClick={() => acceptConsent.mutate()}
+                >
+                  {acceptConsent.isPending ? "Registrando…" : "Registrar consentimiento"}
+                </Button>
+              </>
+            )}
+          </Card>
+
+          <Card className="mt-4 p-6">
             <h2 className="text-sm font-semibold">1. INE — frente y reverso</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Se guarda el hash SHA-256. La validación contra INE/RENAPO es revisión de RH hasta conectar el
@@ -189,7 +246,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
                   type="file"
                   accept="image/*"
                   className="mt-2 block w-full text-xs"
-                  disabled={closed}
+                  disabled={closed || !consented}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) ine.mutate({ part: "front", file });
@@ -202,7 +259,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
                   type="file"
                   accept="image/*"
                   className="mt-2 block w-full text-xs"
-                  disabled={closed}
+                  disabled={closed || !consented}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) ine.mutate({ part: "back", file });
@@ -220,7 +277,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
             <video ref={videoRef} autoPlay playsInline muted className="mt-4 h-56 w-full rounded-md bg-secondary object-cover" />
             <div className="mt-3 flex gap-2">
               {!cameraOn ? (
-                <Button variant="outline" onClick={() => startCamera().catch(() => toast.error("No hay cámara"))} disabled={closed}>
+                <Button variant="outline" onClick={() => startCamera().catch(() => toast.error("No hay cámara"))} disabled={closed || !consented}>
                   Encender cámara
                 </Button>
               ) : (
@@ -254,7 +311,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
                 <Button variant="outline" onClick={() => verify.mutate()} disabled={verify.isPending}>
                   Verificar INE
                 </Button>
-                <Button onClick={() => setConfirmEnable(true)} disabled={enable.isPending}>
+                <Button onClick={() => setConfirmEnable(true)} disabled={enable.isPending || !consented}>
                   Habilitar firma
                 </Button>
                 <Button variant="destructive" onClick={() => reject.mutate()}>

@@ -17,6 +17,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { assertRuntimeSecrets } from './config/runtime-secrets';
 
 /**
  * Bootstrap del BFF de Prestige.
@@ -30,12 +31,14 @@ import { AppModule } from './app.module';
  *  - Logger estructurado (pino) como logger de Nest.
  */
 async function bootstrap() {
+  const secrets = assertRuntimeSecrets();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
 
   app.useLogger(app.get(Logger));
   app.flushLogs();
+  for (const warning of secrets.warnings) app.get(Logger).warn(warning);
 
   app.set('trust proxy', 1);
   app.use(helmet());
@@ -62,7 +65,13 @@ async function bootstrap() {
     origin: origins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Prestige-Worker-Token'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key',
+      'X-Prestige-Worker-Token',
+      'X-Tenant-Id',
+    ],
   });
 
   app.useGlobalPipes(

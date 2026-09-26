@@ -21,9 +21,11 @@ import { ConsentAcceptDto, SignActionDto } from './dto';
 const MAX_STROKE_BYTES = 2 * 1024 * 1024;
 
 /**
- * M13 / A-12 — portal del firmante externo. Sin sesión de Keycloak: la
- * autorización es el enlace de un solo uso (`OneTimeLink`). El token se
- * consume al aplicar la firma.
+ * M13 / A-12 — portal del firmante externo. `@Public()` es intencional:
+ * el firmante no tiene sesión de Keycloak. La autorización es el enlace de
+ * un solo uso (32 bytes, solo su SHA-256 en base, con caducidad). Resolver
+ * y registrar consentimiento no lo consumen; la firma sí, y de forma
+ * atómica. No es una ruta que haya quedado abierta por ahora.
  */
 @Controller('public/links')
 export class PublicSignController {

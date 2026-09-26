@@ -15,3 +15,35 @@ description = "Falsos positivos conocidos en historial git"
 commits = [
   "36058a7619a4a4693169c4a2563f7c2a2807201c",
 ]
+
+# Formato propio de Prestige. Las reglas genéricas no distinguen un
+# placeholder de una llave de 32 bytes ni una passphrase de PKCS#12.
+# El secreto capturado es el grupo 1. `prestige-pki-dev` y `REPLACE_ME…`
+# quedan fuera: son el ejemplo de máquina local, no un secreto de entorno.
+
+[[rules]]
+id = "prestige-storage-master-key"
+description = "STORAGE_MASTER_KEY real (base64 de 32 bytes, AES-256)"
+regex = '''(?i)storage_master_key\s*(?:=|:|:=)+\s*['"]?([A-Za-z0-9+/]{43}=)['"]?'''
+keywords = ["storage_master_key"]
+[[rules.allowlists]]
+description = "Placeholder del .env.example y la llave de relleno de CI (solo letras A)"
+regexTarget = "secret"
+regexes = ['''REPLACE_ME''', '''^A{43}=$''']
+
+[[rules]]
+id = "prestige-pki-passphrase"
+description = "PKI_PASSPHRASE distinta del ejemplo local"
+regex = '''(?i)pki_passphrase\s*(?:=|:|:=)+\s*['"]?([^\s'"]{12,128})['"]?'''
+keywords = ["pki_passphrase"]
+[[rules.allowlists]]
+description = "Ejemplo documentado para una máquina puramente local"
+regexTarget = "secret"
+regexes = ['''^prestige-pki-dev$''', '''^REPLACE_ME''']
+
+[[rules]]
+id = "prestige-dotenv-committed"
+description = "Un .env real (no .example) no debe entrar al repositorio"
+path = '''(^|/)(\.env|\.env\.(local|production|development|test))$'''
+regex = '''(?i)(storage_master_key|pki_passphrase|worker_shared_secret|session_secret)\s*=\s*(\S+)'''
+keywords = ["storage_master_key", "pki_passphrase", "worker_shared_secret", "session_secret"]

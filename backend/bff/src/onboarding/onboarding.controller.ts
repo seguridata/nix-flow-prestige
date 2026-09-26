@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  Ip,
   Param,
   ParseFilePipeBuilder,
   Post,
@@ -14,7 +16,7 @@ import { Roles } from '../auth/roles.decorator';
 import { StepUp } from '../auth/step-up.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { OnboardingService } from './onboarding.service';
-import { AttachIneDto, CreateOnboardingDto, OnboardingActionDto } from './dto';
+import { AttachIneDto, BiometricConsentDto, CreateOnboardingDto, OnboardingActionDto } from './dto';
 
 const MAX_IMG_BYTES = 8 * 1024 * 1024; // 8 MB por imagen (INE / selfie)
 
@@ -24,7 +26,11 @@ const imageFile = () =>
     .addMaxSizeValidator({ maxSize: MAX_IMG_BYTES })
     .build({ fileIsRequired: true });
 
-const actor = (u: AuthenticatedUser) => ({ actorId: u.actorId, actorName: u.name ?? u.actorId });
+const actor = (u: AuthenticatedUser) => ({
+  actorId: u.actorId,
+  actorName: u.name ?? u.actorId,
+  tenantId: u.tenantId,
+});
 
 /** Onboarding e identidad digital (M16). Solo RH y administración. */
 @Controller('onboarding')
@@ -37,19 +43,42 @@ export class OnboardingController {
     return this.onboarding.list(user.tenantId);
   }
 
+  @Get('biometric-consent')
+  biometricConsent() {
+    return this.onboarding.consentNotice();
+  }
+
   @Post()
-  create(@Body() body: CreateOnboardingDto, @CurrentUser() user: AuthenticatedUser) {
+  create(
+    @Body() body: CreateOnboardingDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ) {
     return this.onboarding.create({
       ...body,
       tenantId: user.tenantId,
       requestedBy: user.actorId,
       requestedByName: user.name,
+      ip,
+      userAgent,
     });
   }
 
+  @Post(':id/biometric-consent')
+  acceptBiometricConsent(
+    @Param('id') id: string,
+    @Body() _body: BiometricConsentDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.onboarding.recordBiometricConsent(id, { ...actor(user), ip, userAgent });
+  }
+
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.onboarding.get(id);
+  get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.get(id, user.tenantId);
   }
 
   /** INE por `multipart/form-data`: `file` (imagen) + `part` (front|back). */

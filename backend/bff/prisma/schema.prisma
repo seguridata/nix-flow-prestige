@@ -33,10 +33,17 @@ model Document {
   tenantId      String   @default("seguridata")
   filename      String
   version       Int      @default(1)
-  hash          String // SHA-256 del contenido en claro
+  /// SHA-256 hex de los bytes canónicos en claro. No cambia al firmar.
+  hash          String
   locked        Boolean  @default(false)
+  /// Momento del freeze. Con `locked`, un write al canónico responde 409.
+  frozenAt      DateTime?
   objectKey     String // clave del objeto cifrado en el storage (obligatoria)
   enc           Json // metadatos de cifrado en reposo (envelope AES-256-GCM)
+  /// Copia de ceremonia (PAdES / autógrafa). Nunca sustituye al canónico.
+  presentedObjectKey String?
+  presentedEnc       Json?
+  presentedHash      String?
   sizeBytes     Int      @default(0)
   mimeType      String   @default("application/pdf")
   createdAt     DateTime @default(now())
@@ -47,6 +54,7 @@ model Document {
 
   @@index([caseId])
   @@index([tenantId])
+  @@index([tenantId, caseId])
 }
 
 enum SignatureMethod {
@@ -580,6 +588,13 @@ model OnboardingCase {
   faceMatchScore     Float?
   biometricEngine    String?
   biometricSessionId String?
+  /// LFPDPPP — aceptación expresa y por escrito del titular, antes de INE o biometría.
+  biometricConsentAt        DateTime?
+  biometricConsentVersion   String?
+  biometricConsentTextHash  String?
+  biometricConsentIp        String?
+  biometricConsentUserAgent String?
+  biometricConsentActorId   String?
   enabledSignerId    String?
   notes              String?
   requestedBy        String

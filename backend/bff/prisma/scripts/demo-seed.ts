@@ -270,6 +270,7 @@ async function main() {
       fullName: 'Ana Torres Rincón',
       email: `ana.torres.${Date.now()}@seguridata.mx`,
       curp: DEMO_CURP,
+      biometricConsent: true,
     });
     for (const part of ['front', 'back'] as const) {
       const f = new FormData();

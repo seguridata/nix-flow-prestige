@@ -13,6 +13,8 @@
     "demo:reset": "cd backend/bff && bun prisma/scripts/demo-seed.ts --reset",
     "gen-keys": "bun scripts/gen-keys.ts",
     "pki:init": "bun scripts/pki-init.ts",
+    "audit:env": "bun scripts/audit-env.ts",
+    "backup:local": "bun scripts/backup-local.ts",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

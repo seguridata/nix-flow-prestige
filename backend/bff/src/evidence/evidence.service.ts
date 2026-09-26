@@ -110,11 +110,10 @@ export class EvidenceService {
 
     const manifestId = randomBytes(8).toString('hex');
 
-    // originalHash / presentedHash: en este MVP el documento presentado a
-    // firma es el mismo que el original, así que ambos usan el hash SHA-256
-    // real ya calculado y almacenado sobre el contenido del documento.
+    // originalHash es el canónico congelado. presentedHash es la copia de
+    // ceremonia (PAdES / autógrafa) cuando existe; si nadie firmó encima, coincide.
     const originalHash = document.hash;
-    const presentedHash = document.hash;
+    const presentedHash = document.presentedHash ?? document.hash;
 
     // signedHash: hash determinista sobre la lista ordenada (por signerId)
     // de {signerId, signedAt, usedMethod} de todos los firmantes.
@@ -379,10 +378,11 @@ export class EvidenceService {
     const mismatches: string[] = [];
 
     if (document.hash !== manifest.originalHash) {
-      mismatches.push('originalHash no coincide con el hash actual del documento');
+      mismatches.push('originalHash no coincide con el hash del PDF canónico');
     }
-    if (document.hash !== manifest.presentedHash) {
-      mismatches.push('presentedHash no coincide con el hash actual del documento');
+    const livePresented = document.presentedHash ?? document.hash;
+    if (livePresented !== manifest.presentedHash) {
+      mismatches.push('presentedHash no coincide con la copia de ceremonia');
     }
 
     const recomputedSignedHash = this.hashSignedSet(signedSigners);
@@ -495,10 +495,21 @@ export class EvidenceService {
     const m = await this.findByManifestId(manifestId, tenantId);
     const doc = await this.prisma.document.findUnique({
       where: { id: m.documentId },
-      select: { objectKey: true, enc: true },
+      select: {
+        objectKey: true,
+        enc: true,
+        hash: true,
+        filename: true,
+        presentedObjectKey: true,
+        presentedEnc: true,
+      },
     });
     if (!doc) throw new NotFoundException('El documento del manifiesto ya no existe');
-    const pdf = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta);
+    const canonical = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta);
+    const signedPdf =
+      doc.presentedObjectKey && doc.presentedEnc
+        ? await this.storage.getObject(doc.presentedObjectKey, doc.presentedEnc as unknown as EncMeta)
+        : canonical;
 
     const files: EvidenceDossier['files'] = [
       {
@@ -514,7 +525,9 @@ export class EvidenceService {
           2,
         ),
       },
-      { path: 'documento-firmado.pdf', content: pdf },
+      { path: 'document.pdf', content: canonical },
+      { path: 'document.sha256', content: `${doc.hash}  document.pdf\n` },
+      { path: 'documento-firmado.pdf', content: signedPdf },
     ];
 
     if (this.manifestSigner.publicKeyPem) {

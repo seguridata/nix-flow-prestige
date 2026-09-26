@@ -6,7 +6,21 @@ import { buildP12, ensureCaChain, issueLeaf, loadCaChain } from './ca';
 import type { KeyCustodian, SigningMaterial } from './key-custodian';
 
 const PKI_DIR = () => process.env.PKI_DIR ?? join(process.cwd(), 'pki');
-const PASSPHRASE = () => process.env.PKI_PASSPHRASE ?? 'prestige-pki-dev';
+
+function PASSPHRASE(): string {
+  const value = process.env.PKI_PASSPHRASE?.trim() ?? '';
+  if (!value || /^REPLACE_ME/i.test(value)) {
+    throw new ServiceUnavailableException(
+      'PKI_PASSPHRASE no configurada. No hay valor de ejemplo implícito: defínela en el entorno.',
+    );
+  }
+  if (value === 'prestige-pki-dev' && process.env.NODE_ENV === 'production') {
+    throw new ServiceUnavailableException(
+      'PKI_PASSPHRASE=prestige-pki-dev no es válida en producción.',
+    );
+  }
+  return value;
+}
 
 /**
  * Custodio por software: emite y guarda un PKCS#12 por firmante bajo

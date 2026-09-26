@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -428,11 +429,26 @@ export class SignatureRequestsService {
           where: { documentId: request.documentId, type: 'SIGNATURE' },
         }));
 
-      // El PDF actual, descifrado desde el storage.
-      const currentPdf = await this.storage.getObject(
+      // Canónico: se rehashea antes de aceptar si ya está congelado.
+      // La ceremonia firma la copia presentada (o el canónico la primera vez)
+      // y escribe el resultado en presented*, nunca encima de objectKey.
+      const canonicalPdf = await this.storage.getObject(
         request.document.objectKey,
         request.document.enc as unknown as EncMeta,
       );
+      const liveCanonical = createHash('sha256').update(canonicalPdf).digest('hex');
+      if (request.document.locked && liveCanonical !== request.document.hash) {
+        throw new ConflictException({
+          error: 'HASH_MISMATCH',
+          message: 'El PDF congelado no coincide con el objeto en storage',
+        });
+      }
+      const currentPdf = request.document.presentedObjectKey
+        ? await this.storage.getObject(
+            request.document.presentedObjectKey,
+            request.document.presentedEnc as unknown as EncMeta,
+          )
+        : canonicalPdf;
 
       const signed = await this.signing.sign({
         method: body.method,
@@ -475,11 +491,21 @@ export class SignatureRequestsService {
         return Object.assign(stillPending, { lastSignResult: signed, pendingResult: true as const });
       }
 
-      // Si el adaptador incrustó la firma (DIGITAL PAdES / AUTÓGRAFA), la nueva
-      // versión del PDF se guarda cifrada en el storage.
+      // La firma incrustada (PAdES / autógrafa) es una copia. El canónico
+      // (`objectKey` + `hash`) no se toca: es el PDF congelado.
+      let strokeObjectKey: string | undefined;
+      if (autographImage?.length) {
+        const stroke = await this.storage.putObject({
+          prefix: `evidence/${request.document.tenantId}`,
+          filename: `${signer.id}-stroke.png`,
+          bytes: autographImage,
+          contentType: 'image/png',
+        });
+        strokeObjectKey = stroke.objectKey;
+      }
       if (signed.signedPdf?.length) {
         const stored = await this.storage.putObject({
-          prefix: 'documents',
+          prefix: `presented/${request.document.tenantId}`,
           filename: request.document.filename,
           bytes: signed.signedPdf,
           contentType: 'application/pdf',
@@ -487,11 +513,9 @@ export class SignatureRequestsService {
         await tx.document.update({
           where: { id: request.documentId },
           data: {
-            objectKey: stored.objectKey,
-            enc: stored.enc as unknown as object,
-            hash: stored.sha256,
-            sizeBytes: stored.sizeBytes,
-            version: { increment: 1 },
+            presentedObjectKey: stored.objectKey,
+            presentedEnc: stored.enc as unknown as object,
+            presentedHash: stored.sha256,
           },
         });
       }
@@ -516,7 +540,7 @@ export class SignatureRequestsService {
         data: { status: allSigned ? 'COMPLETADA' : 'EN_FIRMA' },
         include: INCLUDE_SIGNERS,
       });
-      return Object.assign(updated, { lastSignResult: signed });
+      return Object.assign(updated, { lastSignResult: signed, strokeObjectKey });
     });
 
     // Fase B — firma asíncrona iniciada: audita y espera al reconciliador.
@@ -606,6 +630,7 @@ export class SignatureRequestsService {
           signatureHash: sr?.signatureHash,
           certificate: sr?.certificate,
           eventTimestamp,
+          strokeObjectKey: (result as { strokeObjectKey?: string }).strokeObjectKey,
         },
       });
 
@@ -684,7 +709,7 @@ export class SignatureRequestsService {
     const completed = await this.prisma.$transaction(async (tx) => {
       if (r.signedPdf?.length) {
         const stored = await this.storage.putObject({
-          prefix: 'documents',
+          prefix: `presented/${request.document.tenantId}`,
           filename: request.document.filename,
           bytes: r.signedPdf,
           contentType: 'application/pdf',
@@ -692,11 +717,9 @@ export class SignatureRequestsService {
         await tx.document.update({
           where: { id: request.documentId },
           data: {
-            objectKey: stored.objectKey,
-            enc: stored.enc as unknown as object,
-            hash: stored.sha256,
-            sizeBytes: stored.sizeBytes,
-            version: { increment: 1 },
+            presentedObjectKey: stored.objectKey,
+            presentedEnc: stored.enc as unknown as object,
+            presentedHash: stored.sha256,
           },
         });
       }

@@ -15,7 +15,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
-import { DocumentsService, type SafeDocument } from './documents.service';
+import { DocumentsService, type PublicDocument } from './documents.service';
 import { CreateDocumentDto, ListDocumentsQueryDto } from './dto';
 
 const MAX_PDF_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -42,30 +42,41 @@ export class DocumentsController {
     file: Express.Multer.File,
     @Body() dto: CreateDocumentDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<SafeDocument> {
+  ): Promise<PublicDocument> {
     return this.documents.create({
       caseId: dto.caseId,
       filename: dto.filename ?? file.originalname ?? 'documento.pdf',
       bytes: file.buffer,
       tenantId: user.tenantId,
+      actorId: user.actorId,
+      actorName: user.name,
     });
+  }
+
+  /** Congela el canónico. Después de esto no se puede volver a subir encima. */
+  @Roles('sender', 'admin')
+  @Post(':id/freeze')
+  freeze(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<PublicDocument> {
+    return this.documents.freeze(id, user.tenantId, user.actorId, user.name);
   }
 
   @Get()
   list(
     @Query() query: ListDocumentsQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<SafeDocument[]> {
+  ): Promise<PublicDocument[]> {
     return this.documents.list(query.caseId, user.tenantId);
   }
 
   @Get(':id')
-  get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<SafeDocument> {
+  get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<PublicDocument> {
     return this.documents.get(id, user.tenantId);
   }
 
-  /** Sirve el PDF descifrado (no una URL prefirmada: el objeto está cifrado a nivel app). */
-
+  /**
+   * PDF canónico descifrado. No es una URL prefirmada: el objeto está cifrado
+   * en la app, así que MinIO no puede entregarlo en claro.
+   */
   @Get(':id/content')
   async getContent(
     @Param('id') id: string,
@@ -73,6 +84,23 @@ export class DocumentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     const { bytes, mimeType, filename } = await this.documents.getContent(id, user.tenantId);
+    res
+      .status(200)
+      .setHeader('Content-Type', mimeType)
+      .setHeader('Content-Length', bytes.length)
+      .setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`)
+      .setHeader('Cache-Control', 'private, no-store')
+      .end(bytes);
+  }
+
+  /** Copia con la firma incrustada. El canónico sigue en `/content`. */
+  @Get(':id/presented')
+  async getPresented(
+    @Param('id') id: string,
+    @Res() res: Response,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    const { bytes, mimeType, filename } = await this.documents.getPresented(id, user.tenantId);
     res
       .status(200)
       .setHeader('Content-Type', mimeType)

@@ -37,6 +37,11 @@ export default function OnboardingListPage() {
     curp: "",
     rfc: "",
   });
+  const [biometricConsent, setBiometricConsent] = useState(false);
+  const notice = useQuery({
+    queryKey: ["biometric-consent"],
+    queryFn: () => apiClient.get<{ version: string; text: string }>("/onboarding/biometric-consent"),
+  });
   const list = useQuery({
     queryKey: ["onboarding"],
     queryFn: () => apiClient.get<OnboardingRow[]>("/onboarding"),
@@ -47,6 +52,7 @@ export default function OnboardingListPage() {
         ...form,
         requestedBy: signerId,
         requestedByName: name,
+        biometricConsent: true,
       }),
     onSuccess: (row) => {
       toast.success("Alta creada. Continúa con INE y prueba de vida.");
@@ -95,7 +101,31 @@ export default function OnboardingListPage() {
               <Label>RFC</Label>
               <Input className="mt-1.5" value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value })} />
             </div>
-            <Button className="w-full" disabled={create.isPending} onClick={() => create.mutate()}>
+            <div className="rounded-md border border-border bg-muted/40 p-3">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Datos sensibles · versión {notice.data?.version ?? "…"}
+              </p>
+              <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                {notice.data?.text ?? "Cargando el texto del consentimiento…"}
+              </p>
+              <label className="mt-3 flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={biometricConsent}
+                  onChange={(event) => setBiometricConsent(event.target.checked)}
+                />
+                <span>
+                  El titular está presente y acepta por escrito el tratamiento de su biometría y de su INE. La casilla
+                  no viene marcada.
+                </span>
+              </label>
+            </div>
+            <Button
+              className="w-full"
+              disabled={create.isPending || !biometricConsent || !notice.data}
+              onClick={() => create.mutate()}
+            >
               {create.isPending ? "Creando…" : "Iniciar alta"}
             </Button>
           </Card>

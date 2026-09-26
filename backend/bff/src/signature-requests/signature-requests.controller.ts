@@ -71,12 +71,22 @@ export class SignatureRequestsController {
     );
   }
 
+  /**
+   * Texto de consentimiento de firma. Público a propósito: el titular tiene
+   * que poder leerlo antes de aceptar, también desde el portal sin sesión.
+   * No devuelve expedientes ni datos de personas.
+   */
   @Public()
   @Get('consent')
   consent() {
     return this.signatureRequests.consentText();
   }
 
+  /**
+   * Qué métodos de firma están configurados (sí/no y un motivo operativo).
+   * Público a propósito para el portal. No incluye llaves, PIN, passphrase
+   * ni URL con credenciales.
+   */
   @Public()
   @Get('capabilities')
   capabilities() {

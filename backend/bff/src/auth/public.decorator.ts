@@ -1,17 +1,19 @@
 import { SetMetadata } from '@nestjs/common';
 
 /**
- * Marca una ruta (o un controller completo) como pública, es decir, exenta
- * de la verificación de JWT que aplica JwtAuthGuard globalmente (ver
- * auth.module.ts, registrado como APP_GUARD).
+ * Exenta la ruta de la verificación JWT de Keycloak (`JwtAuthGuard`).
+ * No apaga `WorkerGuard` ni ningún otro guard puesto con `@UseGuards`.
+ *
+ * Criterio, ya cerrado: solo health, el texto de consentimiento, las
+ * capacidades de firma, el verificador público del documento, el portal
+ * del firmante con enlace de un solo uso, y el canal interno del worker
+ * (ese último autentica con HMAC, no con Keycloak). Una ruta nueva no
+ * lleva `@Public()` "por ahora".
  *
  * Uso:
  *   @Public()
  *   @Get()
- *   list() { ... }
- *
- * TODO Fase 2: a medida que el frontend incorpore el login real contra
- * Keycloak (prestige-web), ir retirando @Public() ruta por ruta.
+ *   health() { ... }
  */
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);

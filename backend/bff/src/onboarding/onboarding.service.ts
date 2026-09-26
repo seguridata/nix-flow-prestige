@@ -8,6 +8,7 @@ import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
+import { BIOMETRIC_CONSENT_TEXT, BIOMETRIC_CONSENT_VERSION, biometricConsentHash } from './biometric-consent';
 import { OcrService } from '../identity/ocr.service';
 import { IDENTITY_VERIFIER, type IdentityVerifier } from '../identity/identity-verifier';
 import { BIOMETRIC_ENGINE, type BiometricEngine } from '../identity/biometric-engine';
@@ -22,6 +23,15 @@ interface StoredRef {
 
 function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex');
+}
+
+/** La captura de INE o de biometría no empieza sin la aceptación escrita del titular. */
+export function assertBiometricConsent(row: { biometricConsentAt: Date | null }): void {
+  if (!row.biometricConsentAt) {
+    throw new BadRequestException(
+      'Falta el consentimiento expreso y por escrito del titular para tratar su biometría y su INE (LFPDPPP).',
+    );
+  }
 }
 
 /** Oculta las referencias de storage y expone banderas `has*`. */
@@ -48,18 +58,21 @@ export class OnboardingService {
     @Inject(BIOMETRIC_ENGINE) private readonly biometrics: BiometricEngine,
   ) {}
 
-  list(tenantId = 'seguridata') {
-    return this.prisma.onboardingCase.findMany({
+  async list(tenantId = 'seguridata') {
+    const rows = await this.prisma.onboardingCase.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
       take: 80,
     });
+    return rows.map(publicView);
   }
 
-  async get(id: string) {
-    const found = await this.prisma.onboardingCase.findUnique({ where: { id } });
-    if (!found) throw new NotFoundException(`Onboarding ${id} no encontrado`);
-    return publicView(found);
+  async get(id: string, tenantId: string) {
+    return publicView(await this.load(id, tenantId));
+  }
+
+  consentNotice() {
+    return { version: BIOMETRIC_CONSENT_VERSION, text: BIOMETRIC_CONSENT_TEXT };
   }
 
   async create(body: {
@@ -71,10 +84,19 @@ export class OnboardingService {
     rfc?: string;
     requestedBy: string;
     requestedByName?: string;
+    biometricConsent: boolean;
+    ip?: string;
+    userAgent?: string;
   }) {
     if (!body.fullName?.trim() || !body.email?.trim()) {
       throw new BadRequestException('Nombre y correo son obligatorios');
     }
+    if (body.biometricConsent !== true) {
+      throw new BadRequestException(
+        'Se requiere el consentimiento expreso y por escrito del titular para tratar datos biométricos (LFPDPPP).',
+      );
+    }
+    const now = new Date();
     const created = await this.prisma.onboardingCase.create({
       data: {
         tenantId: body.tenantId ?? 'seguridata',
@@ -86,6 +108,23 @@ export class OnboardingService {
         rfc: body.rfc?.trim().toUpperCase(),
         requestedBy: body.requestedBy,
         requestedByName: body.requestedByName,
+        biometricConsentAt: now,
+        biometricConsentVersion: BIOMETRIC_CONSENT_VERSION,
+        biometricConsentTextHash: biometricConsentHash(),
+        biometricConsentIp: body.ip,
+        biometricConsentUserAgent: body.userAgent,
+        biometricConsentActorId: body.requestedBy,
+      },
+    });
+    await this.collab.audit({
+      onboardingId: created.id,
+      actorId: body.requestedBy,
+      actorName: body.requestedByName,
+      action: 'BIOMETRIC_CONSENT_ACCEPTED',
+      payload: {
+        version: BIOMETRIC_CONSENT_VERSION,
+        textHash: biometricConsentHash(),
+        text: BIOMETRIC_CONSENT_TEXT,
       },
     });
     await this.collab.audit({
@@ -96,6 +135,48 @@ export class OnboardingService {
       payload: { kind: created.kind, email: created.email },
     });
     return publicView(created);
+  }
+
+  /**
+   * Altas anteriores a este requisito: el titular acepta en el expediente
+   * antes de que se permita la INE o la cámara. La primera aceptación no se
+   * reescribe.
+   */
+  async recordBiometricConsent(
+    id: string,
+    body: { tenantId: string; actorId: string; actorName?: string; ip?: string; userAgent?: string },
+  ) {
+    const current = await this.load(id, body.tenantId);
+    if (current.biometricConsentAt) return publicView(current);
+    const updated = await this.prisma.onboardingCase.update({
+      where: { id },
+      data: {
+        biometricConsentAt: new Date(),
+        biometricConsentVersion: BIOMETRIC_CONSENT_VERSION,
+        biometricConsentTextHash: biometricConsentHash(),
+        biometricConsentIp: body.ip,
+        biometricConsentUserAgent: body.userAgent,
+        biometricConsentActorId: body.actorId,
+      },
+    });
+    await this.collab.audit({
+      onboardingId: id,
+      actorId: body.actorId,
+      actorName: body.actorName,
+      action: 'BIOMETRIC_CONSENT_ACCEPTED',
+      payload: {
+        version: BIOMETRIC_CONSENT_VERSION,
+        textHash: biometricConsentHash(),
+        text: BIOMETRIC_CONSENT_TEXT,
+      },
+    });
+    return publicView(updated);
+  }
+
+  private async load(id: string, tenantId: string) {
+    const found = await this.prisma.onboardingCase.findFirst({ where: { id, tenantId } });
+    if (!found) throw new NotFoundException(`Onboarding ${id} no encontrado`);
+    return found;
   }
 
   private async store(prefix: string, filename: string, bytes: Buffer, contentType: string): Promise<StoredRef> {
@@ -109,10 +190,10 @@ export class OnboardingService {
 
   async attachIne(
     id: string,
-    body: { front?: Buffer; back?: Buffer; actorId: string; actorName?: string },
+    body: { front?: Buffer; back?: Buffer; actorId: string; actorName?: string; tenantId: string },
   ) {
-    const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
-    if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
+    const current = await this.load(id, body.tenantId);
+    assertBiometricConsent(current);
     if (['HABILITADO', 'RECHAZADO'].includes(current.status)) {
       throw new BadRequestException('Este alta ya está cerrada');
     }
@@ -170,10 +251,10 @@ export class OnboardingService {
 
   async captureLiveness(
     id: string,
-    body: { selfie: Buffer; actorId: string; actorName?: string },
+    body: { selfie: Buffer; actorId: string; actorName?: string; tenantId: string },
   ) {
-    const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
-    if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
+    const current = await this.load(id, body.tenantId);
+    assertBiometricConsent(current);
     if (!body.selfie?.length) throw new BadRequestException('Se requiere una captura de prueba de vida');
     if (body.selfie.length < 2_000) throw new BadRequestException('La captura es demasiado pequeña');
 
@@ -242,10 +323,10 @@ export class OnboardingService {
 
   async verifyIne(
     id: string,
-    body: { actorId: string; actorName?: string; notes?: string; approve?: boolean },
+    body: { actorId: string; actorName?: string; notes?: string; approve?: boolean; tenantId: string },
   ) {
-    const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
-    if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
+    const current = await this.load(id, body.tenantId);
+    assertBiometricConsent(current);
     if (!current.ineFront || !current.ineBack) {
       throw new BadRequestException('Faltan frente y reverso de la INE');
     }
@@ -287,9 +368,9 @@ export class OnboardingService {
     return publicView(updated);
   }
 
-  async enable(id: string, body: { actorId: string; actorName?: string }) {
-    const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
-    if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
+  async enable(id: string, body: { actorId: string; actorName?: string; tenantId: string }) {
+    const current = await this.load(id, body.tenantId);
+    assertBiometricConsent(current);
     if (!current.ineVerified) {
       throw new BadRequestException('RH debe verificar la INE antes de habilitar la firma');
     }
@@ -332,9 +413,8 @@ export class OnboardingService {
     return publicView(updated);
   }
 
-  async reject(id: string, body: { actorId: string; actorName?: string; notes?: string }) {
-    const current = await this.prisma.onboardingCase.findUnique({ where: { id } });
-    if (!current) throw new NotFoundException(`Onboarding ${id} no encontrado`);
+  async reject(id: string, body: { actorId: string; actorName?: string; notes?: string; tenantId: string }) {
+    const current = await this.load(id, body.tenantId);
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
       data: { status: 'RECHAZADO', notes: body.notes ?? current.notes },

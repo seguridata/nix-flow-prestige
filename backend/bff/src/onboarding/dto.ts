@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Equals, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 const KINDS = ['EMPLEADO', 'PROVEEDOR', 'CLIENTE'] as const;
 
@@ -24,6 +24,21 @@ export class CreateOnboardingDto {
   @IsString()
   @MaxLength(13)
   rfc?: string;
+
+  /** El titular aceptó el texto de datos sensibles. La casilla no puede ir marcada por defecto. */
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Se requiere el consentimiento expreso y por escrito del titular para tratar datos biométricos (LFPDPPP).',
+  })
+  biometricConsent!: boolean;
+}
+
+export class BiometricConsentDto {
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Se requiere el consentimiento expreso y por escrito del titular para tratar datos biométricos (LFPDPPP).',
+  })
+  biometricConsent!: boolean;
 }
 
 export class OnboardingActionDto {

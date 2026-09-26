@@ -20,9 +20,11 @@ class NudgeCommandDto {
 }
 
 /**
- * Endpoints que consume el worker de Temporal (activities vía HTTP). No usan
- * JWT de Keycloak (`@Public()`) pero sí exigen el token de worker firmado
- * (`WorkerGuard` + `X-Prestige-Worker-Token`).
+ * Endpoints que consume el worker de Temporal (activities vía HTTP).
+ * `@Public()` es intencional y no los deja abiertos: salta solo el JWT de
+ * Keycloak. La clase exige `WorkerGuard` (HMAC con `WORKER_SHARED_SECRET`
+ * en `X-Prestige-Worker-Token`, minuto actual o el anterior). Sin ese
+ * header responden 401.
  */
 @Controller('internal/workflows')
 @UseGuards(WorkerGuard)

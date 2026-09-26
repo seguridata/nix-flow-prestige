@@ -23,7 +23,8 @@ out/
 dist/
 build/
 lib/
-/docs/
+/docs/*
+!/docs/datos-sensibles.md
 tmp/
 temp/
 *.tgz
@@ -39,6 +40,9 @@ logs/
 *.log
 *.log.*
 report.*.json
+
+# Copias del script `bun run backup:local` (mismo disco; no es un 3-2-1).
+/backups/
 
 # dotenv environment variable files
 .env
