@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prestige — guía</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #191919;
+      --green: #84bd00;
+      --slate: #5b6770;
+      --fog: #f3f3f3;
+      --paper: #fff;
+      --line: #e3e3e3;
+      --warn: #8a5a12;
+      --bad: #8c2f2f;
+      --ok: #3d6b00;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--fog);
+      color: var(--ink);
+      font-family: "DM Sans", "Segoe UI", sans-serif;
+      font-size: 16.5px;
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    .shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100dvh; }
+    nav.side {
+      position: sticky; top: 0; height: 100dvh; overflow: auto;
+      background: var(--ink); color: #ececec; padding: 28px 18px 40px;
+    }
+    nav.side a.brand {
+      display: block; color: #fff; text-decoration: none;
+      font-size: 22px; letter-spacing: -0.04em; font-weight: 500;
+    }
+    nav.side a.brand i { display: block; width: 36px; height: 3px; background: var(--green); margin: 12px 0 22px; }
+    nav.side ol { list-style: none; margin: 0; padding: 0; }
+    nav.side li a {
+      display: block; text-decoration: none; color: #c8c8c8;
+      padding: 8px 0; font-size: 14px; border-top: 1px solid #2c2c2c;
+    }
+    nav.side li a[aria-current="true"] { color: var(--green); }
+    nav.side .back { display: inline-block; margin-top: 28px; color: #9a9a9a; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; }
+    main { padding: 0 0 80px; }
+    header.mast {
+      display: grid; grid-template-columns: 1.4fr 0.8fr; background: var(--paper);
+      border-bottom: 1px solid var(--line);
+    }
+    header.mast .copy { padding: 48px 48px 40px; }
+    header.mast h1 { margin: 0; font-size: clamp(36px, 4vw, 56px); letter-spacing: -0.045em; line-height: 0.95; font-weight: 560; max-width: 14ch; }
+    .kicker { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate); margin: 0 0 14px; }
+    header.mast .aside { background: var(--ink); color: #fff; padding: 48px 32px; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
+    header.mast .aside span { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #b5b5b5; }
+    section { padding: 42px 48px 8px; scroll-margin-top: 18px; }
+    h2 { font-size: 30px; letter-spacing: -0.03em; margin: 0 0 8px; font-weight: 560; }
+    h3 { font-size: 18px; margin: 22px 0 6px; }
+    p { max-width: 68ch; }
+    .note { border-left: 3px solid var(--green); padding-left: 14px; color: #243; }
+    .src { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--slate); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+    .chip, .filt {
+      border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+      padding: 6px 10px; cursor: pointer; font-size: 13px;
+    }
+    .filt[aria-pressed="true"], .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .mod {
+      background: var(--paper); border: 1px solid var(--line); padding: 14px 14px 12px; text-align: left; cursor: pointer;
+    }
+    .mod b { display: block; font-size: 13px; letter-spacing: 0.08em; font-family: "IBM Plex Mono", monospace; }
+    .mod strong { display: block; margin: 6px 0 8px; font-weight: 560; }
+    .mod em { font-style: normal; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; font-family: "IBM Plex Mono", monospace; }
+    .mod.real em { color: var(--ok); }
+    .mod.parcial em { color: var(--warn); }
+    .mod.pendiente em { color: var(--bad); }
+    .mod[aria-expanded="true"] { outline: 2px solid var(--ink); }
+    .detail { background: var(--paper); border: 1px solid var(--line); padding: 16px 18px; margin-top: 10px; }
+    .steps { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+    .step {
+      background: var(--paper); border: 1px solid var(--line); min-height: 92px; padding: 10px; text-align: left; cursor: pointer;
+    }
+    .step small { display: block; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--slate); }
+    .step[aria-pressed="true"] { background: var(--ink); color: #fff; }
+    .step[aria-pressed="true"] small { color: #cfcfcf; }
+    .panel { background: var(--paper); padding: 18px 20px; margin-top: 10px; border-top: 3px solid var(--green); }
+    .actors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .actors article, .stack article { background: var(--paper); padding: 14px 16px; border-top: 1px solid var(--ink); }
+    .stack { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); font-size: 14.5px; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    th { background: var(--ink); color: #fff; font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .bar { height: 8px; background: #e6e6e6; margin: 8px 0 16px; max-width: 420px; }
+    .bar i { display: block; height: 8px; background: var(--green); width: 0; }
+    .item { display: grid; grid-template-columns: 22px 78px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .item code { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+    .tag { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+    input[type="search"] { width: min(420px, 100%); padding: 8px 10px; border: 1px solid var(--line); background: var(--paper); }
+    .methods { display: grid; grid-template-columns: 160px 1fr; gap: 18px; background: var(--paper); padding: 8px; }
+    .methods button { display: block; width: 100%; text-align: left; background: transparent; border: 0; border-left: 3px solid transparent; padding: 12px; cursor: pointer; }
+    .methods button[aria-pressed="true"] { border-left-color: var(--green); background: var(--fog); }
+    svg.flow { width: 100%; height: auto; background: var(--paper); }
+    footer { padding: 28px 48px 48px; color: var(--slate); font-size: 13px; }
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; }
+      nav.side { position: relative; height: auto; }
+      header.mast, .grid, .steps, .actors, .stack, .methods { grid-template-columns: 1fr; }
+      section, header.mast .copy, footer { padding-left: 20px; padding-right: 20px; }
+      .item { grid-template-columns: 22px 1fr; }
+      .item .tag { grid-column: 2; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="side" aria-label="Índice">
+      <a class="brand" href="portada.html">Prestige<i></i></a>
+      <ol id="toc"></ol>
+      <a class="back" href="index.html">Informes escritos</a>
+    </nav>
+    <main>
+      <header class="mast">
+        <div class="copy">
+          <p class="kicker">Guía de los PDF · SeguriData</p>
+          <h1>Cómo está escrito Prestige.</h1>
+          <p>Esta página recorre los tres PDF internos del producto: el manual del 24 de agosto y los dos informes del 9 de septiembre. El índice, el recorrido y el checklist salen de ahí.</p>
+        </div>
+        <div class="aside">
+          <span>Fuentes</span>
+          <strong>Manual técnico, 29 páginas.</strong>
+          <strong>Estado y fase, 15 páginas.</strong>
+          <strong>Expansión, 14 páginas.</strong>
+          <span>El código posterior no reescribe esos PDF.</span>
+        </div>
+      </header>
+
+      <section id="lectura">
+        <h2>Cómo leer las dos fechas</h2>
+        <p class="note">Los PDF describen el sandbox en la fecha de cada uno. El del 9 de septiembre dice, con esas palabras, que si un documento de julio contradice al código, manda el código. Entre el 9 y el 22 de septiembre el repositorio avanzó: identidad, firma PAdES con una CA interna, sello RFC 3161, objetos cifrados fuera de la base, correo, webhooks y cadena de auditoría. Donde esta guía marca «el código ya lo cubre», es ese avance. Donde no, sigue vigente lo que escribió el PDF.</p>
+        <p class="src">docs/corporate/Prestige_Documentacion_Tecnica_Arquitectura.pdf · docs/reportes/revision-2026-09/Prestige-01-Estado-Siguiente-Fase-y-Mejoras.pdf · Prestige-02-Expansion-Herramientas-Visual-IA.pdf</p>
+      </section>
+
+      <section id="tesis">
+        <h2>La tesis, como la escribe el manual</h2>
+        <p>Prestige orquesta un contrato corporativo, en secuencia o en paralelo, sobre un motor durable, y cierra el acto con un manifiesto cuya cadena SHA-256 se puede recalcular. El manual cuenta 16 módulos de dominio, tres métodos de firma y un guard JWT listo mientras la pantalla de entrada aún no lo usaba.</p>
+        <div class="row" id="kpis"></div>
+        <p>La regla que el informe de expansión no deja mover: el workflow no firma, la firma no conserva, y la conservación no autentica. Son tres oficios distintos.</p>
+      </section>
+
+      <section id="actores">
+        <h2>Quién entra, y quién no ve el motor</h2>
+        <p>El manual de agosto dibuja cuatro personas. Ninguna habla con la base, con el motor ni con el almacén. Hablan con el portal. El resto entra por el BFF.</p>
+        <div class="actors" id="actors"></div>
+        <svg class="flow" viewBox="0 0 880 150" role="img" aria-label="Del navegador al expediente">
+          <g font-family="DM Sans, sans-serif" font-size="14" fill="#191919">
+            <rect x="16" y="46" width="140" height="52" fill="#fff" stroke="#191919"/>
+            <text x="86" y="76" text-anchor="middle">Navegador</text>
+            <rect x="210" y="46" width="150" height="52" fill="#fff" stroke="#191919"/>
+            <text x="285" y="76" text-anchor="middle">Portal :3001</text>
+            <rect x="414" y="46" width="150" height="52" fill="#191919"/>
+            <text x="489" y="76" text-anchor="middle" fill="#fff">BFF :3000</text>
+            <rect x="618" y="18" width="230" height="36" fill="#fff" stroke="#191919"/>
+            <text x="733" y="41" text-anchor="middle">Postgres · Temporal · MinIO</text>
+            <rect x="618" y="88" width="230" height="36" fill="#fff" stroke="#5B6770"/>
+            <text x="733" y="111" text-anchor="middle" fill="#5B6770">Keycloak · TSA · biometría</text>
+            <path d="M156 72 H210 M360 72 H414 M564 72 H618" stroke="#191919" fill="none"/>
+            <path d="M564 96 H618" stroke="#5B6770" fill="none"/>
+          </g>
+        </svg>
+        <p class="src">Figura del manual, sección 04 y 05. En agosto Redis estaba encendido y el BFF todavía no lo usaba. El worker llama al BFF por HTTP interno y no abre Prisma.</p>
+      </section>
+
+      <section id="recorrido">
+        <h2>El caso ancla, paso a paso</h2>
+        <p>Figura 4 del manual: del envío al sello. Pulse un paso. Si el motor no respondía, el PDF de agosto decía que el BFF sembraba la tarea en Postgres y marcaba la corrida como LOCAL. El firmante no se quedaba bloqueado.</p>
+        <div class="steps" id="steps"></div>
+        <div class="panel" id="step-panel"></div>
+      </section>
+
+      <section id="metodos">
+        <h2>Tres métodos, un contrato</h2>
+        <div class="methods">
+          <div id="method-nav"></div>
+          <div id="method-body"></div>
+        </div>
+      </section>
+
+      <section id="modulos">
+        <h2>Módulos M01 a M16</h2>
+        <p>Estado que escribió el informe del 9 de septiembre. Real significa que había código que hacía el trabajo. Parcial significa estructura sin la pieza de producción. Pendiente significa que no estaba iniciado.</p>
+        <div class="row" id="mod-filters"></div>
+        <div class="grid" id="mods"></div>
+        <div class="detail" id="mod-detail" hidden></div>
+      </section>
+
+      <section id="stack">
+        <h2>Stack, como lo nombra el manual</h2>
+        <div class="stack" id="stack"></div>
+        <p>Cinco herramientas que el manual destaca: Temporal, MinIO, pdf-lib, signature_pad y la paleta de comandos. Temporal sustituye, dentro de este sandbox, al motor que el diseño de julio había nombrado. La ejecución durable es TypeScript. El BPMN se conserva como lenguaje de diseño.</p>
+      </section>
+
+      <section id="fases">
+        <h2>La serie que fija el informe del 9 de septiembre</h2>
+        <p>A cierra la identidad. B es la firma que vale. C es el tiempo y la conservación. D es la custodia del archivo. Después viene el piloto operativo: elegir área, medir, poder volver atrás, y no migrar el histórico en el primer corte. El informe pide correr en paralelo un frente de plataforma: integración continua, observabilidad, Redis, paginación, respaldo y secretos.</p>
+        <div class="row" id="phase-nav"></div>
+        <div class="panel" id="phase-body"></div>
+      </section>
+
+      <section id="checklist">
+        <h2>Checklist del PDF</h2>
+        <p>Identificadores estables del informe del 9 de septiembre, para un tablero. Las casillas se guardan en este navegador. El botón de abajo no inventa trabajo: marca solo los ítems que el código posterior al PDF ya cubre, y deja en claro los que siguen abiertos.</p>
+        <div class="bar" aria-hidden="true"><i id="progress"></i></div>
+        <p id="progress-label" class="src"></p>
+        <div class="row">
+          <input id="q" type="search" placeholder="Buscar A-07, TSA, MinIO…" aria-label="Buscar pendiente">
+          <button type="button" id="mark-known">Marcar lo que el código ya cubre</button>
+          <button type="button" id="clear-checks">Vaciar casillas</button>
+        </div>
+        <div class="row" id="check-filters"></div>
+        <div id="list"></div>
+      </section>
+
+      <section id="expansion">
+        <h2>Lo que el segundo PDF propone, y todavía no es el producto</h2>
+        <p>El informe del 9 de septiembre lista 45 propuestas para estimar: 15 herramientas, 15 mejoras visuales y 15 usos de inteligencia artificial. Ninguna puede contradecir la regla de los tres oficios. Cada una trae módulo, un orden de magnitud en persona-mes, y un límite.</p>
+        <table>
+          <thead><tr><th>Propuesta del PDF</th><th>Módulo</th><th>Esfuerzo</th><th>Límite que el PDF pone</th></tr></thead>
+          <tbody>
+            <tr><td>Plantillas que arman el documento desde datos del proceso</td><td>M04</td><td>4–6 PM</td><td>La plantilla está aprobada. Una persona revisa antes de enviar.</td></tr>
+            <tr><td>Portal externo con enlace de un solo uso</td><td>M01 · M13</td><td>3–5 PM</td><td>Expira, se usa una vez, y el contexto queda en el manifiesto.</td></tr>
+            <tr><td>Firma masiva del mismo documento a muchas personas</td><td>M07 · M08</td><td>4–6 PM</td><td>Cada firma genera su propio expediente.</td></tr>
+            <tr><td>Constructor de flujos con bloques cerrados</td><td>M05</td><td>5–7 PM</td><td>Solo actividades del catálogo. Se valida antes de publicar.</td></tr>
+            <tr><td>Motor de reglas sobre la tabla DMN</td><td>M05 · M10</td><td>4–6 PM</td><td>La regla de valor probatorio vive en M10, no en la pantalla.</td></tr>
+            <tr><td>Verificador donde se pega el identificador del manifiesto</td><td>M11</td><td>2–3 PM</td><td>Solo lectura. No muestra el documento ni datos personales.</td></tr>
+            <tr><td>Sello de tiempo para cualquier hash, no solo la firma</td><td>M10 · M14</td><td>2–3 PM</td><td>Se sella el hash. El archivo no sale de quien lo custodia.</td></tr>
+          </tbody>
+        </table>
+        <p class="src">Extracto del PDF de expansión. Las 38 propuestas restantes están en ese archivo; esta tabla es la puerta, no el sustituto.</p>
+      </section>
+
+      <footer>
+        <p>Guía armada el 22 de septiembre de 2026 a partir de los tres PDF citados. No sustituye la lectura del manual. Los diagramas sueltos del expediente siguen en <a href="diagramas/arquitectura.html">runtime</a>, <a href="diagramas/firma.html">envío</a>, <a href="diagramas/firma-secuencia.html">secuencia</a>, <a href="diagramas/evidencia.html">expediente</a>, <a href="diagramas/solicitud.html">solicitud</a> y <a href="diagramas/alta.html">alta</a>.</p>
+      </footer>
+    </main>
+  </div>
+  <script>
+    const toc = [
+      ["lectura", "Cómo leer"],
+      ["tesis", "Tesis"],
+      ["actores", "Actores"],
+      ["recorrido", "Caso ancla"],
+      ["metodos", "Métodos"],
+      ["modulos", "Módulos"],
+      ["stack", "Stack"],
+      ["fases", "Fases"],
+      ["checklist", "Checklist"],
+      ["expansion", "Expansión"]
+    ];
+    document.getElementById("toc").innerHTML = toc.map(([id, label], i) =>
+      `<li><a href="#${id}"${i === 0 ? ' aria-current="true"' : ""}>${label}</a></li>`).join("");
+
+    const kpis = [
+      ["16", "módulos de dominio en el manual"],
+      ["3", "métodos de firma, un contrato"],
+      ["SHA-256", "cadena que se recalcula"],
+      ["5 fases", "A identidad, B firma, C tiempo, D custodia, piloto"]
+    ];
+    document.getElementById("kpis").innerHTML = kpis.map(([n, t]) =>
+      `<article class="mod"><b>${n}</b><strong>${t}</strong></article>`).join("");
+
+    const actors = [
+      ["Solicitante", "Crea el envío, sigue el avance, cancela o delega."],
+      ["Firmante", "Bandeja, consentimiento, ceremonia y autógrafa."],
+      ["RH", "Alta, INE y prueba de vida antes de habilitar la firma."],
+      ["Auditor", "Manifiesto, hashes y cadena. Lectura, no el acto."]
+    ];
+    document.getElementById("actors").innerHTML = actors.map(([t, d]) =>
+      `<article><h3>${t}</h3><p>${d}</p></article>`).join("");
+
+    const steps = [
+      ["01", "Caso", "POST /cases abre el expediente. El título y el tenant quedan en Postgres."],
+      ["02", "PDF", "POST /documents registra el archivo, su versión y el hash. En el PDF de agosto el binario aún viajaba también dentro de la base."],
+      ["03", "Solicitud", "POST /signature-requests fija métodos, orden secuencial o paralelo, y el plazo. El manual usa 72 horas como ejemplo de bandeja."],
+      ["04", "Motor", "Temporal arranca contratoDosPartes y siembra las tareas. Si no respondía, el PDF describe un fallback LOCAL."],
+      ["05", "Consentir", "La ceremonia exige el texto versionado 1.1. Sin eso no hay firma."],
+      ["06", "Firmar", "POST …/actions/sign. El navegador no sella el PDF: lo hace el BFF."],
+      ["07", "Señal", "signCompleted avanza el turno. En paralelo, el quorum es que todos hayan firmado."],
+      ["08", "Sello", "sealEvidence escribe el manifiesto cuando el quorum cierra."],
+      ["09", "Verificar", "GET /evidence/:id/verify recalcula. No devuelve un verdadero fijo."]
+    ];
+    const stepHost = document.getElementById("steps");
+    const stepPanel = document.getElementById("step-panel");
+    stepHost.innerHTML = steps.map((s, i) =>
+      `<button class="step" type="button" aria-pressed="${i === 0}" data-i="${i}"><small>${s[0]}</small>${s[1]}</button>`).join("");
+    function showStep(i) {
+      stepHost.querySelectorAll(".step").forEach((b) => b.setAttribute("aria-pressed", b.dataset.i === String(i)));
+      stepPanel.innerHTML = `<h3>${steps[i][1]}</h3><p>${steps[i][2]}</p>`;
+    }
+    showStep(0);
+    stepHost.addEventListener("click", (e) => {
+      const b = e.target.closest(".step");
+      if (b) showStep(Number(b.dataset.i));
+    });
+
+    const methods = [
+      ["Digital", "En el PDF del 9 de septiembre era un HMAC de desarrollo. El manual lo deja pendiente contra el HSM. El código posterior firma PAdES con una CA interna del proyecto. El enchufe del HSM sigue vacío: pedir PKCS#11 responde que no está conectado."],
+      ["Autógrafa", "El trazo se captura en el navegador y el BFF lo incrusta en el PDF con pdf-lib. Eso ya era real en agosto. El valor que el manual subraya no es el dibujo: es el hash que lo ata al documento."],
+      ["Biométrica", "El adaptador existe. Sin URL de proveedor no llama a un tercero y responde que no está disponible. El informe pide el motor de la casa y, mientras no esté, no hay un sí automático."]
+    ];
+    const methodNav = document.getElementById("method-nav");
+    const methodBody = document.getElementById("method-body");
+    methodNav.innerHTML = methods.map((m, i) =>
+      `<button type="button" aria-pressed="${i === 0}" data-i="${i}">${m[0]}</button>`).join("");
+    function showMethod(i) {
+      methodNav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.i === String(i)));
+      methodBody.innerHTML = `<h3>${methods[i][0]}</h3><p>${methods[i][1]}</p>`;
+    }
+    showMethod(0);
+    methodNav.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (b) showMethod(Number(b.dataset.i));
+    });
+
+    const mods = [
+      ["M01", "Portal", "parcial", "Rutas de bandeja, envío, alta, tareas, proceso y operación. El PDF echa en falta el login y la ceremonia a pantalla completa.", "El código posterior tiene OIDC y la ceremonia a pantalla completa."],
+      ["M02", "Identidad", "parcial", "Guard JWT contra Keycloak. El tenant y muchas rutas seguían abiertas o literales.", "La superficie pública quedó acotada y el tenant sale del token. El aislamiento fino de cada recurso no está cerrado."],
+      ["M03", "Documentos", "parcial", "Hash y versión. El contenido vivía en la base.", "El binario salió de la base y se guarda cifrado. La URL prefirmada que pedía el PDF no es la forma de lectura."],
+      ["M04", "Plantillas", "pendiente", "No hay generación documental. El archivo se sube ya armado.", "Sigue pendiente."],
+      ["M05", "Procesos", "parcial", "Studio BPMN y DMN. decide() ignoraba el XML guardado.", "El motor FEEL evalúa la tabla guardada. El catálogo cerrado de actividades sigue abierto."],
+      ["M06", "Workflow", "real", "Puerto a Temporal, señales, plazo y tareas. Si el motor no responde, el PDF describe fallback local.", "Sigue siendo el puerto del plazo."],
+      ["M07", "Bandeja", "parcial", "Inbox, kanban y reclamación. Sin recordatorio ni delegación automática.", "Recordatorio al 50, 75 y 90 por ciento, y fuera de oficina, quedaron en el código."],
+      ["M08", "Orquestador", "real", "Orden, consentimiento, estados y evidencia al completar.", "Sigue siendo la ruta crítica."],
+      ["M09", "Firma", "parcial", "Tres adaptadores. Digital era HMAC. Sin firma visible más que la autógrafa.", "PAdES con apariencia, sobre CA interna. HSM, OCSP y revocación no."],
+      ["M10", "Confianza", "pendiente", "Sello sintético. Sin TSA, OCSP ni NOM-151.", "Hay cliente RFC 3161 y el verificador comprueba la firma del token. No hay constancia NOM-151 ni OCSP."],
+      ["M11", "Evidencia", "real", "Manifiesto que se recalcula. Faltaba firmarlo y el verificador offline.", "Manifiesto Ed25519, verificador offline y ZIP. La constancia de conservación no."],
+      ["M12", "Custodia", "parcial", "MinIO opcional y doble escritura con la base.", "MinIO es el destino del binario, con sobre AES-256-GCM. El candado de 30 días está en el compose local, sin commit, y se puede levantar."],
+      ["M13", "Avisos", "parcial", "Campana en la aplicación. Sin correo.", "Correo con reintento y carta muerta. En local lo recibe Mailpit."],
+      ["M14", "APIs", "parcial", "REST y un contrato OpenAPI corto. Sin webhooks firmados.", "OpenAPI, webhooks HMAC, CloudEvents y SDK."],
+      ["M15", "Operación", "parcial", "Cockpit de salud. Sin control de tenants ni trazas.", "Tenants, políticas, catálogos, trazas opt-in y semáforo."],
+      ["M16", "Alta", "parcial", "Máquina de estados. INE en la base, sin OCR.", "OCR local y CURP con dígito. RENAPO y el motor biométrico de producción siguen en puerto vacío."]
+    ];
+    let modFilter = "todos";
+    const modHost = document.getElementById("mods");
+    const modDetail = document.getElementById("mod-detail");
+    function drawMods() {
+      const list = mods.filter((m) => modFilter === "todos" || m[2] === modFilter);
+      modHost.innerHTML = list.map((m) =>
+        `<button class="mod ${m[2]}" type="button" data-id="${m[0]}" aria-expanded="false"><b>${m[0]}</b><strong>${m[1]}</strong><em>${m[2]}</em></button>`).join("");
+    }
+    document.getElementById("mod-filters").innerHTML = ["todos", "real", "parcial", "pendiente"].map((f) =>
+      `<button class="filt" type="button" data-f="${f}" aria-pressed="${f === "todos"}">${f}</button>`).join("");
+    document.getElementById("mod-filters").addEventListener("click", (e) => {
+      const b = e.target.closest(".filt");
+      if (!b) return;
+      modFilter = b.dataset.f;
+      document.querySelectorAll("#mod-filters .filt").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      modDetail.hidden = true;
+      drawMods();
+    });
+    modHost.addEventListener("click", (e) => {
+      const b = e.target.closest(".mod");
+      if (!b) return;
+      const m = mods.find((x) => x[0] === b.dataset.id);
+      modHost.querySelectorAll(".mod").forEach((x) => x.setAttribute("aria-expanded", x === b));
+      modDetail.hidden = false;
+      modDetail.innerHTML = `<h3>${m[0]} · ${m[1]}</h3><p><strong>El PDF.</strong> ${m[3]}</p><p><strong>Después del PDF.</strong> ${m[4]}</p>`;
+    });
+    drawMods();
+
+    const stack = [
+      ["Experiencia", "Next.js 16, React 19, puerto 3001. En agosto no había muro de autenticación en el cliente."],
+      ["Interfaz", "Tailwind, Radix, DM Sans e IBM Plex Mono. Verde solo para validar."],
+      ["BFF", "NestJS 10. En el PDF el cuerpo llegaba a 50 MB porque el PDF viajaba en la base."],
+      ["Motor", "Temporal 1.27, cola prestige, worker aparte."],
+      ["Datos", "PostgreSQL 16 y Prisma 6. Cuatro bases en el mismo servidor: prestige, keycloak, temporal y visibilidad."],
+      ["Identidad", "Keycloak 26, realm prestige, cliente prestige-web."],
+      ["Objetos", "MinIO, bucket prestige-docs. El PDF lo trata como puente, no como destino eterno."],
+      ["Tiempo real", "Socket.IO. Redis estaba en Compose y, a la fecha del manual, el BFF no lo usaba."]
+    ];
+    document.getElementById("stack").innerHTML = stack.map(([t, d]) =>
+      `<article><h3>${t}</h3><p>${d}</p></article>`).join("");
+
+    const phases = [
+      ["A", "Identidad", "Que el portal entre por Keycloak, que cada acto tenga persona y tenant, y que las rutas abiertas se cierren. El PDF la pone primero porque no depende de un proveedor y desbloquea el resto. Esfuerzo que escribe: 3 a 5 persona-mes.", "El código posterior recorrió este frente: código con PKCE, sesión, roles y canal del worker. El step-up existe y nace apagado."],
+      ["B", "Firma", "Dejar el HMAC. PKCS#7 contra el HSM, certificado vigente, firma visible, campos usados de verdad, y una prueba en Adobe.", "Hay PAdES visible con la CA interna. No hay HSM, ni OCSP, ni la prueba manual en Adobe cerrada por escrito."],
+      ["C", "Tiempo", "TSA RFC 3161, OCSP, constancia NOM-151, manifiesto firmado, verificador que no necesita el servidor, y un sello por cada firma.", "Token RFC 3161, manifiesto firmado, verificador offline y ZIP. La constancia NOM-151 y OCSP siguen fuera."],
+      ["D", "Custodia", "Un solo lugar para el archivo, fuera de la base, cifrado, con candado y con respaldo probado.", "El archivo ya no está en la base y viaja cifrado. Falta la llave por cliente, el candado que no se puede levantar, y un respaldo de operación."],
+      ["Piloto", "Operación", "Elegir área y documentos, escribir el runbook, medir ciclo y rechazos, y poder no salir. El PDF dice que no hay migración del histórico en el primer corte.", "No hay piloto escrito en el repositorio. El escenario que sí existe es la semilla local de demostración."]
+    ];
+    const phaseNav = document.getElementById("phase-nav");
+    const phaseBody = document.getElementById("phase-body");
+    phaseNav.innerHTML = phases.map((p, i) =>
+      `<button class="filt" type="button" data-i="${i}" aria-pressed="${i === 0}">${p[0]} · ${p[1]}</button>`).join("");
+    function showPhase(i) {
+      phaseNav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.i === String(i)));
+      phaseBody.innerHTML = `<h3>${phases[i][0]} · ${phases[i][1]}</h3><p>${phases[i][2]}</p><p><strong>Lectura al 22 de septiembre.</strong> ${phases[i][3]}</p>`;
+    }
+    showPhase(0);
+    phaseNav.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (b) showPhase(Number(b.dataset.i));
+    });
+
+    const items = [
+      ["A", "A-01", "Login OIDC con código y PKCE.", "hecho"],
+      ["A", "A-02", "Sesión real y fuera el usuario fijo de la pantalla.", "hecho"],
+      ["A", "A-03", "Muro de rutas y vuelta al login.", "hecho"],
+      ["A", "A-04", "Cerrar rutas públicas salvo consentimiento y verificador.", "hecho"],
+      ["A", "A-05", "Actor desde el token, no desde el cuerpo.", "hecho"],
+      ["A", "A-06", "Tenant desde el token.", "parcial"],
+      ["A", "A-07", "Cada quien solo ve su cola.", "parcial"],
+      ["A", "A-08", "Roles en el realm y guardas.", "parcial"],
+      ["A", "A-09", "Autenticar al worker.", "hecho"],
+      ["A", "A-10", "Autenticar el socket y la sala del documento.", "hecho"],
+      ["A", "A-11", "Step-up en actos sensibles.", "parcial"],
+      ["A", "A-12", "Enlace de un solo uso para quien no tiene cuenta.", "hecho"],
+      ["B", "B-01", "Contrato del adaptador: preparar, firmar, verificar, reconciliar.", "parcial"],
+      ["B", "B-02", "Firma contra el HSM. La llave no entra a la base.", "pendiente"],
+      ["B", "B-03", "Cadena, vigencia y revocación antes de firmar.", "pendiente"],
+      ["B", "B-04", "e.firma, P12 corporativo y certificado del prestador.", "pendiente"],
+      ["B", "B-05", "Firma visible también en digital y biométrica.", "parcial"],
+      ["B", "B-06", "Usar los campos colocados sobre el PDF.", "pendiente"],
+      ["B", "B-07", "Firma que no termina en el acto.", "hecho"],
+      ["B", "B-08", "Reconciliar lo que quedó a medias.", "hecho"],
+      ["B", "B-09", "Probar el PDF en Adobe y dejar constancia.", "pendiente"],
+      ["C", "C-01", "Cliente TSA RFC 3161 real.", "hecho"],
+      ["C", "C-02", "Dejar el sello sintético.", "hecho"],
+      ["C", "C-03", "OCSP y CRL reutilizables.", "pendiente"],
+      ["C", "C-04", "Constancia NOM-151.", "pendiente"],
+      ["C", "C-05", "Firmar el manifiesto.", "hecho"],
+      ["C", "C-06", "Verificador que no necesita el servidor.", "hecho"],
+      ["C", "C-07", "Sello por cada firma, no solo al cerrar.", "hecho"],
+      ["C", "C-08", "Política de firma versionada en el caso.", "hecho"],
+      ["C", "C-09", "ZIP del expediente con el verificador.", "parcial"],
+      ["D", "D-01", "Sacar el PDF de la base.", "hecho"],
+      ["D", "D-02", "La lectura del archivo por URL prefirmada.", "pendiente"],
+      ["D", "D-03", "Subida prefirmada y bajar el límite del cuerpo.", "parcial"],
+      ["D", "D-04", "Sacar INE y selfie de la base.", "hecho"],
+      ["D", "D-05", "Versionado y candado del objeto.", "parcial"],
+      ["D", "D-06", "Sobre de cifrado por objeto.", "hecho"],
+      ["D", "D-07", "Cifrado de columna para CURP y RFC.", "pendiente"],
+      ["D", "D-08", "Borrar la biometría al vencer el plazo.", "pendiente"],
+      ["D", "D-09", "Respaldo del archivo con prueba de restauración.", "pendiente"],
+      ["D", "D-10", "Decidir el almacén cuando MinIO deje de parcharse.", "pendiente"],
+      ["TP", "TP-01", "Motor DMN que evalúe lo guardado.", "hecho"],
+      ["TP", "TP-05", "Redis de verdad para presencia y caché.", "hecho"],
+      ["TP", "TP-06", "Correo con reintento. El aviso no es la verdad del caso.", "hecho"],
+      ["TP", "TP-08", "Webhooks firmados y eventos.", "hecho"],
+      ["TP", "TP-09", "Paginación. Varias listas siguen con un corte fijo.", "pendiente"],
+      ["TP", "TP-12", "Administrar tenants, políticas y catálogos.", "hecho"],
+      ["TP", "TP-13", "OCR de la INE. RENAPO sigue sin URL.", "parcial"],
+      ["TP", "TP-15", "Auditoría encadenada, sin editar el pasado.", "hecho"],
+      ["TP", "TP-16", "Ceremonia a pantalla completa.", "hecho"],
+      ["Piloto", "P-01", "Elegir área, documentos y criterio de éxito.", "pendiente"],
+      ["Piloto", "P-02", "Runbook, guardia y cómo volver atrás.", "pendiente"]
+    ];
+    const KEY = "prestige-guia-checks";
+    const SEED = "prestige-guia-seeded";
+    const covered = items.filter((it) => it[3] === "hecho").map((it) => it[1]);
+    const saved = new Set(localStorage.getItem(SEED) ? JSON.parse(localStorage.getItem(KEY) || "[]") : covered);
+    if (!localStorage.getItem(SEED)) {
+      localStorage.setItem(KEY, JSON.stringify([...saved]));
+      localStorage.setItem(SEED, "1");
+    }
+    let phase = "todos";
+    let query = "";
+    const list = document.getElementById("list");
+    function persist() { localStorage.setItem(KEY, JSON.stringify([...saved])); }
+    function drawList() {
+      const q = query.trim().toLowerCase();
+      const shown = items.filter((it) => (phase === "todos" || it[0] === phase) && (!q || (it[1] + it[2]).toLowerCase().includes(q)));
+      list.innerHTML = shown.map((it) => {
+        const on = saved.has(it[1]);
+        const label = it[3] === "hecho" ? "código: cubierto" : it[3] === "parcial" ? "código: a medias" : "código: abierto";
+        return `<label class="item"><input type="checkbox" data-id="${it[1]}" ${on ? "checked" : ""}><code>${it[1]}</code><span>${it[2]}</span><span class="tag ${it[3] === "hecho" ? "ok" : it[3] === "parcial" ? "warn" : ""}">${label}</span></label>`;
+      }).join("") || "<p>Ningún ítem con ese filtro.</p>";
+      const bar = document.getElementById("progress");
+      const n = items.filter((it) => saved.has(it[1])).length;
+      bar.style.width = `${Math.round((n / items.length) * 100)}%`;
+      document.getElementById("progress-label").textContent = `${n} de ${items.length} casillas marcadas en este navegador.`;
+    }
+    document.getElementById("check-filters").innerHTML = ["todos", "A", "B", "C", "D", "TP", "Piloto"].map((f) =>
+      `<button class="filt" type="button" data-f="${f}" aria-pressed="${f === "todos"}">${f}</button>`).join("");
+    document.getElementById("check-filters").addEventListener("click", (e) => {
+      const b = e.target.closest(".filt");
+      if (!b) return;
+      phase = b.dataset.f;
+      document.querySelectorAll("#check-filters .filt").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      drawList();
+    });
+    document.getElementById("q").addEventListener("input", (e) => { query = e.target.value; drawList(); });
+    list.addEventListener("change", (e) => {
+      const id = e.target.dataset.id;
+      if (!id) return;
+      if (e.target.checked) saved.add(id); else saved.delete(id);
+      persist();
+      drawList();
+    });
+    document.getElementById("mark-known").addEventListener("click", () => {
+      items.filter((it) => it[3] === "hecho").forEach((it) => saved.add(it[1]));
+      persist();
+      drawList();
+    });
+    document.getElementById("clear-checks").addEventListener("click", () => {
+      saved.clear();
+      persist();
+      drawList();
+    });
+    drawList();
+
+    const links = [...document.querySelectorAll("nav.side a[href^='#']")];
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        links.forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === "#" + en.target.id));
+      });
+    }, { rootMargin: "-40% 0px -50% 0px" });
+    document.querySelectorAll("main section[id]").forEach((s) => obs.observe(s));
+  </script>
+</body>
+</html>

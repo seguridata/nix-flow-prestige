@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Prestige — runtime del sandbox",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "camino-firma",
+        "label": "Camino de la firma",
+        "focus": ["firmante", "portal", "bff", "postgres", "minio"],
+        "note": "El firmante entra por el portal. El BFF persiste el caso y guarda el PDF cifrado."
+      },
+      {
+        "id": "identidad",
+        "label": "Identidad y sesión",
+        "focus": ["portal", "keycloak", "bff", "redis"],
+        "note": "Keycloak emite el token. La sesión del portal vive en Redis; el BFF solo recibe el Bearer."
+      },
+      {
+        "id": "orquestacion",
+        "label": "Orquestación y sello",
+        "focus": ["bff", "temporal", "minio"],
+        "note": "Temporal sostiene el SLA. El PDF cifrado sale del BFF hacia MinIO."
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 4,
+    "gapX": 56,
+    "gapY": 40,
+    "cellW": 176,
+    "cellH": 88
+  },
+  "components": [
+    { "id": "firmante", "type": "external", "label": "Firmante", "sublabel": "navegador", "row": 1, "col": 0 },
+    { "id": "portal", "type": "frontend", "label": "Portal", "sublabel": "Next.js :3001", "row": 1, "col": 1 },
+    { "id": "keycloak", "type": "security", "label": "Keycloak", "sublabel": "realm prestige", "row": 0, "col": 1 },
+    { "id": "bff", "type": "backend", "label": "BFF NestJS", "sublabel": "host :3000", "row": 1, "col": 2 },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": ":6379", "row": 0, "col": 2 },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "base prestige", "row": 1, "col": 3 },
+    { "id": "temporal", "type": "messagebus", "label": "Temporal", "sublabel": "cola prestige", "row": 2, "col": 2 },
+    { "id": "minio", "type": "cloud", "label": "MinIO", "sublabel": "prestige-docs", "row": 2, "col": 3 }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Compose prestige-sandbox", "wraps": ["keycloak", "redis", "postgres", "temporal", "minio"] },
+    { "kind": "security-group", "label": "Host", "wraps": ["bff"] }
+  ],
+  "connections": [
+    { "id": "abre-portal", "from": "firmante", "to": "portal", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "oidc", "from": "portal", "to": "keycloak", "label": "OIDC", "variant": "security" },
+    { "id": "proxy", "from": "portal", "to": "bff", "label": "Bearer", "variant": "emphasis" },
+    { "id": "cache", "from": "bff", "to": "redis", "label": "caché" },
+    { "id": "sql", "from": "bff", "to": "postgres", "label": "SQL", "variant": "emphasis" },
+    { "id": "workflow", "from": "bff", "to": "temporal", "label": "gRPC", "variant": "emphasis", "labelDy": 24 },
+    { "id": "objeto", "from": "bff", "to": "minio", "label": "S3", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Dónde corre", "items": ["Portal y BFF viven en el host, no en Compose", "Compose levanta datos, identidad, motor, objetos y correo", "Un solo comando bun run dev los junta"] },
+    { "dot": "emerald", "title": "Qué persiste", "items": ["PostgreSQL guarda el caso, no el PDF", "MinIO guarda el binario cifrado con AES-256-GCM", "Temporal guarda la historia del workflow"] },
+    { "dot": "rose", "title": "Qué no entra en este mapa", "items": ["La TSA y el correo salen del BFF, fuera de este riel", "Keycloak arranca con start-dev", "La sesión del portal también usa Redis"] }
+  ]
+}

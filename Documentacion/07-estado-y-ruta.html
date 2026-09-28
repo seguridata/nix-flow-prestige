@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>07 · Estado y ruta — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html">01</a>
+      <a href="02-arquitectura.html">02</a>
+      <a href="03-stack.html">03</a>
+      <a href="04-seguridad.html">04</a>
+      <a href="05-procesos.html">05</a>
+      <a href="06-multitenant.html">06</a>
+      <a href="07-estado-y-ruta.html" aria-current="page">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 07 · Estado y ruta</p>
+      <h1>El taller ya firma. La planta todavía no abre.</h1>
+      <hr class="rule">
+      <p class="lede">Prestige, el 26 de septiembre de 2026, es un producto que en una máquina bien preparada recorre el contrato de dos partes y deja una prueba verificable. No es un servicio publicado, ni un HSM, ni una constancia de un prestador.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>Dónde mirar</span>
+      <strong>Rama develop, commit 27719e1.</strong>
+      <span>Los 6 sprints del paquete P1 (MasterPlan/) cerrados. DoD P1: 11/11.</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>El punto, en lenguaje llano</h2>
+      <p>Si alguien pregunta en qué va, la respuesta corta es esta.</p>
+      <p>Ya se puede entrar con usuario de verdad, no con un nombre fijo en la pantalla. Ya se puede subir un PDF y ese PDF no se guarda como texto dentro de la base. Ya se puede pedir la firma a dos personas, una detrás de otra o las dos a la vez. Ya se puede firmar con certificado, con trazo o dejar la firma esperando a un proveedor. Ya sale un correo. Ya hay un enlace para quien no tiene cuenta. Ya, al terminar, existe un expediente que otra computadora puede revisar sin conectarse a Prestige. Ya hay pantallas de bandeja, de envío, de tareas, de alta, de procesos y de salud.</p>
+      <p>Lo que no se puede decir es que eso esté en producción. La llave está en un archivo del proyecto. El reloj de validez del certificado no consulta una lista de revocación. La constancia que un comerciante mexicano usaría para conservar el mensaje, la NOM-151, no se emite. La biometría, si no hay un proveedor configurado, la mira una persona de RH. El edificio de varios clientes comparte la misma llave de la caja fuerte.</p>
+      <p>Desde el informe anterior (22 de septiembre) se homologó el repositorio contra el paquete de cimiento P1 (carpeta <code>MasterPlan/</code>): el consentimiento para usar la biometría, el candado de treinta días del archivo, la negativa a arrancar con secretos de ejemplo, el congelado de documentos con verificación de hash, un método de firma "Acepto" sin trazo ni certificado, y passkeys como verificación de presencia en la ceremonia. Los cinco puntos ya están en <code>develop</code>, no en una carpeta de trabajo suelta. Ver <a href="../MasterPlan/PROGRESO.md">MasterPlan/PROGRESO.md</a> para el detalle sprint por sprint.</p>
+    </section>
+
+    <section>
+      <h2>Qué se logró, con nombre</h2>
+      <table>
+        <thead><tr><th>Se pidió</th><th>Quedó</th><th>Prueba que el repositorio cita</th></tr></thead>
+        <tbody>
+          <tr><td>Quitar la demo de firmar con un botón</td><td>Hecho</td><td>Commit de endurecimiento del BFF</td></tr>
+          <tr><td>Sacar los binarios de la base</td><td>Hecho</td><td>Ida y vuelta contra MinIO, documentos y alta</td></tr>
+          <tr><td>Entrar con OIDC</td><td>Hecho</td><td>Sin token, 401. Con rol equivocado, 403. Sesión en Redis</td></tr>
+          <tr><td>Firma digital de verdad</td><td>Hecho, con CA propia</td><td>openssl contra la CA del proyecto. El HMAC de desarrollo ya no firma</td></tr>
+          <tr><td>Sello de tiempo y manifiesto</td><td>Hecho</td><td>Verificador offline dijo válido, incluida la firma del token</td></tr>
+          <tr><td>Plazo, avisos, delegación</td><td>Hecho</td><td>Prueba de punta a punta con Temporal, Postgres y correo</td></tr>
+          <tr><td>Correo, enlace, webhooks, OpenAPI</td><td>Hecho</td><td>Mailpit recibió. Un receptor comprobó el HMAC por su cuenta</td></tr>
+          <tr><td>Tenants, trazas, semáforo</td><td>Hecho</td><td>Política que pasa de versión 1 a 2. María no entra a /admin</td></tr>
+          <tr><td>OCR de INE y puertos de identidad</td><td>Hecho el puerto local</td><td>Tesseract corrió. RENAPO sin URL no aprueba en falso</td></tr>
+          <tr><td>Cadena de auditoría</td><td>Hecho</td><td>Alterar un evento rompe la cadena en el número exacto</td></tr>
+          <tr><td>Seis fallos de una revisión de código</td><td>Hecho</td><td>Commit 89bb020</td></tr>
+          <tr><td>CI</td><td>Hecho en lo básico</td><td>Tipos, pruebas, build, deriva de esquema, búsqueda de secretos</td></tr>
+          <tr><td>P1 sprint 1 — freeze con verificación de hash + tenant guard + consentimiento LFPDPPP</td><td>Hecho</td><td>Commits 5659271, f4d9191 (segundo write → 409, cross-tenant → 404)</td></tr>
+          <tr><td>P1 sprint 2 — método ACCEPT en el portal externo</td><td>Hecho</td><td>Commits 9edeb86, 0567a5a</td></tr>
+          <tr><td>P1 sprint 3 — passkeys en la ceremonia (WebAuthn)</td><td>Hecho</td><td>Commit c229038: challenge atado al hash congelado, contador anti-replay, gate <code>requirePasskey</code></td></tr>
+          <tr><td>P1 sprint 4 — política kycPolicy (none/once/every_sign)</td><td>Hecho</td><td>Commit 5154f11: reutiliza el alta HABILITADO de RH como puerto de identidad, no un vendor nuevo</td></tr>
+          <tr><td>P1 sprint 5 — EnvelopeTemplate + events.jsonl/pack.sha256</td><td>Hecho</td><td>Commit b23834d</td></tr>
+          <tr><td>P1 sprint 6 — rate limit propio del portal externo + P2-KMS.md</td><td>Hecho</td><td>Commit 27719e1 — DoD P1 completo: 11/11</td></tr>
+        </tbody>
+      </table>
+      <p>El plan escrito en <code>PLAN-FASE-A-B.md</code> se quedó atrás: muchas casillas siguen vacías aunque el código y el handoff las marcaron hechas. Para saber el estado, manda el código y el handoff, no esa lista vieja.</p>
+    </section>
+
+    <section>
+      <h2>Lo que se integró desde el informe anterior</h2>
+      <p>Esto vivía en el árbol de trabajo sin commit el 22 de septiembre. Ya está en <code>develop</code>, verificado con <code>tsc --noEmit</code> y la suite de tests (backend 101/101, frontend 29/29) antes de cada commit.</p>
+      <ul class="clean">
+        <li>Consentimiento expreso antes de guardar INE o biometría: columnas, pantalla y migración <code>20260922010000</code> (commit <code>5659271</code>).</li>
+        <li>Candado GOVERNANCE de 30 días en el bucket, con versionado (commit <code>5659271</code>).</li>
+        <li>El proceso se niega a arrancar si la llave maestra, el secreto del worker o la frase de la CA siguen en el ejemplo (commit <code>5659271</code>).</li>
+        <li>Scripts <code>audit:env</code> y <code>backup:local</code> (commit <code>5659271</code>).</li>
+        <li>Además, ya no sueltos: freeze con verificación de hash (<code>f4d9191</code>), método ACCEPT (<code>9edeb86</code>, <code>0567a5a</code>), passkeys en la ceremonia (<code>c229038</code>).</li>
+      </ul>
+      <p>Lo que sigue sin commit es solo documentación (esta carpeta y <code>MasterPlan/</code>), no código de producto.</p>
+    </section>
+
+    <section>
+      <h2>Mapa por marcos</h2>
+      <p>Cada fila es trabajo que falta. Lo que ya está no se repite aquí.</p>
+      <h3>Seguridad y custodia</h3>
+      <ol class="tasks">
+        <li>Conectar <code>Pkcs11KeyCustodian</code> al HSM. Hoy lanza servicio no disponible. Hace falta módulo, slot y PIN, y una librería PKCS#11 de verdad.</li>
+        <li>Dejar de firmar con la CA interna en cualquier entorno que no sea el taller.</li>
+        <li>Reemitir certificados el día que se rote la frase. Documentar quién guarda la frase nueva.</li>
+        <li>Añadir OCSP o CRL y, para Acrobat, el material de largo plazo dentro del PDF.</li>
+        <li>Decidir el prestador que emitirá la constancia NOM-151 y guardar esa constancia junto al token RFC 3161. No llamar constancia al token actual.</li>
+        <li>Encender <code>STEP_UP_ENFORCE</code> en el entorno que vaya a usarse, y comprobar que el realm manda <code>auth_time</code>.</li>
+        <li>Sacar a Keycloak de <code>start-dev</code> antes de cualquier exposición.</li>
+        <li><s>Poner límite por enlace en el portal externo, no solo el límite global de 120 por minuto.</s> Hecho (commit <code>27719e1</code>): 20/min propio en <code>/public/links/*</code>.</li>
+        <li>Rotación del secreto de webhook, con dos secretos válidos durante el cambio.</li>
+        <li>Sustituir la imagen de MinIO de octubre de 2025. Mientras tanto, no tratar ese pin como si recibiera parches.</li>
+      </ol>
+      <h3>Identidad de la persona</h3>
+      <ol class="tasks">
+        <li>Cargar los pesos de face-api o declarar, en la pantalla, que la prueba de vida es manual.</li>
+        <li>Conectar <code>RENAPO_URL</code> o dejar el alta siempre en revisión humana, sin una opción que parezca consulta oficial.</li>
+        <li>Conectar el motor biométrico remoto solo cuando exista contrato y URL. Sin URL, el código ya no llama a nadie: hay que conservar esa conducta.</li>
+      </ol>
+      <h3>Operación</h3>
+      <ol class="tasks">
+        <li>Paginación por cursor en bandeja, tareas, altas, webhooks y correo. Hoy hay un techo y el resto no se ve.</li>
+        <li>Candado para que dos procesos no tomen el mismo correo o el mismo webhook.</li>
+        <li>Correr la prueba de navegador dentro del CI. Hoy existe Playwright en el portal y no forma parte del workflow de integración.</li>
+        <li>Lista de materiales y revisión de dependencias, además de la búsqueda de secretos que ya corre.</li>
+        <li>Copia de la base con punto de recuperación. El script local de respaldo es un inicio, no un procedimiento de operación.</li>
+        <li>Tablero que use las trazas. El colector está en un perfil apagado.</li>
+        <li>Revisar en Adobe, a mano, un PDF firmado por la CA actual y dejar constancia del resultado. El archivo <code>README-interop-adobe.md</code> dice que esa pasada sigue pendiente.</li>
+      </ol>
+      <h3>Producto que el usuario ve</h3>
+      <ol class="tasks">
+        <li>El README de la raíz todavía dice que la sesión es local y que no hay login OIDC. El código ya lo tiene. Hay que alinear el texto con el portal, para que quien llegue nuevo no siga una instrucción vieja.</li>
+        <li>Ceremonia, bandeja y alta ya existen. Falta recorrerlas como haría RH, un firmante externo y un auditor, y anotar lo que la pantalla no explica.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Mapa por fases</h2>
+      <p>El orden importa. No tiene sentido un dominio bonito encima de una llave de ejemplo, ni un segundo cliente encima de una sola llave maestra.</p>
+      <h3>Fase 1 · Cerrar el taller</h3>
+      <p>Objetivo: que lo que está en la carpeta y lo que está en develop sean la misma cosa, y que una persona nueva lo levante sin el README viejo.</p>
+      <ol class="tasks">
+        <li><s>Revisar, probar e integrar el consentimiento biométrico, el candado del bucket, el guarda de secretos y el respaldo local.</s> Hecho (commit <code>5659271</code>).</li>
+        <li>Corregir el README de arranque para que diga OIDC, no sesión fija.</li>
+        <li>Dejar escrito el resultado de la prueba en Adobe.</li>
+        <li>Añadir la prueba de navegador al CI, aunque sea el camino dorado que ya existe en <code>golden-path.spec.ts</code>.</li>
+      </ol>
+      <h3>Fase 2 · Datos que no se mezclan</h3>
+      <p>Objetivo: que un olvido de una consulta no muestre el expediente de otro, y que la lista larga no se corte en silencio.</p>
+      <ol class="tasks">
+        <li>Política de fila en PostgreSQL para caso, documento, solicitud, manifiesto y alta, usando el tenant de la sesión.</li>
+        <li>Columna de tenant, o una vista que la obligue, en comentario, notificación, enlace, bandeja de correo y definición de proceso.</li>
+        <li>Cursor en las listas. El semáforo de <code>/admin/slo</code> no puede leer solo las primeras 500 filas y llamar a eso el mes.</li>
+        <li>Cadena de auditoría verificable por tenant, sin recorrer la de los demás.</li>
+      </ol>
+      <h3>Fase 3 · Conexiones de confianza</h3>
+      <p>Objetivo: que la firma y la identidad salgan de servicios que SeguriData reconozca, no de sustitutos del taller.</p>
+      <ol class="tasks">
+        <li>HSM por el puerto que ya existe. Hasta entonces, el custodio de software se queda solo en desarrollo.</li>
+        <li>TSA cuya raíz el verificador pueda marcar como confiable, o seguir diciendo <code>trustedChain: false</code> sin vergüenza y sin venderlo como constancia.</li>
+        <li>Constancia NOM-151 del prestador elegido, con la vigencia de al menos diez años que la norma marca.</li>
+        <li>RENAPO o revisión humana explícita. Una de las dos, no una pantalla ambigua.</li>
+        <li>Motor biométrico contratado, o el alta se queda en mesa de RH.</li>
+        <li>Correo con SPF, DKIM y DMARC. La nota ya está en <code>backend/infra/README-correo.md</code>. Mailpit no sale del taller.</li>
+      </ol>
+      <h3>Fase 4 · Estructura para más de un cliente</h3>
+      <p>Objetivo: que el segundo tenant no comparta la llave ni el dominio del primero. El informe 06 describe el hueco. Aquí está el orden.</p>
+      <ol class="tasks">
+        <li>Llave de sobre por tenant. La maestra envuelve llaves, no todos los PDF con la misma.</li>
+        <li>Prefijo o bucket por tenant, con su propio candado. Si el candado tiene que ser de los que no se levantan, elegirlo al crear el bucket.</li>
+        <li>Keycloak en modo producción. Redirect y origen por el dominio de cada cliente, o un solo dominio con el tenant dentro del token, decidido y escrito.</li>
+        <li>Semáforo, correo y webhooks medidos por tenant.</li>
+        <li>Recién entonces, hablar de plan, tope de uso y factura. Hoy no hay volumen contra el cual cobrar.</li>
+      </ol>
+      <h3>Fase 5 · Planta</h3>
+      <p>Objetivo: más de una copia del BFF, sin sorpresas.</p>
+      <ol class="tasks">
+        <li>El adaptador de Redis para Socket.IO ya está. Falta el despliegue que lo use: dos BFF, un proxy, una prueba de presencia.</li>
+        <li>Candado de los despachadores, de la fase de operación, antes de encender la segunda copia. Si no, el correo se duplica.</li>
+        <li>Manifiesto de producción: qué secreto vive dónde, quién lo rota, cómo se restaura la base.</li>
+        <li>Decisión de objetos tomada en la fase 3, no el pin de octubre de 2025.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Cómo saber que una fase terminó</h2>
+      <table>
+        <thead><tr><th>Fase</th><th>Se terminó cuando</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>El árbol local está integrado, el README no miente, Adobe tiene una nota, y el CI abre el navegador una vez</td></tr>
+          <tr><td>2</td><td>Una consulta sin filtro de tenant falla en la base, y una lista de más de un corte se recorre completa</td></tr>
+          <tr><td>3</td><td>Un PDF de prueba se firma con el HSM, el verificador dice si confía en la raíz, y la constancia es de un prestador, no solo un token</td></tr>
+          <tr><td>4</td><td>Dos tenants de prueba no abren el PDF del otro ni con la llave maestra del operador</td></tr>
+          <tr><td>5</td><td>Dos BFF detrás de un proxy completan una ceremonia, y el correo sale una sola vez</td></tr>
+        </tbody>
+      </table>
+      <p>Ninguna de esas cinco frases es verdad hoy. La primera está cerca, porque el código del taller ya recorre la ceremonia. Las otras cuatro son el trabajo que sigue.</p>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Estado leído el 26 de septiembre de 2026 sobre <code>develop</code> en <code>27719e1</code>. El handoff de fase A y B describe las pruebas de punta a punta de cada commit anterior; <code>MasterPlan/PROGRESO.md</code> documenta sprint por sprint el cierre completo del DoD P1 (11/11) y lo que queda explícitamente fuera de alcance (vendor IdV real, HSM/KMS, NOM-151, UI de plantillas, RLS). El plan de casillas de la raíz (<code>PLAN-FASE-A-B.md</code>) sigue sin usarse como lista vigente.</p>
+  </footer>
+</body>
+</html>

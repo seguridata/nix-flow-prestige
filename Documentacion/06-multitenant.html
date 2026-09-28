@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>06 · Multi-tenant — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html">01</a>
+      <a href="02-arquitectura.html">02</a>
+      <a href="03-stack.html">03</a>
+      <a href="04-seguridad.html">04</a>
+      <a href="05-procesos.html">05</a>
+      <a href="06-multitenant.html" aria-current="page">06</a>
+      <a href="07-estado-y-ruta.html">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 06 · Multi-tenant</p>
+      <h1>Un edificio, varios pisos, una sola cerradura maestra.</h1>
+      <hr class="rule">
+      <p class="lede">Prestige ya sabe qué es un tenant y ya esconde el expediente de uno cuando lo mira otro. Todavía no es una plataforma en la que cada cliente traiga su dominio, su llave y su base.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>Madurez</span>
+      <strong>Aislamiento de aplicación, un solo operador.</strong>
+      <span>El tenant de referencia es seguridata.</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>Qué significa aquí un tenant</h2>
+      <p>Un tenant es una fila: identificador, slug, nombre y si está activo. La siembra usa el slug <code>seguridata</code>. Keycloak sigue siendo quien dice quién es la persona. La tabla de Prestige dice a qué organización pertenece y qué política tiene esa organización.</p>
+      <p>La membresía une persona y tenant, con roles, correo y un interruptor de activo. La política es un JSON versionado. La de firma vive bajo la llave <code>signature.policy</code>: métodos permitidos, plazo, orden, si exige sello y si exige consentimiento. El catálogo guarda tipos de documento, motivos de rechazo y áreas, por tenant.</p>
+      <p>Eso es el control plane. Las rutas viven en <code>/admin</code> y piden rol admin. Desde el commit <code>89bb020</code>, un admin que no sea del tenant operador solo administra el suyo. <code>seguridata</code> es el operador: puede ver y tocar a los demás.</p>
+    </section>
+
+    <section>
+      <h2>Cómo se aísla hoy</h2>
+      <p>El token trae el tenant. Las lecturas de caso, documento, solicitud, tareas y bandeja filtran por ese valor. Crear algo comprueba que el recurso padre sea del mismo tenant. Si alguien mueve un expediente a otro tenant, desaparece de las listas de quien no corresponde: el handoff del commit <code>4456c71</code> lo probó de punta a punta y obtuvo 404.</p>
+      <p>Eso es aislamiento en la aplicación. La base no impide, por sí misma, que una consulta nueva se olvide el filtro. No hay políticas de fila en PostgreSQL. No hay una base por cliente. No hay un esquema por cliente. Hay una base <code>prestige</code> y una columna.</p>
+      <div class="meter"><b>Lecturas del caso ancla</b><div class="bar"><i class="accent" style="width:80%"></i></div><span>alto</span></div>
+      <div class="meter"><b>Control plane y política</b><div class="bar"><i class="accent" style="width:70%"></i></div><span>alto</span></div>
+      <div class="meter"><b>Modelos sin columna tenant</b><div class="bar"><i style="width:35%"></i></div><span>bajo</span></div>
+      <div class="meter"><b>Llave y bucket por cliente</b><div class="bar"><i style="width:8%"></i></div><span>no</span></div>
+      <div class="meter"><b>Dominio y realm propios</b><div class="bar"><i style="width:5%"></i></div><span>no</span></div>
+      <p>Las barras no son una métrica de industria. Son una lectura de este repositorio: qué parte del aislamiento ya tiene prueba en el código y qué parte ni siquiera tiene columna.</p>
+    </section>
+
+    <section>
+      <h2>Qué viaja con tenant y qué no</h2>
+      <table>
+        <thead><tr><th>Lleva tenant</th><th>No lleva tenant propio</th><th>Cómo se alcanza lo segundo</th></tr></thead>
+        <tbody>
+          <tr><td>Case, Document, SignatureRequest, EvidenceManifest</td><td>Signer, HumanTask, SignatureField</td><td>Por la solicitud o el documento, que sí lo tienen</td></tr>
+          <tr><td>WebhookSubscription, OnboardingCase</td><td>OneTimeLink, NotificationOutbox</td><td>Por el firmante o la solicitud. Un listado global de la bandeja no está partido</td></tr>
+          <tr><td>TenantMembership, Policy, CatalogEntry</td><td>ProcessDefinition, ProcessAuditEvent, OutOfOffice</td><td>Son de plataforma. La cadena de auditoría es una sola cabeza para todos</td></tr>
+          <tr><td>El claim del token</td><td>UserNotification, DocumentComment</td><td>Por usuario o por documento. El documento tiene tenant; el comentario, no</td></tr>
+        </tbody>
+      </table>
+      <p>Alcanzar el tenant dando un rodeo funciona mientras cada consulta haga el rodeo. El día que un reporte liste comentarios o notificaciones sin pasar por el documento, mezcla organizaciones. Esa es la deuda concreta, no una preferencia de estilo.</p>
+    </section>
+
+    <section>
+      <h2>La visión operativa, y el punto en el que está</h2>
+      <p>La visión que el código deja preparada es esta: varias organizaciones en el mismo Prestige, cada una con su política de firma, su directorio y sus catálogos, operadas por SeguriData, que es el tenant <code>seguridata</code>. La persona entra por el mismo realm. El portal es uno. El bucket es uno. La llave maestra es una.</p>
+      <p>Eso alcanza para un piloto con pocos clientes que acepten compartir infraestructura y confiar en el filtro de la aplicación. No alcanza para un cliente que exija que su PDF sea indescifrable para el operador, ni para uno que quiera su propio dominio de entrada, ni para uno que pida llevarse solo su cadena de auditoría.</p>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Ya puede</h3>
+          <ul class="clean">
+            <li>Crear otro tenant y sus miembros.</li>
+            <li>Versionar su política de firma.</li>
+            <li>Esconderle el expediente de otro.</li>
+            <li>Suscribir webhooks por tenant.</li>
+            <li>Medir un semáforo de salud del caso ancla en <code>/admin/slo</code>.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Todavía no puede</h3>
+          <ul class="clean">
+            <li>Dar un realm o un cliente OIDC por organización.</li>
+            <li>Cifrar con una llave que el operador no tenga.</li>
+            <li>Poner un bucket o un candado por cliente.</li>
+            <li>Servir <code>cliente.ejemplo</code> como entrada.</li>
+            <li>Facturar, limitar un plan o cortar por consumo.</li>
+            <li>Verificar la auditoría sin ver la cadena de los demás.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Capacidad contra capacidad</h2>
+      <table>
+        <thead><tr><th>Capacidad</th><th>Hoy</th><th>Cuando el producto opere para varios clientes</th></tr></thead>
+        <tbody>
+          <tr><td>Directorio</td><td>Tabla de membresías, además de Keycloak</td><td>La misma tabla, alimentada desde el alta, no solo a mano</td></tr>
+          <tr><td>Política</td><td>Una política de firma versionada</td><td>La misma, más límites de plazo, métodos y retención que el cliente no pueda bajarse solo</td></tr>
+          <tr><td>Firma</td><td>CA interna compartida</td><td>Custodio por tenant, idealmente en HSM, con perfil de certificado propio</td></tr>
+          <tr><td>Archivo</td><td>Un bucket, un sobre con la misma llave maestra</td><td>Prefijo o bucket por tenant y llave de sobre distinta</td></tr>
+          <tr><td>Identidad de entrada</td><td>Un realm, un cliente, localhost</td><td>Emisor de producción y redirect por dominio</td></tr>
+          <tr><td>Operación</td><td>Un cockpit y un semáforo globales</td><td>El mismo semáforo, cortado por tenant, sin mezclar la cola de correo</td></tr>
+        </tbody>
+      </table>
+      <p class="note">Madurez, dicha sin número mágico: el modelo de datos del tenant está. El hábito de filtrar el caso ancla está, y hay una prueba de que mover el expediente lo oculta. La frontera física —llave, bucket, realm, dominio— no está. Llamarlo multi-tenant de producción sería adelantar el informe 07.</p>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Modelos en <code>schema.prisma</code>: Tenant, TenantMembership, Policy, CatalogEntry. Filtro de lecturas: commit <code>4456c71</code>. Operador: <code>assertOwnTenant</code> en <code>control-plane.service.ts</code>.</p>
+  </footer>
+</body>
+</html>

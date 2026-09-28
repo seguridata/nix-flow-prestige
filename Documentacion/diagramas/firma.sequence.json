@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Prestige — acto de firma digital",
+    "quality_profile": "showcase",
+    "viewBox": [1000, 520],
+    "column_fit": "spread",
+    "views": [
+      { "id": "identidad", "label": "Identidad", "focus": ["portal", "bff"], "note": "El portal ya trae sesión. El BFF exige el rol y el tenant del token." },
+      { "id": "cripto", "label": "Criptografía", "focus": ["bff", "custodio", "minio"], "note": "La llave sale del custodio solo para firmar. El PDF firmado regresa cifrado." },
+      { "id": "cierre", "label": "Cierre durable", "focus": ["bff", "temporal", "evidencia"], "note": "La señal no sella sola. Temporal pide el sello cuando el quorum está completo." }
+    ]
+  },
+  "participants": [
+    { "id": "portal", "type": "frontend", "label": "Portal", "sublabel": ":3001" },
+    { "id": "bff", "type": "backend", "label": "BFF", "sublabel": ":3000" },
+    { "id": "custodio", "type": "security", "label": "Custodio", "sublabel": "PKCS#12" },
+    { "id": "minio", "type": "cloud", "label": "MinIO", "sublabel": "prestige-docs" },
+    { "id": "temporal", "type": "messagebus", "label": "Temporal", "sublabel": "cola prestige" },
+    { "id": "evidencia", "type": "database", "label": "Expediente", "sublabel": "Postgres" }
+  ],
+  "messages": [
+    { "id": "sign", "from": "portal", "to": "bff", "y": 160, "label": "POST /actions/sign", "variant": "emphasis" },
+    { "id": "material", "from": "bff", "to": "custodio", "y": 188, "label": "pide material", "variant": "security" },
+    { "id": "p12", "from": "custodio", "to": "bff", "y": 216, "label": "PKCS#12 + cert", "variant": "return" },
+    { "id": "put", "from": "bff", "to": "minio", "y": 244, "label": "PUT PDF firmado", "variant": "emphasis" },
+    { "id": "ack", "from": "minio", "to": "bff", "y": 272, "label": "objeto cifrado", "variant": "return" },
+    { "id": "signal", "from": "bff", "to": "temporal", "y": 300, "label": "signCompleted", "variant": "emphasis" },
+    { "id": "seal", "from": "temporal", "to": "bff", "y": 328, "label": "sealEvidence", "variant": "dashed" },
+    { "id": "manifest", "from": "bff", "to": "evidencia", "y": 356, "label": "manifiesto Ed25519", "variant": "emphasis" },
+    { "id": "ok", "from": "evidencia", "to": "bff", "y": 384, "label": "COMPLETADA", "variant": "return" },
+    { "id": "acuse", "from": "bff", "to": "portal", "y": 412, "label": "acuse", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "portal", "from": 154, "to": 420, "type": "frontend" },
+    { "participant": "bff", "from": 160, "to": 416, "type": "backend" },
+    { "participant": "custodio", "from": 182, "to": 224, "type": "security" },
+    { "participant": "minio", "from": 238, "to": 280, "type": "cloud" },
+    { "participant": "temporal", "from": 294, "to": 336, "type": "messagebus" },
+    { "participant": "evidencia", "from": 350, "to": 392, "type": "database" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Orden del acto", "items": ["La llave no sale del BFF", "Sin quorum no hay manifiesto"] }
+  ]
+}

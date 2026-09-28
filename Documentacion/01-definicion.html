@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>01 · Definición — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html" aria-current="page">01</a>
+      <a href="02-arquitectura.html">02</a>
+      <a href="03-stack.html">03</a>
+      <a href="04-seguridad.html">04</a>
+      <a href="05-procesos.html">05</a>
+      <a href="06-multitenant.html">06</a>
+      <a href="07-estado-y-ruta.html">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 01 · Definición · 22 de septiembre de 2026</p>
+      <h1>Un expediente que se puede volver a abrir.</h1>
+      <hr class="rule">
+      <p class="lede">Prestige es la plataforma de SeguriData para pedir una firma, recogerla en orden o en paralelo, y dejar un paquete que otra persona puede verificar sin tener que creerle al sistema que lo guardó.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>En una frase</span>
+      <strong>Caso, documento, turno, firma, prueba.</strong>
+      <span>Rama develop · 86b5561</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>El problema</h2>
+      <p>Una empresa manda un contrato. Alguien tiene que firmarlo primero y alguien después, o los dos a la vez. El plazo se acaba. Una persona está fuera. El archivo no puede vivir como una foto dentro de la base de datos. Cuando el asunto termina, hace falta poder demostrar tres cosas distintas: que el archivo es el mismo, que esas personas lo firmaron, y que eso ya existía en una fecha.</p>
+      <p>Esas tres pruebas no son la misma herramienta. El hash dice si el archivo cambió. La firma del PDF dice quién lo suscribió. El sello de tiempo dice cuándo. Prestige las junta en un expediente y, al final, deja un verificador que corre sin el servidor.</p>
+      <p class="note">Metáfora útil para quien no vive en el código: el portal es el mostrador, Temporal es el expediente que no se pierde si se va la luz, MinIO es la caja fuerte del PDF y PostgreSQL es el libro donde se anota qué pasó, no el documento mismo.</p>
+    </section>
+
+    <section>
+      <h2>Objetivo</h2>
+      <p>Operar el caso ancla de este repositorio: un contrato de dos partes, firmado en secuencia o en paralelo, con expediente criptográfico al cerrar. El workflow que lo sostiene se llama <code>contratoDosPartes</code> y escucha la cola <code>prestige</code>.</p>
+      <h3>Objetivos que ya tienen código</h3>
+      <ul class="clean">
+        <li>Identificar a quien entra con Keycloak, realm <code>prestige</code>, flujo Authorization Code y PKCE.</li>
+        <li>Guardar el PDF, la INE y la selfie cifrados. La base solo conserva la clave del objeto, el hash y el sobre de cifrado.</li>
+        <li>Firmar de tres maneras: digital, autógrafa y biométrica, bajo una política del tenant.</li>
+        <li>Avisar, escalar y delegar cuando el plazo corre.</li>
+        <li>Dejar un manifiesto firmado y un ZIP que se puede revisar offline.</li>
+      </ul>
+      <h3>Objetivos que el código deja abiertos a propósito</h3>
+      <ul class="clean">
+        <li>Custodiar la llave en el HSM de SeguriData. Hoy <code>Pkcs11KeyCustodian</code> responde que el HSM no está conectado.</li>
+        <li>Emitir una constancia NOM-151 de un prestador de certificación. Hay sello RFC 3161; no hay esa constancia.</li>
+        <li>Consultar RENAPO y un motor biométrico de producción. Sin URL, la revisión queda en manos de RH.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Justificación</h2>
+      <p>El acto de firmar y la prueba de que se firmó tienen que sobrevivir al programa que los hizo. Por eso el verificador vive en <code>verifier/verify.mjs</code> y no pide la base ni el BFF. Por eso el manifiesto lleva firma Ed25519 sobre un JSON canónico. Por eso cada evento de auditoría apunta al hash del anterior.</p>
+      <p>El marco que este diseño toma en serio, sin afirmar que ya lo cumple, es el mexicano de mensajes de datos y firma:</p>
+      <table>
+        <thead><tr><th>Referencia</th><th>Qué pide, en corto</th><th>Qué hace Prestige hoy</th></tr></thead>
+        <tbody>
+          <tr><td>Código de Comercio, conservación del mensaje de datos</td><td>Que la información se mantenga íntegra y se pueda consultar después.</td><td>Hash SHA-256 del PDF, objeto cifrado, manifiesto. La consulta posterior existe dentro del sistema y en el ZIP.</td></tr>
+          <tr><td>NOM-151-SCFI-2016, DOF 30 de marzo de 2017</td><td>Constancia de un prestador de servicios de certificación. La solicitud de constancia sigue RFC 3161. Vigencia de al menos diez años.</td><td>Pide un token RFC 3161 a <code>TSA_URL</code>. No emite constancia de un PSC acreditado. <code>trustedChain</code> queda en falso: no se finge una raíz que no está empaquetada.</td></tr>
+          <tr><td>Datos biométricos</td><td>La biometría es un dato sensible. Hace falta una base de licitud antes de tomarla.</td><td>En el árbol local, todavía sin commit, el alta guarda aceptación expresa, versión del texto, hash, IP y actor. En <code>develop</code> publicado ese bloque aún no está.</td></tr>
+        </tbody>
+      </table>
+      <p>Fuente de la norma: Diario Oficial de la Federación, NOM-151-SCFI-2016, y la ficha vigente de la Secretaría de Economía. Consultado el 22 de septiembre de 2026.</p>
+    </section>
+
+    <section>
+      <h2>Volumen real</h2>
+      <p>El repositorio no declara un volumen comercial. No hay una meta de firmas por día, ni un contrato de capacidad, ni una prueba de carga. El único escenario poblado es la semilla de demostración: un tenant, tres personas, un caso con tres PDF, una solicitud secuencial en curso, una paralela cerrada y un alta en revisión.</p>
+      <p>Lo que sí está escrito, y por tanto es el volumen con el que el programa acepta trabajar hoy, son estos topes:</p>
+      <table>
+        <thead><tr><th>Tope</th><th>Valor en código</th><th>Dónde</th></tr></thead>
+        <tbody>
+          <tr><td>Cuerpo JSON</td><td>2 MB</td><td><code>BODY_LIMIT</code> en <code>main.ts</code></td></tr>
+          <tr><td>PDF</td><td>25 MB</td><td><code>documents.controller.ts</code></td></tr>
+          <tr><td>INE o selfie</td><td>8 MB por imagen</td><td><code>onboarding.controller.ts</code></td></tr>
+          <tr><td>Peticiones</td><td>120 por minuto, por defecto</td><td><code>THROTTLE_LIMIT</code> en <code>app.module.ts</code></td></tr>
+          <tr><td>Plazo de firma</td><td>72 horas si la solicitud no dice otra cosa</td><td>política por defecto</td></tr>
+          <tr><td>Enlace de un solo uso</td><td>72 horas</td><td><code>ONE_TIME_LINK_TTL_HOURS</code></td></tr>
+          <tr><td>Sesión del portal</td><td>8 horas en Redis</td><td><code>frontend/web/libs/session-store.ts</code></td></tr>
+          <tr><td>Listas</td><td>cortes fijos de 50, 80, 200 o 500 filas</td><td>no hay paginación por cursor</td></tr>
+          <tr><td>Correo y webhooks</td><td>25 y 20 entregas por pasada</td><td>despachadores cada 15 s y 10 s</td></tr>
+          <tr><td>Retención del objeto</td><td>30 días en modo GOVERNANCE</td><td>solo en el compose local sin commit</td></tr>
+        </tbody>
+      </table>
+      <p class="note">Leer estos topes como la capacidad de un taller, no de una planta. El taller firma un contrato de dos partes y lo prueba de punta a punta. No hay evidencia en el código de que aguante la operación simultánea de muchos clientes. Eso es una fase posterior, descrita en el informe 07, no un hecho presente.</p>
+    </section>
+
+    <section>
+      <h2>Qué capacidades tiene</h2>
+      <div class="chips">
+        <span class="chip ok">Hecho en develop</span>
+        <span class="chip warn">Hecho en local, sin commit</span>
+        <span class="chip bad">Puerto vacío</span>
+      </div>
+      <table>
+        <thead><tr><th>Capacidad</th><th>Estado</th><th>Cómo se ve</th></tr></thead>
+        <tbody>
+          <tr><td>Caso, documento, solicitud, firmante</td><td>Hecho</td><td>Portal: bandeja, enviados, alta de envío, visor</td></tr>
+          <tr><td>Orden secuencial y paralelo</td><td>Hecho</td><td>Un deadline para toda la ceremonia</td></tr>
+          <tr><td>Firma digital PAdES</td><td>Hecho con CA interna</td><td>Visible en el PDF. Validable con la cadena del proyecto</td></tr>
+          <tr><td>Firma autógrafa</td><td>Hecho</td><td>Trazo incrustado en el PDF</td></tr>
+          <tr><td>Firma biométrica</td><td>Adaptador real, proveedor no</td><td>Sin URL no llama a un tercero. Un estado distinto de completed no se toma como éxito</td></tr>
+          <tr><td>Política de firma por tenant</td><td>Hecho</td><td>Se congela en la solicitud y entra al manifiesto</td></tr>
+          <tr><td>Step-up al firmar y al habilitar</td><td>Hecho, apagado por defecto</td><td><code>STEP_UP_ENFORCE</code> nace en falso</td></tr>
+          <tr><td>Recordatorio, escalamiento, fuera de oficina</td><td>Hecho</td><td>Marcas al 50, 75 y 90 por ciento del plazo</td></tr>
+          <tr><td>Correo con reintento y carta muerta</td><td>Hecho</td><td>En local lo recibe Mailpit</td></tr>
+          <tr><td>Portal del firmante externo</td><td>Hecho</td><td><code>/firmar/&lt;token&gt;</code>, sin cuenta</td></tr>
+          <tr><td>Webhooks firmados</td><td>Hecho</td><td>HMAC, CloudEvents, SDK TypeScript y Python</td></tr>
+          <tr><td>Alta con OCR de INE</td><td>Hecho</td><td>Tesseract. CURP con dígito verificador</td></tr>
+          <tr><td>RENAPO y HSM</td><td>Puerto vacío</td><td>Responden que falta el servicio</td></tr>
+          <tr><td>Cockpit</td><td>Hecho</td><td><code>/operations</code>: Postgres, MinIO, Temporal</td></tr>
+          <tr><td>Estudio BPMN y DMN</td><td>Hecho</td><td><code>/process</code>. El motor de decisión evalúa FEEL</td></tr>
+          <tr><td>Consentimiento biométrico expreso</td><td>En el árbol local</td><td>Migración <code>20260922010000</code> sin commit</td></tr>
+          <tr><td>Candado del bucket 30 días</td><td>En el árbol local</td><td>GOVERNANCE, no COMPLIANCE</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Quién lo usa</h2>
+      <p>El realm trae cinco roles de aplicación: <code>signer</code>, <code>sender</code>, <code>rh</code>, <code>auditor</code> y <code>admin</code>. No son cinco productos. Son cinco puertas sobre el mismo expediente.</p>
+      <div class="figure">
+        <svg viewBox="0 0 920 420" width="100%" role="img" aria-label="Casos de uso de Prestige">
+          <rect x="210" y="40" width="500" height="340" fill="none" stroke="#191919" stroke-width="1.5"/>
+          <text x="230" y="68" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="12">PRESTIGE</text>
+          <ellipse cx="460" cy="120" rx="110" ry="28" fill="#fff" stroke="#191919"/>
+          <text x="460" y="124" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="14">Enviar a firma</text>
+          <ellipse cx="460" cy="190" rx="110" ry="28" fill="#fff" stroke="#191919"/>
+          <text x="460" y="194" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="14">Firmar</text>
+          <ellipse cx="460" cy="260" rx="130" ry="28" fill="#fff" stroke="#191919"/>
+          <text x="460" y="264" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="14">Habilitar identidad</text>
+          <ellipse cx="460" cy="330" rx="130" ry="28" fill="#fff" stroke="#191919"/>
+          <text x="460" y="334" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="14">Verificar expediente</text>
+          <text x="70" y="124" font-family="IBM Plex Sans, sans-serif" font-size="14">Emisor</text>
+          <text x="70" y="194" font-family="IBM Plex Sans, sans-serif" font-size="14">Firmante</text>
+          <text x="48" y="264" font-family="IBM Plex Sans, sans-serif" font-size="14">RH</text>
+          <text x="48" y="334" font-family="IBM Plex Sans, sans-serif" font-size="14">Auditor</text>
+          <line x1="130" y1="118" x2="350" y2="120" stroke="#191919"/>
+          <line x1="140" y1="188" x2="350" y2="190" stroke="#191919"/>
+          <line x1="80" y1="258" x2="330" y2="260" stroke="#191919"/>
+          <line x1="110" y1="328" x2="330" y2="330" stroke="#191919"/>
+          <text x="760" y="194" font-family="IBM Plex Sans, sans-serif" font-size="14">Externo</text>
+          <line x1="570" y1="190" x2="750" y2="190" stroke="#191919"/>
+          <text x="748" y="120" font-family="IBM Plex Sans, sans-serif" font-size="14">Admin</text>
+          <line x1="570" y1="120" x2="740" y2="118" stroke="#5B6770" stroke-dasharray="4 3"/>
+        </svg>
+        <figcaption>El admin no firma por los demás. Administra tenants, políticas, catálogos y webhooks. El firmante externo entra por enlace, no por Keycloak. La línea punteada marca que el rol admin es de realm y, en código, solo el tenant operador <code>seguridata</code> administra a los demás.</figcaption>
+      </div>
+    </section>
+
+    <section>
+      <h2>La propuesta, sin adorno</h2>
+      <p>Un monolito modular en NestJS, un portal en Next.js y un motor durable en Temporal. La identidad la da Keycloak. El archivo vive en MinIO. La verdad del caso vive en PostgreSQL. La llave de producción no vive aquí: el código deja un enchufe y, mientras tanto, firma con una CA propia.</p>
+      <p>Eso es una decisión de alcance, no una carencia disfrazada. El informe de arquitectura explica cómo se conecta. El de seguridad dice qué riesgo acepta esa decisión mientras el enchufe siga vacío.</p>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Hechos tomados de <code>schema.prisma</code>, <code>signature-policy.ts</code>, <code>workflows.ts</code>, <code>key-custodian.ts</code>, <code>docker-compose.yml</code> y el commit <code>86b5561</code>. Los cambios sin commit se distinguen en la tabla.</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>02 · Arquitectura — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html">01</a>
+      <a href="02-arquitectura.html" aria-current="page">02</a>
+      <a href="03-stack.html">03</a>
+      <a href="04-seguridad.html">04</a>
+      <a href="05-procesos.html">05</a>
+      <a href="06-multitenant.html">06</a>
+      <a href="07-estado-y-ruta.html">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 02 · Arquitectura</p>
+      <h1>Un mostrador, un libro y una caja fuerte.</h1>
+      <hr class="rule">
+      <p class="lede">Prestige no está partido en una docena de servicios. El portal y el BFF corren en la máquina de quien desarrolla. Compose levanta los datos, la identidad, el motor, los objetos y el correo de prueba.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>Tipo</span>
+      <strong>Monolito modular con motor durable al lado.</strong>
+      <span>Los diagramas se abren solos. Su interfaz fija está en inglés.</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>Cómo se ve encendido</h2>
+      <p>El camino principal es corto. La persona abre el portal en el puerto 3001. El portal habla con el BFF en el 3000, y le adjunta el token por dentro, en <code>/api/bff</code>. El BFF escribe el caso en PostgreSQL y el PDF cifrado en MinIO. Temporal no guarda el PDF: guarda que la ceremonia sigue viva.</p>
+      <div class="figure">
+        <p><a href="diagramas/arquitectura.html">Abrir el diagrama de runtime</a></p>
+        <figcaption>Ocho piezas. Keycloak arriba del portal. Redis arriba del BFF. Temporal y MinIO debajo. La TSA y Mailpit salen del BFF, pero no caben en este riel sin cruzar flechas: están descritos en los informes de procesos y de stack. La sesión del portal también usa Redis; la flecha dibujada es la caché y el adaptador de Socket.IO del BFF.</figcaption>
+      </div>
+      <table>
+        <thead><tr><th>Pieza</th><th>Dónde corre hoy</th><th>Puerto</th></tr></thead>
+        <tbody>
+          <tr><td>Portal Next.js</td><td>Host</td><td>3001</td></tr>
+          <tr><td>BFF NestJS y worker Temporal</td><td>Host, el mismo <code>bun run dev</code></td><td>3000 y gRPC hacia 7233</td></tr>
+          <tr><td>PostgreSQL 16</td><td>Compose. Bases keycloak, prestige, temporal, temporal_visibility</td><td>5432</td></tr>
+          <tr><td>Keycloak 26</td><td>Compose, <code>start-dev --import-realm</code></td><td>8081</td></tr>
+          <tr><td>Temporal 1.27.2 y su UI 2.34.0</td><td>Compose</td><td>7233 y 8088</td></tr>
+          <tr><td>MinIO, imagen del 15 de octubre de 2025</td><td>Compose. Bucket <code>prestige-docs</code></td><td>9000 y 9001</td></tr>
+          <tr><td>Redis 7</td><td>Compose</td><td>6379</td></tr>
+          <tr><td>Mailpit 1.20</td><td>Compose, solo desarrollo</td><td>1025 y 8025</td></tr>
+          <tr><td>Colector OpenTelemetry</td><td>Compose, perfil <code>observability</code>, apagado si no se pide</td><td>4317 y 4318</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Tipo de arquitectura</h2>
+      <p>Es un monolito modular. Los dominios están en carpetas del BFF: casos, documentos, solicitudes, firma, evidencia, onboarding, notificaciones, webhooks, control plane, proceso. No hay un servicio de red por cada carpeta. El worker de Temporal es otro proceso, pero comparte código y se arranca junto al BFF.</p>
+      <p>Eso escala de una manera concreta y de otra que todavía no existe. Lo que sí aguanta más de una copia es el tiempo real: Socket.IO usa el adaptador de Redis, así que dos procesos del BFF pueden compartir presencia. Lo que no está hecho es un despliegue con varias instancias detrás de un balanceador, ni una base separada por cliente, ni un manifiesto de producción. El informe 07 lo deja como trabajo, no como capacidad actual.</p>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Escala de taller</h3>
+          <p>Una máquina, un Postgres, un bucket, un realm. Es el modo en que el repositorio se levanta y se prueba.</p>
+        </div>
+        <div class="panel">
+          <h3>Escala que el código anticipa</h3>
+          <p>Más copias del BFF compartiendo Redis. Temporal ya es un servicio aparte. El resto —llave por tenant, base por tenant, HSM— es un puerto, no un segundo despliegue.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>El libro de datos</h2>
+      <p>Veintiséis modelos. El corazón del caso ancla cabe en siete. El resto es aviso, política, alta e integración.</p>
+      <div class="figure">
+        <svg viewBox="0 0 960 460" width="100%" role="img" aria-label="Entidades del caso ancla">
+          <g font-family="IBM Plex Sans, sans-serif" font-size="14" fill="#191919">
+            <rect x="40" y="40" width="150" height="64" fill="#fff" stroke="#191919"/>
+            <text x="115" y="68" text-anchor="middle">Case</text>
+            <text x="115" y="88" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">tenantId</text>
+            <rect x="250" y="40" width="170" height="64" fill="#fff" stroke="#191919"/>
+            <text x="335" y="68" text-anchor="middle">Document</text>
+            <text x="335" y="88" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">objectKey + hash</text>
+            <rect x="490" y="40" width="200" height="64" fill="#fff" stroke="#191919"/>
+            <text x="590" y="68" text-anchor="middle">SignatureRequest</text>
+            <text x="590" y="88" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">política pinada</text>
+            <rect x="750" y="40" width="160" height="64" fill="#fff" stroke="#191919"/>
+            <text x="830" y="68" text-anchor="middle">Signer</text>
+            <text x="830" y="88" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">turno</text>
+            <rect x="250" y="180" width="170" height="64" fill="#fff" stroke="#191919"/>
+            <text x="335" y="208" text-anchor="middle">SignatureField</text>
+            <text x="335" y="228" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">página y %</text>
+            <rect x="490" y="180" width="200" height="64" fill="#191919"/>
+            <text x="590" y="208" text-anchor="middle" fill="#fff">EvidenceManifest</text>
+            <text x="590" y="228" text-anchor="middle" fill="#84BD00" font-family="IBM Plex Mono, monospace" font-size="11">Ed25519</text>
+            <rect x="490" y="320" width="200" height="64" fill="#fff" stroke="#191919"/>
+            <text x="590" y="348" text-anchor="middle">HumanTask</text>
+            <text x="590" y="368" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">prioridad</text>
+            <rect x="750" y="320" width="160" height="64" fill="#fff" stroke="#191919"/>
+            <text x="830" y="348" text-anchor="middle">WorkflowRun</text>
+            <text x="830" y="368" text-anchor="middle" fill="#5B6770" font-family="IBM Plex Mono, monospace" font-size="11">runId</text>
+            <path d="M190 72 H250" stroke="#191919"/>
+            <path d="M420 72 H490" stroke="#191919"/>
+            <path d="M690 72 H750" stroke="#191919"/>
+            <path d="M335 104 V180" stroke="#191919"/>
+            <path d="M590 104 V180" stroke="#191919"/>
+            <path d="M590 244 V320" stroke="#191919"/>
+            <path d="M690 352 H750" stroke="#191919"/>
+          </g>
+        </svg>
+        <figcaption>Un caso tiene documentos. Un documento tiene solicitudes y campos. Una solicitud tiene firmantes, tareas, una corrida de workflow y, al cerrar, un solo manifiesto. El verde marca la pieza que se firma y ya no se reescribe.</figcaption>
+      </div>
+      <p>Al lado de ese núcleo viven el control plane (<code>Tenant</code>, <code>TenantMembership</code>, <code>Policy</code>, <code>CatalogEntry</code>), el alta (<code>OnboardingCase</code>), la cadena de auditoría (<code>ProcessAuditEvent</code> y <code>AuditAnchor</code>), el correo (<code>NotificationOutbox</code>), los webhooks y el enlace de un solo uso. Esos últimos no llevan <code>tenantId</code> propio. El informe 06 explica por qué eso importa.</p>
+    </section>
+
+    <section>
+      <h2>La firma, llamada por llamada</h2>
+      <div class="figure">
+        <p><a href="diagramas/firma-secuencia.html">Abrir la secuencia de la firma digital</a></p>
+        <figcaption>El portal pide <code>POST /actions/sign</code>. El BFF toma el material del custodio, escribe el PDF firmado en MinIO, señala a Temporal y, cuando el quorum cierra, Temporal pide el sello del expediente. El reclamo atómico del firmante ocurre dentro del BFF antes de tocar el PDF; no es una segunda llamada y por eso no aparece como flecha.</figcaption>
+      </div>
+      <div class="figure">
+        <p><a href="diagramas/evidencia.html">Abrir el flujo del expediente</a></p>
+        <figcaption>Del PDF al objeto cifrado, de ahí a PAdES y al sello RFC 3161, y de ahí al manifiesto. El verificador offline lee el JSON canónico. El ZIP es la otra salida. La cadena de auditoría entra como eventos, no como sustituto de la firma.</figcaption>
+      </div>
+    </section>
+
+    <section>
+      <h2>Dos vidas</h2>
+      <div class="grid-2">
+        <div class="figure">
+          <p><a href="diagramas/solicitud.html">Vida de la solicitud</a></p>
+          <figcaption>Pendiente, en firma, quorum, sello, completada. Rechazo y vencimiento salen y no regresan. La espera de un proveedor biométrico no es un estado más de la solicitud: el firmante queda en proceso y el reconciliador, cada 30 segundos, lo cierra o lo devuelve.</figcaption>
+        </div>
+        <div class="figure">
+          <p><a href="diagramas/alta.html">Vida del alta</a></p>
+          <figcaption>Borrador, datos, identidad, revisión, habilitado. Negar el alta no crea firmante. La mesa de RH aparece cuando no hay motor biométrico; en el diagrama cabe como nota de la revisión, no como un sexto estado del riel.</figcaption>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Fases de construcción, vistas desde el código</h2>
+      <table>
+        <thead><tr><th>Fase</th><th>Qué quedó de pie</th><th>Qué sigue siendo un enchufe</th></tr></thead>
+        <tbody>
+          <tr><td>Identidad y superficie</td><td>OIDC, roles, cookie de sesión en Redis, canal del worker con HMAC</td><td>Step-up apagado por defecto. Keycloak en modo desarrollo</td></tr>
+          <tr><td>Firma</td><td>PAdES, autógrafa, política, sello por evento, manifiesto, verificador</td><td>HSM, OCSP, CRL, constancia NOM-151</td></tr>
+          <tr><td>Operación del caso</td><td>DMN, recordatorios, correo, webhooks, control plane, OCR</td><td>RENAPO, motor 3D, paginación, e2e de navegador dentro del CI</td></tr>
+          <tr><td>Conservación</td><td>Cifrado de aplicación AES-256-GCM</td><td>Candado de 30 días solo en el compose local. Modo GOVERNANCE, que un admin con bypass puede levantar</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Diagramas generados con Archify en perfil showcase: nueve comprobaciones y cero avisos de composición. En el navegador, el runtime, la firma, la secuencia y el expediente caben en 1440×900 sin desplazamiento. Las dos vidas —solicitud y alta— se leen bien, y en una laptop de 900 px de alto piden un poco de desplazamiento vertical; en 2048×1320 caben enteras. La interfaz del visor sigue en inglés. El contenido de los nodos está en español.</p>
+  </footer>
+</body>
+</html>

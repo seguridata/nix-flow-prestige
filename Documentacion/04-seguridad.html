@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>04 · Seguridad — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html">01</a>
+      <a href="02-arquitectura.html">02</a>
+      <a href="03-stack.html">03</a>
+      <a href="04-seguridad.html" aria-current="page">04</a>
+      <a href="05-procesos.html">05</a>
+      <a href="06-multitenant.html">06</a>
+      <a href="07-estado-y-ruta.html">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 04 · Seguridad</p>
+      <h1>Lo que ya se cerró, y lo que todavía firma en software.</h1>
+      <hr class="rule">
+      <p class="lede">Esta lectura mira el código de Prestige. No es un pentest con explotación, ni un sello de cumplimiento. Cada fila dice de dónde sale el hecho y qué pasa si se deja así.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>Corte</span>
+      <strong>develop 86b5561, más el árbol local.</strong>
+      <span>Seis hallazgos del commit 89bb020 están cerrados.</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>Cómo está armada la puerta</h2>
+      <p>Casi toda ruta exige el JWT de Keycloak. <code>@Public()</code> quedó reservado a salud, el texto de consentimiento, las capacidades de firma, el verificador público, el portal del enlace de un solo uso, y el canal interno del worker. Ese canal no usa Keycloak: usa HMAC con <code>WORKER_SHARED_SECRET</code>.</p>
+      <p>El portal no manda el access token al navegador como cookie gorda. Después del arreglo de login, la cookie solo lleva el identificador de sesión. El token vive en Redis ocho horas. Entrar tiene que ser por <code>localhost</code>, porque el redirect registrado no coincide con <code>127.0.0.1</code>.</p>
+      <p>Encima de eso hay casco HTTP (<code>helmet</code>), CORS por lista, cuerpo JSON de 2 MB, validación que rechaza campos de más, compresión, y un límite de 120 peticiones por minuto. Los errores 500 no devuelven el stack al cliente. Los secretos de ejemplo <code>REPLACE_ME</code> tiran el arranque: eso está en <code>runtime-secrets.ts</code>, archivo nuevo del árbol local, todavía sin commit.</p>
+    </section>
+
+    <section>
+      <h2>Seis hallazgos que ya no están</h2>
+      <p>El commit <code>89bb020</code> los confirmó y los corrigió. Se listan para que no se reabran, no como deuda viva.</p>
+      <table>
+        <thead><tr><th>Qué se podía hacer</th><th>Dónde</th><th>Qué quedó</th></tr></thead>
+        <tbody>
+          <tr><td>Leer el expediente de otro tenant si se conocía el id</td><td>Evidencia: dossier, por solicitud, por manifiesto</td><td>Filtran por el tenant del token</td></tr>
+          <tr><td>Rechazar una solicitud ajena y parar el caso</td><td><code>reject()</code></td><td>Exige ser firmante de esa solicitud y del tenant</td></tr>
+          <tr><td>Un admin de cualquier tenant administraba a los demás</td><td>Control plane. El rol admin es de realm</td><td><code>assertOwnTenant()</code>. Solo <code>seguridata</code> cruza tenants</td></tr>
+          <tr><td>Una biometría fallida contaba como firma</td><td><code>biometric.adapter</code></td><td>Solo <code>completed</code> es éxito</td></tr>
+          <tr><td>Un segundo intento reabría al proveedor async</td><td><code>sign()</code></td><td>El reclamo excluye al firmante que ya tiene <code>pendingRef</code></td></tr>
+          <tr><td>Un sello de tiempo se aceptaba si el hash coincidía, aunque la firma CMS fuera falsa</td><td><code>rfc3161</code> y el verificador offline</td><td>Se verifica la firma, el uso de sello de tiempo, la vigencia y los algoritmos. Sin raíz de un tercero, <code>trustedChain</code> se declara falso</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Riesgos abiertos, por criticidad</h2>
+      <h3>Crítico para salir de la máquina de desarrollo</h3>
+      <table>
+        <thead><tr><th>Hallazgo</th><th>Evidencia</th><th>Si se deja así</th></tr></thead>
+        <tbody>
+          <tr><td>La llave privada vive en un PKCS#12 de software</td><td><code>SoftwareKeyCustodian</code> es el default. <code>Pkcs11KeyCustodian.getSigningMaterial</code> lanza servicio no disponible</td><td>Quien copie el almacén y la frase firma como el titular. No es el HSM de SeguriData</td></tr>
+          <tr><td>La frase de ejemplo sigue abriendo los certificados locales</td><td><code>runtime-secrets.ts</code> acepta <code>prestige-pki-dev</code> solo si Keycloak y Postgres están en localhost y no es producción</td><td>Rotarla sin reemitir deja ilegibles los PKCS#12 de maria, carlos, roberto y el firmante externo. Copiarla fuera de esa máquina está prohibido por el propio arranque, y aun así es la frase con la que se cifraron</td></tr>
+          <tr><td>Una sola llave maestra envuelve todos los objetos</td><td><code>STORAGE_MASTER_KEY</code>, AES-256-GCM por objeto</td><td>No hay llave por tenant. Un compromiso de esa llave abre el bucket lógico de todos</td></tr>
+          <tr><td>Keycloak arranca en modo desarrollo</td><td><code>command: start-dev --import-realm</code> en el compose</td><td>El sandbox no es un emisor de producción. El README documenta credenciales de ejemplo. No deben salir de esa máquina</td></tr>
+          <tr><td>El aislamiento de tenant es una cláusula en las consultas, no una regla de la base</td><td>No hay Row Level Security. Varios modelos no tienen <code>tenantId</code></td><td>Un olvido en una consulta nueva mezcla datos. El detalle está en el informe 06</td></tr>
+        </tbody>
+      </table>
+      <h3>Alto</h3>
+      <table>
+        <thead><tr><th>Hallazgo</th><th>Evidencia</th><th>Si se deja así</th></tr></thead>
+        <tbody>
+          <tr><td>No hay OCSP ni CRL, ni sello de largo plazo dentro del PDF</td><td><code>backend/infra/README-interop-adobe.md</code> lo dice para Acrobat. El plan maestro deja la casilla abierta</td><td>Adobe puede mostrar la firma y, más tarde, no poder comprobar si el certificado seguía vigente</td></tr>
+          <tr><td>El sello RFC 3161 no es una constancia NOM-151</td><td>El token se pide a <code>TSA_URL</code>. No hay un PSC acreditado ni vigencia de diez años</td><td>La prueba técnica de tiempo existe. La constancia que la norma pide a un comerciante, no</td></tr>
+          <tr><td>La cadena del sello no se ancla a una raíz conocida</td><td><code>trustedChain: false</code> a propósito, commit 89bb020</td><td>Se sabe que el token está bien firmado por el certificado que trae dentro. No se sabe, desde el programa, si ese certificado es el que SeguriData reconoce</td></tr>
+          <tr><td>El segundo factor al firmar está apagado</td><td><code>STEP_UP_ENFORCE</code> por defecto en falso</td><td>Un token viejo, dentro de su vida, puede firmar. Con la variable en verdadero, sin <code>auth_time</code>, la firma responde 403</td></tr>
+          <tr><td>La biometría de producción no está</td><td>Sin pesos, face-api se declara no disponible. Sin <code>BIOMETRIC_PROVIDER_URL</code>, no hay motor remoto. RENAPO sin URL responde 503</td><td>La prueba de vida queda en revisión humana. Un OCR con dígito verificador no es una consulta al registro</td></tr>
+          <tr><td>El candado del bucket se puede levantar</td><td>Compose local: <code>mc retention set --default GOVERNANCE 30d</code>. No está en el commit de develop</td><td>Un administrador con bypass borra antes de los 30 días. COMPLIANCE no se usó porque no se puede subir de nivel después</td></tr>
+          <tr><td>MinIO comunitario ya no se parcha en público</td><td>Imagen fijada a RELEASE.2025-10-15. El upstream archivó el repositorio el 25 de abril de 2026</td><td>Un aviso posterior no tiene versión pública a la cual subir dentro de esa línea. Es riesgo de suministro, no un CVE que este informe haya reproducido</td></tr>
+          <tr><td>El portal externo solo tiene el límite global</td><td>El handoff lo deja pendiente: no hay candado por token</td><td>El throttler de 120 por minuto es de toda la API. No distingue a quien prueba enlaces</td></tr>
+        </tbody>
+      </table>
+      <h3>Medio</h3>
+      <table>
+        <thead><tr><th>Hallazgo</th><th>Evidencia</th><th>Si se deja así</th></tr></thead>
+        <tbody>
+          <tr><td>Las listas se cortan, no se paginan</td><td><code>take</code> de 50, 80, 200 o 500 según el módulo</td><td>Pasado el corte, el resto no se ve. No es una fuga; es una ceguera operativa</td></tr>
+          <tr><td>Dos procesos pueden despachar el mismo correo o webhook</td><td>Deuda anotada al cerrar M13 y M14. El dedupe existe, el candado entre procesos no</td><td>Un segundo BFF puede duplicar un intento. La idempotencia del webhook frena la entrega repetida al mismo evento, no la carrera de quien la toma</td></tr>
+          <tr><td>El secreto del webhook no tiene rotación en código</td><td>Se guarda en <code>WebhookSubscription.secret</code></td><td>Cambiarlo es un update manual. No hay versión de secreto ni periodo de gracia</td></tr>
+          <tr><td>La cadena de auditoría es una sola para todos los tenants</td><td><code>AuditAnchor</code> es un registro único</td><td>Un tenant no puede verificar solo lo suyo sin recorrer la cadena global</td></tr>
+          <tr><td>Mailpit acepta cualquier autenticación</td><td><code>MP_SMTP_AUTH_ACCEPT_ANY</code> y <code>ALLOW_INSECURE</code></td><td>Correcto en la laptop. Grave si ese compose se publica</td></tr>
+          <tr><td>El CI prueba tipo, test, build, deriva de Prisma y secretos</td><td>Workflow de GitHub en los commits <code>b77ae3e</code> y siguientes</td><td>No sustituye una prueba de navegador ni un análisis de dependencias con lista de materiales. Esas dos siguen fuera</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Qué sí resiste una revisión honesta</h2>
+      <ul class="clean">
+        <li>El PDF, la INE y la selfie no están en la base. Están cifrados por objeto.</li>
+        <li>El enlace de un solo uso guarda el hash del token, no el token. Se consume una vez. Dura 72 horas.</li>
+        <li>El consentimiento de firma toma IP y agente de la conexión, no del cuerpo que manda el cliente.</li>
+        <li>El correo escapa el nombre del archivo. Un nombre con HTML no se vuelve un enlace falso.</li>
+        <li>El worker ya no entra por un encabezado que nadie verificaba.</li>
+        <li>Alterar un evento de auditoría rompe la verificación en el <code>seq</code> exacto. Eso se probó de punta a punta según el handoff del commit <code>0c2e933</code>.</li>
+        <li>El verificador offline repite la comprobación del sello. No confía en un booleano que haya escrito el BFF.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Lo que este informe no hizo</h2>
+      <p>No se lanzó un escáner contra un Prestige encendido en esta sesión, ni se intentó romper el login, ni se reprodujo un aviso de MinIO. Donde el texto dice que un commit lo verificó, la fuente es el mensaje de ese commit y el código que dejó. Donde dice que MinIO está archivado, la fuente es el repositorio público, no una prueba local de explotación.</p>
+      <p>Una auditoría de producción, el día que exista producción, tiene que añadir tres cosas que aquí no caben: prueba de la cadena en Adobe con el HSM real, dictamen del PSC que vaya a emitir la constancia, y una revisión de la imagen de objetos que sustituya a la de octubre de 2025.</p>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Commit de cierre: <code>89bb020</code>. Custodia: <code>backend/bff/src/signing/pki/software-key-custodian.ts</code>. Secretos de arranque: <code>backend/bff/src/config/runtime-secrets.ts</code>. Norma: NOM-151-SCFI-2016, DOF 30 de marzo de 2017. Archivo de MinIO: github.com/minio/minio, nota de repositorio no mantenido, abril de 2026.</p>
+  </footer>
+</body>
+</html>

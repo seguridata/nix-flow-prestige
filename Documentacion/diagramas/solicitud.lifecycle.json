@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Prestige — vida de la solicitud",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 720],
+    "views": [
+      { "id": "riel", "label": "Riel feliz", "focus": ["pendiente", "en_firma", "quorum", "sellado", "completada"], "note": "De la creación al manifiesto, sin salir del riel." },
+      { "id": "espera", "label": "En firma", "focus": ["pendiente", "en_firma", "quorum"], "note": "Mientras hay turno, un proveedor async se reconcilia sin abrir otro estado de la solicitud." },
+      { "id": "cortes", "label": "Cortes", "focus": ["quorum", "rechazada", "expirada"], "note": "Rechazo y vencimiento son salidas. No regresan a firma." }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "Solicitud" },
+    { "id": "terminal", "label": "Cortes" }
+  ],
+  "states": [
+    { "id": "pendiente", "type": "start", "label": "Pendiente", "sublabel": "recién creada", "lane": "main", "col": 0, "step": "01" },
+    { "id": "en_firma", "type": "active", "label": "En firma", "sublabel": "hay turno", "lane": "main", "col": 1, "step": "02" },
+    { "id": "quorum", "type": "decision", "label": "Quorum", "sublabel": "¿todos firmaron?", "lane": "main", "col": 2, "step": "03" },
+    { "id": "sellado", "type": "waiting", "label": "Sello", "sublabel": "sealEvidence", "lane": "main", "col": 3, "step": "04" },
+    { "id": "completada", "type": "success", "label": "Completada", "sublabel": "manifiesto", "lane": "main", "col": 4, "step": "05" },
+    { "id": "rechazada", "type": "failure", "label": "Rechazada", "sublabel": "un firmante corta", "lane": "terminal", "col": 0 },
+    { "id": "expirada", "type": "failure", "label": "Expirada", "sublabel": "venció el SLA", "lane": "terminal", "col": 1 }
+  ],
+  "transitions": [
+    { "from": "quorum", "to": "rechazada", "label": "rechazo", "variant": "security", "labelDy": 24 },
+    { "from": "sellado", "to": "expirada", "label": "vence", "variant": "security", "labelDy": 24 }
+  ],
+  "cards": []
+}

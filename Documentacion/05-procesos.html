@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>05 · Procesos — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html">01</a>
+      <a href="02-arquitectura.html">02</a>
+      <a href="03-stack.html">03</a>
+      <a href="04-seguridad.html">04</a>
+      <a href="05-procesos.html" aria-current="page">05</a>
+      <a href="06-multitenant.html">06</a>
+      <a href="07-estado-y-ruta.html">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 05 · Procesos y workflows</p>
+      <h1>Primero el caso. Después el turno. Al final la prueba.</h1>
+      <hr class="rule">
+      <p class="lede">Prestige no tiene un solo flujo. Tiene una ceremonia de firma, un alta de identidad, un ciclo de avisos y un cierre de expediente. El motor que no olvida el reloj es uno: <code>contratoDosPartes</code>.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>Reloj</span>
+      <strong>Un deadline para toda la ceremonia.</strong>
+      <span>Avisos al 50, 75 y 90 por ciento.</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>Los tipos que existen</h2>
+      <table>
+        <thead><tr><th>Tipo</th><th>Quién lo dispara</th><th>Dónde vive el tiempo</th></tr></thead>
+        <tbody>
+          <tr><td>Envío y firma</td><td>Emisor, luego cada firmante</td><td>Temporal, cola <code>prestige</code></td></tr>
+          <tr><td>Orden secuencial</td><td>La solicitud</td><td>El mismo deadline. El segundo espera al primero</td></tr>
+          <tr><td>Orden paralelo</td><td>La solicitud</td><td>El mismo deadline. Las tareas nacen juntas</td></tr>
+          <tr><td>Firma digital</td><td>Firmante con certificado del custodio</td><td>Síncrona, salvo que el adaptador devuelva pending</td></tr>
+          <tr><td>Firma autógrafa</td><td>Firmante, con el trazo</td><td>Síncrona. El trazo entra por multipart, no por base64</td></tr>
+          <tr><td>Firma biométrica</td><td>Adaptador local o remoto</td><td>Puede quedar pending y reconciliarse cada 30 s</td></tr>
+          <tr><td>Firmante externo</td><td>Enlace de un solo uso</td><td>72 horas. Sin Keycloak</td></tr>
+          <tr><td>Alta de empleado, proveedor o cliente</td><td>RH</td><td>No pasa por Temporal. Es una máquina de estados en la base</td></tr>
+          <tr><td>Decisión DMN</td><td>Quien publica un proceso</td><td>Síncrona. No es un workflow de firma</td></tr>
+          <tr><td>Aviso y escalamiento</td><td>El workflow, en las marcas del plazo</td><td>Temporal llama al BFF. El correo sale por la bandeja</td></tr>
+          <tr><td>Cierre de evidencia</td><td>Temporal, cuando todos firmaron</td><td>Activity <code>sealEvidence</code></td></tr>
+        </tbody>
+      </table>
+      <div class="figure">
+        <p><a href="diagramas/firma.html">Abrir el recorrido de envío y firma</a></p>
+        <figcaption>El emisor abre el caso, sube el PDF y crea la solicitud. El firmante consiente y firma. Temporal arranca con la solicitud y recibe la señal. El rechazo y el aviso van por el carril de excepción. El sello del expediente, en el código, lo pide Temporal; en el dibujo el cierre sale de la firma para no cruzar la flecha del rechazo. Las dos frases son ciertas: sin quorum no hay manifiesto, y quien llama a sellar es el workflow.</figcaption>
+      </div>
+    </section>
+
+    <section>
+      <h2>Qué se hace primero</h2>
+      <ol class="tasks">
+        <li>El emisor entra por OIDC. Sin token, el BFF responde 401. Sin rol de envío donde la ruta lo pide, responde 403.</li>
+        <li>Crea el caso. Estado <code>ABIERTO</code>. El tenant sale del token, no de un campo que el navegador pueda cambiar a placer en las lecturas.</li>
+        <li>Sube el PDF, hasta 25 MB. El BFF calcula el SHA-256 del claro, lo cifra con un sobre AES-256-GCM y guarda en MinIO solo el objeto. La base se queda con <code>objectKey</code>, hash y metadatos.</li>
+        <li>Si hace falta, coloca campos sobre el PDF: firma, iniciales, fecha o texto, en porcentaje de página.</li>
+        <li>Crea la solicitud. La política del tenant dice qué métodos caben, el orden por defecto y el plazo. Esa versión se pincha en la solicitud. Cambiar la política después no reescribe lo ya enviado.</li>
+        <li>Si alguien está fuera de oficina, la tarea nace a nombre del suplente y la auditoría guarda <code>onBehalfOf</code>.</li>
+        <li>Temporal siembra las tareas humanas y empieza a esperar el deadline.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Qué se hace después</h2>
+      <h3>Turno</h3>
+      <p>En secuencial, solo el firmante de en frente tiene la tarea abierta. Cuando firma, la señal <code>signCompleted</code> avanza al siguiente. En paralelo, todos pueden firmar mientras el reloj no se agote. Un rechazo manda <code>rejected</code> y la ceremonia se corta. Si el reloj llega a cero sin quorum, el workflow marca la solicitud <code>EXPIRADA</code>.</p>
+      <h3>El acto</h3>
+      <p>El firmante interno usa la ceremonia a pantalla completa, en <code>/documents/[id]/firmar</code>: revisar, consentir, elegir método, firmar, ver el acuse. El externo usa <code>/firmar/&lt;token&gt;</code>. Las dos rutas terminan en la misma firma. El enlace se consume al firmar. Volver a usarlo responde 410.</p>
+      <p>Antes de tocar el PDF, el servicio reclama el hueco: el firmante pasa a <code>EN_PROCESO</code>. Si el adaptador termina, queda <code>FIRMADO</code> y sube la versión firmada. Si el adaptador dice que el proveedor sigue pensando, el firmante vuelve a pendiente con una referencia, y cada 30 segundos el reconciliador pregunta. Solo un <code>completed</code> cierra. Un <code>failed</code> rechaza.</p>
+      <h3>Avisos</h3>
+      <p>A la mitad del plazo, a los tres cuartos y al noventa por ciento, Temporal pide un aviso. Por debajo del noventa es recordatorio. En el noventa es escalamiento: sube la prioridad de la tarea y avisa al emisor y a quien observa. Si el mismo aviso llega dos veces en treinta minutos, el segundo no se duplica. Si el correo falla, la ceremonia no se cae: el aviso va a la bandeja, reintenta y, agotados los intentos, queda en carta muerta.</p>
+      <h3>Cierre</h3>
+      <p>Cuando todos firmaron, Temporal llama a sellar. El manifiesto guarda hashes del original, de lo presentado y de lo firmado, el orden, los consentimientos, las firmas, la política y los tokens de tiempo. Luego se firma con Ed25519. A partir de ahí se puede pedir la verificación, que recalcula, o el ZIP, que incluye el verificador.</p>
+      <p>Al mismo tiempo se escribe la cadena de auditoría. Cada evento lleva el hash del anterior. La cabeza está en un solo registro, tomado con candado de fila. Verificar la cadena no es lo mismo que verificar el PDF: una dice que el diario no se editó; la otra dice que el documento y las firmas cierran.</p>
+    </section>
+
+    <section>
+      <h2>El alta, que no es una firma</h2>
+      <p>Antes de que una persona pueda firmar como titular habilitado, RH abre un caso de empleado, proveedor o cliente. El camino es borrador, datos, INE, prueba de vida, revisión y, si se aprueba, habilitado.</p>
+      <ol class="tasks">
+        <li>Se capturan nombre, correo, CURP y RFC.</li>
+        <li>Frente y reverso de la INE entran por multipart, se cifran y se leen con Tesseract. De ahí salen CURP, clave de elector, vigencia, sección y MRZ.</li>
+        <li>El verificador heurístico revisa la forma de la CURP, su dígito y la vigencia. Si la variable de autoverificación está activa y el resultado es bueno, el alta avanza. RENAPO, sin URL, no inventa un sí: responde que no está disponible.</li>
+        <li>La selfie sigue el mismo camino de objeto cifrado. Si hay pesos de face-api, hay una distancia de descriptores y una medida de nitidez. Si no hay pesos, no hay un falso aprobado: el caso queda para RH.</li>
+        <li>Habilitar exige, si se enciende la política, un step-up de diez minutos. Firmar exige cinco.</li>
+      </ol>
+      <div class="figure">
+        <p><a href="diagramas/alta.html">Abrir la vida del alta</a></p>
+        <figcaption>Negar en revisión deja el caso en rechazado y no crea firmante. El consentimiento expreso para tratar la biometría está escrito en el esquema local y en la pantalla de alta; ese bloque todavía no está en el commit de develop.</figcaption>
+      </div>
+    </section>
+
+    <section>
+      <h2>Lo que corre al lado, sin ser la ceremonia</h2>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Correo</h3>
+          <p>Invitación, recordatorio, escalamiento y aviso de cierre se encolan con una llave para no repetirlos. Un proceso los toma cada quince segundos. En local los recibe Mailpit, puerto 8025. En otro entorno, el mismo código habla por <code>SMTP_URL</code>.</p>
+        </div>
+        <div class="panel">
+          <h3>Webhooks</h3>
+          <p>Al cerrar la solicitud, al sellar la evidencia y al habilitar un alta se emite un CloudEvent. La entrega va firmada, se reintenta y muere en carta muerta si el destino no responde. El receptor puede comprobar la firma sin llamar a Prestige.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Decisión</h3>
+        <p>Un proceso puede traer un XML de DMN. Pedir <code>/decide</code> con un contexto evalúa la tabla de verdad. Sirve para escoger camino de negocio. No sustituye el workflow de firma ni escribe el manifiesto.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Orden que no se puede invertir</h2>
+      <p>No hay expediente antes del quorum. No hay firma antes del consentimiento cuando la política lo exige. No hay objeto en claro dentro de la base. No hay segundo uso del enlace. No hay avance de turno si el reclamo del firmante no se ganó. Esas cuatro cerraduras son el proceso. El resto —el texto del correo, el estudio BPMN, el color del portal— puede cambiar sin moverlas.</p>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Fuente del reloj: <code>backend/bff/src/temporal/workflows.ts</code> y <code>shared.ts</code>. Enlace: <code>one-time-link.service.ts</code>. Alta: <code>onboarding.service.ts</code>. Cierre: <code>evidence</code> y <code>audit-chain.service.ts</code>.</p>
+  </footer>
+</body>
+</html>

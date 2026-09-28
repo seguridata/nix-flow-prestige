@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>03 · Stack — Prestige</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/informe.css">
+</head>
+<body>
+  <header class="top">
+    <a href="portada.html">Prestige</a>
+    <nav>
+      <a href="index.html">Índice</a>
+      <a href="01-definicion.html">01</a>
+      <a href="02-arquitectura.html">02</a>
+      <a href="03-stack.html" aria-current="page">03</a>
+      <a href="04-seguridad.html">04</a>
+      <a href="05-procesos.html">05</a>
+      <a href="06-multitenant.html">06</a>
+      <a href="07-estado-y-ruta.html">07</a>
+    </nav>
+  </header>
+  <div class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Informe 03 · Stack tecnológico</p>
+      <h1>Lo que ya está elegido, y lo que conviene no mover.</h1>
+      <hr class="rule">
+      <p class="lede">Cada pieza está aquí porque resuelve un trabajo de Prestige. Cambiarla tiene un costo de entendimiento, no solo de licencia. Este informe compara las alternativas contra el código que ya existe.</p>
+    </div>
+    <aside class="hero-aside">
+      <span>Paquete</span>
+      <strong>@prestige/web 0.1.0 y @prestige/bff 0.1.0</strong>
+      <span>Bun 1.4 · Turbo</span>
+    </aside>
+  </div>
+  <main>
+    <section>
+      <h2>El stack que corre</h2>
+      <table>
+        <thead><tr><th>Capa</th><th>Elección</th><th>Por qué en este producto</th></tr></thead>
+        <tbody>
+          <tr><td>Portal</td><td>Next.js 16, React 19, Tailwind 4</td><td>El servidor del portal guarda la sesión y adjunta el token. El navegador no habla directo con el BFF.</td></tr>
+          <tr><td>Interfaz</td><td>Radix y primitivas propias</td><td>El manual de marca pide sobriedad. No hay una librería visual genérica de por medio.</td></tr>
+          <tr><td>Movimiento</td><td>Motion</td><td>Transiciones cortas del portal. No participa en la prueba criptográfica.</td></tr>
+          <tr><td>BFF</td><td>NestJS 10</td><td>Los dominios ya están partidos en módulos. Partirlos en red ahora añadiría despliegue sin quitar complejidad.</td></tr>
+          <tr><td>Datos</td><td>Prisma 6 y PostgreSQL 16</td><td>El caso, la política y la cadena de auditoría son relacionales. El candado de la cadena usa <code>FOR UPDATE</code>.</td></tr>
+          <tr><td>Motor</td><td>Temporal 1.27, SDK 1.11</td><td>El plazo, las señales de firma y el sello final tienen que sobrevivir un reinicio.</td></tr>
+          <tr><td>Objetos</td><td>MinIO, pin del 15 de octubre de 2025</td><td>API S3. El binario no entra a Postgres.</td></tr>
+          <tr><td>Identidad</td><td>Keycloak 26, realm prestige</td><td>OIDC ya integrado. El tenant viaja como claim, no como otro realm.</td></tr>
+          <tr><td>Caché</td><td>Redis 7 e ioredis</td><td>Sesión del portal, caché de procesos, presencia entre copias.</td></tr>
+          <tr><td>Firma PDF</td><td>@signpdf 3.3, pdf-lib, node-forge</td><td>PAdES con apariencia visible. La autógrafa también se sella en el PDF.</td></tr>
+          <tr><td>Tiempo</td><td>Cliente RFC 3161 propio</td><td>No depende de una librería opaca. La verificación CMS está en el BFF y en el verificador offline.</td></tr>
+          <tr><td>Reglas</td><td>feelin y fast-xml-parser</td><td>Evalúa la tabla DMN guardada, con políticas FIRST, UNIQUE, ANY y COLLECT.</td></tr>
+          <tr><td>Identidad documental</td><td>tesseract.js 5 y face-api</td><td>OCR local. El match facial es opcional y se apaga si no hay pesos.</td></tr>
+          <tr><td>Correo</td><td>nodemailer y Mailpit</td><td>SMTP real en desarrollo, sin salir a internet.</td></tr>
+          <tr><td>Contrato HTTP</td><td>OpenAPI, SDK TS y Python</td><td>El cliente no adivina el JSON.</td></tr>
+          <tr><td>Trazas</td><td>OpenTelemetry, opt-in</td><td>Si no hay endpoint, no arranca. No obliga a un colector para desarrollar.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Tres formas de armar el mismo producto</h2>
+      <p>No son tres productos. Son tres maneras de hospedar el que ya está escrito. El color marca la que corre hoy.</p>
+      <table>
+        <thead><tr><th></th><th style="background:#3d6b00">A · La de hoy</th><th>B · La misma, gestionada</th><th>C · Partirla ya</th></tr></thead>
+        <tbody>
+          <tr><td>Portal y BFF</td><td>Proceso en el host</td><td>Dos contenedores detrás de un proxy</td><td>Un servicio por dominio</td></tr>
+          <tr><td>Workflow</td><td>Temporal en Compose, licencia cero</td><td>Temporal Cloud</td><td>Temporal igual, más red entre dominios</td></tr>
+          <tr><td>Objetos</td><td>MinIO pinneado</td><td>Almacén S3 compatible con candado</td><td>Igual que B, más una cuenta por servicio</td></tr>
+          <tr><td>Identidad</td><td>Keycloak start-dev</td><td>Keycloak en modo producción, o el IdP que SeguriData ya opere</td><td>Igual que B</td></tr>
+          <tr><td>Cuándo conviene</td><td>Construir y probar el caso ancla</td><td>Cuando haya un volumen y un responsable de la llave</td><td>Cuando un dominio tenga otro ritmo de cambio. Hoy no lo tiene</td></tr>
+        </tbody>
+      </table>
+      <p>La columna C es la más cara de entender y la que menos problema presente resuelve. Los módulos ya se llaman entre sí por función, no por HTTP. Separarlos ahora multiplicaría contratos sin cambiar la firma.</p>
+    </section>
+
+    <section>
+      <h2>Comparar pieza por pieza</h2>
+      <h3>Motor de plazos</h3>
+      <table>
+        <thead><tr><th></th><th>Temporal, el elegido</th><th>Temporal Cloud</th><th>Timers dentro del BFF</th></tr></thead>
+        <tbody>
+          <tr><td>Qué pasa si el proceso muere</td><td>La ceremonia sigue en el historial del motor</td><td>Igual, operado por Temporal</td><td>El plazo se pierde con el proceso</td></tr>
+          <tr><td>Encaje con el código</td><td>Ya está: señales, activities, cola prestige</td><td>El mismo SDK. Cambia la dirección</td><td>Hay que reescribir <code>workflows.ts</code></td></tr>
+          <tr><td>Licencia</td><td>Cero. Se paga la máquina y Postgres, que ya está</td><td>De uso. Ver cifras de abajo</td><td>Cero, y más frágil</td></tr>
+        </tbody>
+      </table>
+      <h3>Objetos</h3>
+      <table>
+        <thead><tr><th></th><th>MinIO pinneado</th><th>Almacén S3 de un nube</th><th>Dejar el PDF en Postgres</th></tr></thead>
+        <tbody>
+          <tr><td>Estado en septiembre de 2026</td><td>El repositorio upstream está archivado desde abril de 2026. La última imagen pública es la que el compose ya fija</td><td>Sigue recibiendo parches del proveedor</td><td>Contradice la regla del proyecto: el binario no va en la base</td></tr>
+          <tr><td>Candado</td><td>GOVERNANCE 30 días, solo en el compose local</td><td>Hay modos que el cliente no puede levantar</td><td>No aplica</td></tr>
+          <tr><td>Licencia</td><td>AGPL en la edición comunitaria</td><td>La del proveedor</td><td>La de Postgres</td></tr>
+        </tbody>
+      </table>
+      <p>Fuente del archivo de MinIO: el propio repositorio <code>minio/minio</code> declara que dejó de mantenerse y que la edición comunitaria ya no publica binarios. La nota de archivo es del 25 de abril de 2026. El compose de Prestige lo dice en un comentario: <code>minio/minio</code> ya no está en Docker Hub, y por eso usa <code>alpine/minio</code> con el binario del 15 de octubre de 2025. <code>minio/mc:latest</code> puede no poder bajarse en una máquina nueva.</p>
+      <h3>Identidad</h3>
+      <p>Keycloak ya importa el realm, los roles y el cliente <code>prestige-web</code>. Sustituirlo por cuentas propias del portal tiraría PKCE, el claim de tenant y el step-up. Tiene sentido el día en que SeguriData entregue otro emisor OIDC con los mismos claims. No antes.</p>
+    </section>
+
+    <section>
+      <h2>Qué cuesta desplegarlo</h2>
+      <p>Hoy el costo de licencia es cero. El costo real es la máquina donde corre Docker y el tiempo de quien la opera. No hay una factura de nube en el repositorio, y no voy a inventar una a partir de un volumen que el código no declara.</p>
+      <p>Lo que sí se puede citar, porque es público y se consultó el 22 de septiembre de 2026, es el precio de mover solo el motor a Temporal Cloud. La página de precios de Temporal indica:</p>
+      <ul class="clean">
+        <li>El plan Business parte del mayor entre 500 dólares al mes o el 10 por ciento del consumo.</li>
+        <li>Ese plan incluye 2.5 millones de acciones al mes, 2.5 GB de almacenamiento activo y 100 GB retenido.</li>
+        <li>Por encima del cupo, la acción se cobra por tramos. El primero está en 50 dólares por millón.</li>
+        <li>El motor abierto sigue en cero de licencia si se opera uno mismo. Es lo que hace el compose.</li>
+      </ul>
+      <p>Una ceremonia de Prestige, contada por las llamadas que el código hace y no por una medición, cabe en pocas acciones: arranque del workflow, una activity para sembrar tareas, hasta tres timers de aviso, una señal por firmante y una activity de sello. Con dos firmantes eso es del orden de diez acciones, no de mil. Mil ceremonias así seguirían muy por debajo del cupo de 2.5 millones. El número es un techo de lectura, no una factura: Temporal cuenta también consultas y reintentos, y aquí no hay telemetría de acciones.</p>
+      <p>Postgres, Redis y Keycloak, en este compose, no añaden otra línea de licencia. El riesgo de costo que sí está a la vista es otro: MinIO comunitario ya no publica parches. Seguir en esa imagen es una decisión de suministro, tratada en el informe de seguridad, no un ahorro estable.</p>
+    </section>
+
+    <section>
+      <h2>Qué no cambiaría</h2>
+      <ol class="tasks">
+        <li>El portal como dueño de la sesión y el BFF como dueño del token. Ya cerró el problema de la cookie de más de 4 KB.</li>
+        <li>Temporal como dueño del plazo. Un timer en memoria no sobrevive el reinicio que el propio handoff documenta.</li>
+        <li>El PDF fuera de Postgres. Volver a guardarlo en la base deshace el trabajo de cifrado y de almacenamiento.</li>
+        <li>Prisma mientras la cadena de auditoría dependa de una transacción con <code>FOR UPDATE</code>.</li>
+      </ol>
+      <p>Lo que sí hay que decidir, y no es un cambio de framework, es el relevo de MinIO y el modo de producción de Keycloak. Están en la ruta del informe 07.</p>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Precios: temporal.io/pricing y docs.temporal.io/cloud/pricing, consultados el 22 de septiembre de 2026. Pueden cambiar. El pin de MinIO está en <code>backend/docker-compose.yml</code>. Las versiones de aplicación están en los <code>package.json</code> de <code>@prestige/web</code> y <code>@prestige/bff</code>.</p>
+  </footer>
+</body>
+</html>

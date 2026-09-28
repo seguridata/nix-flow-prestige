@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Prestige — envío y firma",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "preparar",
+        "label": "Preparar el caso",
+        "focus": ["caso", "pdf", "solicitud"],
+        "note": "El emisor abre el caso, sube el PDF y crea la solicitud con su política."
+      },
+      {
+        "id": "ceremonia",
+        "label": "Ceremonia",
+        "focus": ["solicitud", "consentimiento", "firma", "temporal"],
+        "note": "El firmante consiente y firma. Temporal recibe la señal y vigila el SLA."
+      },
+      {
+        "id": "cierre",
+        "label": "Cierre y excepción",
+        "focus": ["firma", "evidencia", "rechazo"],
+        "note": "Si todos firman se sella el expediente. El rechazo sale del camino feliz."
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "emisor", "label": "Emisor" },
+    { "id": "firmante", "label": "Firmante" },
+    { "id": "motor", "label": "Motor y evidencia" }
+  ],
+  "phases": [
+    { "id": "preparar", "label": "Preparar", "fromCol": 0, "toCol": 1 },
+    { "id": "ceremonia", "label": "Ceremonia", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "cierre", "label": "Cierre", "fromCol": 4, "toCol": 5 }
+  ],
+  "groups": [
+    { "id": "alta", "label": "Alta del expediente", "lane": "emisor", "fromCol": 0, "toCol": 2 },
+    { "id": "acto", "label": "Acto de firma", "lane": "firmante", "fromCol": 3, "toCol": 4, "variant": "emphasis" }
+  ],
+  "mainPath": ["caso", "pdf", "solicitud", "consentimiento", "firma", "evidencia"],
+  "nodes": [
+    { "id": "caso", "lane": "emisor", "col": 0, "type": "frontend", "label": "Caso", "sublabel": "ABIERTO" },
+    { "id": "pdf", "lane": "emisor", "col": 1, "type": "cloud", "label": "PDF", "sublabel": "MinIO cifrado" },
+    { "id": "solicitud", "lane": "emisor", "col": 2, "type": "security", "label": "Solicitud", "sublabel": "política pinada" },
+    { "id": "consentimiento", "lane": "firmante", "col": 3, "type": "frontend", "label": "Consentimiento", "sublabel": "versión v1" },
+    { "id": "firma", "lane": "firmante", "col": 4, "type": "backend", "label": "Firma", "sublabel": "tres métodos" },
+    { "id": "temporal", "lane": "motor", "col": 3, "type": "messagebus", "label": "Temporal", "sublabel": "contratoDosPartes" },
+    { "id": "evidencia", "lane": "motor", "col": 5, "type": "database", "label": "Expediente", "sublabel": "manifiesto firmado" },
+    { "id": "rechazo", "lane": "motor", "col": 4, "type": "security", "label": "Rechazo", "sublabel": "RECHAZADA" }
+  ],
+  "edges": [
+    { "id": "caso-pdf", "from": "caso", "to": "pdf", "label": "adjunta" },
+    { "id": "pdf-solicitud", "from": "pdf", "to": "solicitud", "label": "pide firma", "variant": "emphasis" },
+    { "id": "solicitud-consentimiento", "from": "solicitud", "to": "consentimiento", "label": "turno", "variant": "emphasis" },
+    { "id": "consentimiento-firma", "from": "consentimiento", "to": "firma", "label": "acepta" },
+    { "id": "firma-evidencia", "from": "firma", "to": "evidencia", "label": "si cierra", "variant": "emphasis" },
+    { "id": "solicitud-temporal", "from": "solicitud", "to": "temporal", "label": "arranca" },
+    { "id": "firma-temporal", "from": "firma", "to": "temporal", "label": "señal" },
+    { "id": "firma-rechazo", "from": "firma", "to": "rechazo", "label": "rechaza", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Un reloj", "items": ["Secuencial o paralelo, el deadline es uno", "El aviso va al 50, 75 y 90 por ciento"] }
+  ]
+}
