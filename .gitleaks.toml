@@ -39,7 +39,9 @@ keywords = ["pki_passphrase"]
 [[rules.allowlists]]
 description = "Ejemplo documentado para una máquina puramente local"
 regexTarget = "secret"
-regexes = ['''^prestige-pki-dev$''', '''^REPLACE_ME''']
+# `prestige-pki-dev` también aparece en prosa dentro de comentarios (con ` pegado) y el spec
+# de runtime-secrets usa una frase de relleno de prueba, no un secreto.
+regexes = ['''^prestige-pki-dev`?$''', '''^REPLACE_ME''', '''^frase-propia-del-entorno$''']
 
 [[rules]]
 id = "prestige-dotenv-committed"
