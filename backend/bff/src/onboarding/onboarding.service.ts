@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { createHash } from 'crypto';
 import type { OnboardingCase, OnboardingKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SigningRouter } from '../signing/signing.router';
 import { StorageService } from '../storage/storage.service';
@@ -58,13 +59,14 @@ export class OnboardingService {
     @Inject(BIOMETRIC_ENGINE) private readonly biometrics: BiometricEngine,
   ) {}
 
-  async list(tenantId = 'seguridata') {
+  async list(tenantId = 'seguridata', page?: PageQueryDto) {
+    const args = pageArgs(page);
     const rows = await this.prisma.onboardingCase.findMany({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' },
-      take: 80,
+      orderBy: STABLE_ORDER,
+      ...prismaPage(args),
     });
-    return rows.map(publicView);
+    return mapPage(finishPage(rows, args), publicView);
   }
 
   async get(id: string, tenantId: string) {
@@ -243,7 +245,11 @@ export class OnboardingService {
         ineHash,
         hasFront: Boolean(ineFront),
         hasBack: Boolean(ineBack),
-        ocrFields: (ineOcr as { fields?: unknown })?.fields,
+        // Sin PII: sólo los NOMBRES de los campos que el OCR extrajo, nunca sus valores
+        // (CURP, clave de elector, etc.).
+        ocrFieldNames: Object.keys(
+          ((ineOcr as { fields?: Record<string, unknown> })?.fields ?? {}) as Record<string, unknown>,
+        ),
       },
     });
     return publicView(updated);

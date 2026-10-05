@@ -104,8 +104,14 @@ export class PublicSignController {
     // Reafirma que el token sigue vivo (no consumido) antes de dejar
     // verificar una aserción sobre esa ceremonia; no lo consume — eso lo
     // hace `sign()`.
-    await this.links.resolve(token);
-    return this.passkeys.finish({ assertionId: body.assertionId, response: body.response as never });
+    const link = await this.links.resolve(token);
+    // La aserción debe pertenecer al firmante dueño del enlace (no basta con
+    // conocer un assertionId ajeno).
+    return this.passkeys.finish({
+      assertionId: body.assertionId,
+      response: body.response,
+      expectedSignerId: link.signerId,
+    });
   }
 
   @Public()
@@ -142,6 +148,11 @@ export class PublicSignController {
       file?.buffer,
     );
     await this.links.consume(token);
-    return result;
+    // Sólo el estado del propio firmante: nunca el PDF firmado ni datos de otros.
+    return {
+      status: result.status,
+      signedAt: result.signedAt,
+      requestStatus: result.requestStatus,
+    };
   }
 }

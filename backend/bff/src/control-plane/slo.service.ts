@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Level = 'ok' | 'warn' | 'crit';
@@ -16,20 +17,27 @@ function grade(value: number, warn: number, crit: number, higherIsBad = true): L
 export class SloService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async snapshot() {
+  /**
+   * `tenantId` acota TODOS los conteos a ese tenant. Sin él (solo
+   * `platform_admin`) la vista es global.
+   */
+  async snapshot(tenantId?: string) {
+    const t = tenantId ? { tenantId } : {};
     const since = new Date(Date.now() - 7 * 24 * 3600_000);
 
     const [total7d, completed7d, expired7d, brokenRuns, localRuns, outboxDlq, webhookDlq, overdueTasks] =
       await Promise.all([
-        this.prisma.signatureRequest.count({ where: { createdAt: { gte: since } } }),
-        this.prisma.signatureRequest.count({ where: { createdAt: { gte: since }, status: 'COMPLETADA' } }),
-        this.prisma.signatureRequest.count({ where: { createdAt: { gte: since }, status: 'EXPIRADA' } }),
-        this.prisma.workflowRun.count({ where: { lastError: { not: null } } }),
-        this.prisma.workflowRun.count({ where: { status: 'LOCAL' } }),
-        this.prisma.notificationOutbox.count({ where: { status: 'DLQ' } }),
-        this.prisma.webhookDelivery.count({ where: { status: 'DLQ' } }),
+        this.prisma.signatureRequest.count({ where: { ...t, createdAt: { gte: since } } }),
+        this.prisma.signatureRequest.count({ where: { ...t, createdAt: { gte: since }, status: 'COMPLETADA' } }),
+        this.prisma.signatureRequest.count({ where: { ...t, createdAt: { gte: since }, status: 'EXPIRADA' } }),
+        this.prisma.workflowRun.count({ where: { ...t, lastError: { not: null } } }),
+        this.prisma.workflowRun.count({ where: { ...t, status: 'LOCAL' } }),
+        this.prisma.notificationOutbox.count({ where: { ...t, status: 'DLQ' } }),
+        this.prisma.webhookDelivery.count({
+          where: { status: 'DLQ', ...(tenantId ? { subscription: { tenantId } } : {}) },
+        }),
         this.prisma.humanTask.count({
-          where: { status: { in: ['CREADA', 'ASIGNADA'] }, dueAt: { lt: new Date() } },
+          where: { ...t, status: { in: ['CREADA', 'ASIGNADA'] }, dueAt: { lt: new Date() } },
         }),
       ]);
 
@@ -37,17 +45,20 @@ export class SloService {
     const successRate = closed7d > 0 ? completed7d / closed7d : 1;
     const expiryRate = closed7d > 0 ? expired7d / closed7d : 0;
 
-    // Tiempo medio a COMPLETADA (7 d).
-    const done = await this.prisma.signatureRequest.findMany({
-      where: { createdAt: { gte: since }, status: 'COMPLETADA' },
-      select: { createdAt: true, evidenceManifest: { select: { createdAt: true } } },
-      take: 500,
-    });
-    const durations = done
-      .map((r) => (r.evidenceManifest ? r.evidenceManifest.createdAt.getTime() - r.createdAt.getTime() : null))
-      .filter((x): x is number => x !== null && x >= 0);
-    const avgHoursToComplete =
-      durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length / 3600_000 : null;
+    // Tiempo medio a COMPLETADA (7 d): agregación en Postgres sobre TODAS las
+    // solicitudes de la ventana (antes: muestra de 500 en memoria), acotada por
+    // tenant (si hay) y por la ventana de tiempo.
+    const rows = await this.prisma.$queryRaw<{ avg_seconds: number | null }[]>(Prisma.sql`
+      SELECT AVG(EXTRACT(EPOCH FROM (m."createdAt" - r."createdAt")))::float8 AS avg_seconds
+      FROM "SignatureRequest" r
+      JOIN "EvidenceManifest" m ON m."signatureRequestId" = r."id"
+      WHERE r."createdAt" >= ${since}
+        AND r."status" = 'COMPLETADA'
+        AND m."createdAt" >= r."createdAt"
+        ${tenantId ? Prisma.sql`AND r."tenantId" = ${tenantId}` : Prisma.empty}
+    `);
+    const avgSeconds = rows[0]?.avg_seconds;
+    const avgHoursToComplete = avgSeconds === null || avgSeconds === undefined ? null : Number(avgSeconds) / 3600;
 
     const indicators = {
       successRate: {

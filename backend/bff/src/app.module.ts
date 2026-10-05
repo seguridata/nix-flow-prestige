@@ -4,6 +4,7 @@ import { HttpExceptionFilter } from './common/http-exception.filter';
 import { LoggerModule } from 'nestjs-pino';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { RedisThrottlerStorage } from './common/redis-throttler-storage';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
@@ -40,9 +41,13 @@ import { WebauthnModule } from './webauthn/webauthn.module';
         autoLogging: { ignore: (req) => req.url === '/operations/health' },
       },
     }),
-    ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT ?? 120) },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT ?? 120) }],
+      // Con REDIS_URL el contador se comparte entre réplicas; sin él, memoria local (default).
+      storage: process.env.REDIS_URL ? new RedisThrottlerStorage(process.env.REDIS_URL) : undefined,
+      // Las sondas de salud (LB/orquestador) no deben consumir ni sufrir el límite.
+      skipIf: (ctx) => /^\/(?:operations\/)?health(?:[/?]|$)/.test(ctx.switchToHttp().getRequest()?.url ?? ''),
+    }),
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,

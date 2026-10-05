@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/documents/status-badge";
 import { Stepper } from "@/components/ui/stepper";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { useSession } from "@/store/session-store";
+import { buildOnboardingActionPayload } from "@/services/payloads";
 import { apiClient } from "@/services/api-client";
 
 interface OnboardingDetail {
@@ -34,7 +34,6 @@ interface OnboardingDetail {
 
 export default function OnboardingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { signerId, name } = useSession();
   const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -76,8 +75,6 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
       const form = new FormData();
       form.append("file", payload.file, payload.file.name);
       form.append("part", payload.part);
-      form.append("actorId", signerId);
-      form.append("actorName", name);
       return apiClient.post(`/onboarding/${id}/ine`, form);
     },
     onSuccess: () => {
@@ -91,8 +88,6 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
     mutationFn: (selfie: Blob) => {
       const form = new FormData();
       form.append("file", selfie, "selfie.jpg");
-      form.append("actorId", signerId);
-      form.append("actorName", name);
       return apiClient.post(`/onboarding/${id}/liveness`, form);
     },
     onSuccess: () => {
@@ -104,7 +99,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   });
 
   const verify = useMutation({
-    mutationFn: () => apiClient.post(`/onboarding/${id}/actions/verify-ine`, { actorId: signerId, actorName: name }),
+    mutationFn: () => apiClient.post(`/onboarding/${id}/actions/verify-ine`, buildOnboardingActionPayload()),
     onSuccess: () => {
       toast.success("INE verificada por RH.");
       invalidate();
@@ -113,7 +108,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   });
 
   const enable = useMutation({
-    mutationFn: () => apiClient.post(`/onboarding/${id}/actions/enable`, { actorId: signerId, actorName: name }),
+    mutationFn: () => apiClient.post(`/onboarding/${id}/actions/enable`, {}),
     onSuccess: () => {
       toast.success("Firma habilitada.");
       invalidate();
@@ -123,7 +118,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
 
   const reject = useMutation({
     mutationFn: () =>
-      apiClient.post(`/onboarding/${id}/actions/reject`, { actorId: signerId, actorName: name, notes: "Rechazado por RH" }),
+      apiClient.post(`/onboarding/${id}/actions/reject`, buildOnboardingActionPayload({ notes: "Rechazado por RH" })),
     onSuccess: () => {
       toast.success("Alta rechazada.");
       invalidate();

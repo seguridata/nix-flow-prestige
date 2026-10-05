@@ -3,6 +3,7 @@ import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
+import { PageQueryDto, type Page } from '../common/pagination';
 import { CasesService, type Case } from './cases.service';
 
 class CreateCaseDto {
@@ -12,7 +13,7 @@ class CreateCaseDto {
   title!: string;
 }
 
-class ListCasesQueryDto {
+class ListCasesQueryDto extends PageQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -30,8 +31,8 @@ export class CasesController {
   }
 
   @Get()
-  list(@Query() query: ListCasesQueryDto, @CurrentUser() user: AuthenticatedUser): Promise<Case[]> {
-    return this.cases.list(user.tenantId);
+  list(@Query() query: ListCasesQueryDto, @CurrentUser() user: AuthenticatedUser): Promise<Case[] | Page<Case>> {
+    return this.cases.list(user.tenantId, query);
   }
 
   @Get(':id')

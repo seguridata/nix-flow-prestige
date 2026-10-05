@@ -12,7 +12,9 @@ import {
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { Server, Socket } from 'socket.io';
+import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { assertAudience } from '../auth/jwt-auth.guard';
 
 const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
   .split(',')
@@ -68,7 +70,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   private readonly logger = new Logger(RealtimeGateway.name);
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * D10 — con `REDIS_URL`, el servidor Socket.IO usa el adaptador Redis: las
@@ -105,10 +110,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         client.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
       if (!token || !jwks || !issuer) throw new Error('token ausente o issuer no configurado');
       const { payload } = await jwtVerify(token, jwks, { issuer });
+      assertAudience(payload as { aud?: string | string[]; azp?: string });
+      // Sin claim `tenant` no hay aislamiento posible: se rechaza (sin default).
+      const tenantId = typeof payload.tenant === 'string' ? payload.tenant.trim() : '';
+      if (!tenantId) throw new Error('token sin claim tenant');
       this.socketUsers.set(client.id, {
         actorId: (payload.preferred_username as string) ?? payload.sub ?? '',
         name: payload.name as string | undefined,
-        tenantId: (payload.tenant as string) ?? 'seguridata',
+        tenantId,
       });
       this.socketMemberships.set(client.id, new Map());
     } catch (err) {
@@ -130,14 +139,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   @SubscribeMessage('join-document')
-  handleJoinDocument(
+  async handleJoinDocument(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { documentId: string },
   ) {
     const documentId = body?.documentId;
     const user = this.socketUsers.get(client.id);
     // La identidad sale del handshake autenticado, nunca del payload del mensaje.
-    if (!documentId || !user) return;
+    if (typeof documentId !== 'string' || !documentId || !user) return;
+    // El documento debe ser del tenant del socket; si no, se rechaza sin unirse.
+    if (!(await this.canJoin(documentId, user.tenantId))) {
+      this.logger.debug(`join-document rechazado: ${documentId} fuera del tenant`);
+      return { ok: false, error: 'not-found' };
+    }
     const actorId = user.actorId;
     const actorName = user.name ?? actorId;
 
@@ -164,6 +178,20 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
 
     this.broadcastPresence(documentId);
+    return { ok: true };
+  }
+
+  /** true si el documento existe y pertenece al tenant. Falla cerrado ante errores. */
+  private async canJoin(documentId: string, tenantId: string): Promise<boolean> {
+    try {
+      const doc = await this.prisma.document.findFirst({
+        where: { id: documentId, tenantId },
+        select: { id: true },
+      });
+      return Boolean(doc);
+    } catch {
+      return false;
+    }
   }
 
   @SubscribeMessage('leave-document')

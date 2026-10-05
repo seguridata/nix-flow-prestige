@@ -98,7 +98,7 @@ describe('WebhooksService.dispatchDue', () => {
       return new Response('ok', { status: 200 });
     });
 
-    const svc = new WebhooksService(prisma);
+    const svc = new WebhooksService(prisma, async () => ['93.184.216.34']);
     const res = await svc.dispatchDue();
 
     expect(res).toMatchObject({ sent: 1, dead: 0 });
@@ -113,7 +113,7 @@ describe('WebhooksService.dispatchDue', () => {
     const { prisma, store } = fakePrisma([{ id: 'd1', attempts: 7, maxAttempts: 8 }]);
     vi.stubGlobal('fetch', async () => new Response('boom', { status: 500 }));
 
-    const svc = new WebhooksService(prisma);
+    const svc = new WebhooksService(prisma, async () => ['93.184.216.34']);
     const res = await svc.dispatchDue();
 
     expect(res).toMatchObject({ sent: 0, dead: 1 });

@@ -5,11 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import type { Document } from '@prisma/client';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { STABLE_ORDER, finishPage, pageArgs, prismaPage, type Page, type PageQueryDto } from '../common/pagination';
 import type { EncMeta } from '../storage/object-crypto';
 
 export type { Document };
@@ -155,7 +155,9 @@ export class DocumentsService {
 
   /**
    * Congela el canónico. Idempotente: un segundo freeze devuelve la misma fila.
-   * A partir de aquí `replaceContent` responde 409.
+   * Atómico: `updateMany` condicionado a `locked:false`, de modo que dos freeze
+   * paralelos sólo auditan una vez. No existe operación de reemplazo del canónico:
+   * para otro contenido se sube un documento nuevo.
    */
   async freeze(id: string, tenantId: string, actorId: string, actorName?: string): Promise<PublicDocument> {
     const current = await this.prisma.document.findFirst({
@@ -176,11 +178,17 @@ export class DocumentsService {
     if (current.locked) return publish(current);
 
     const frozenAt = new Date();
-    const updated = await this.prisma.document.update({
-      where: { id },
+    const claimed = await this.prisma.document.updateMany({
+      where: { id, tenantId, locked: false },
       data: { locked: true, frozenAt },
+    });
+    const updated = await this.prisma.document.findFirst({
+      where: { id, tenantId },
       select: ROW_SELECT,
     });
+    if (!updated) throw new NotFoundException(`Documento ${id} no encontrado`);
+    // Otro freeze concurrente ganó la carrera: idempotente, sin doble auditoría.
+    if (claimed.count === 0) return publish(updated);
 
     await this.collab.audit({
       documentId: id,
@@ -193,65 +201,29 @@ export class DocumentsService {
     return publish(updated);
   }
 
-  /**
-   * Reemplaza el borrador. Un documento congelado no acepta otra escritura
-   * encima del canónico: hay que subir una fila nueva.
-   */
-  async replaceContent(
-    id: string,
-    bytes: Buffer,
-    tenantId?: string,
-  ): Promise<{ hash: string; version: number }> {
-    const current = await this.prisma.document.findFirst({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-      select: { id: true, filename: true, version: true, locked: true, tenantId: true, caseId: true },
+  async list(
+    caseId: string | undefined,
+    tenantId: string,
+    page?: PageQueryDto,
+  ): Promise<PublicDocument[] | Page<PublicDocument>> {
+    const args = pageArgs(page);
+    const rows = await this.prisma.document.findMany({
+      where: { tenantId, ...(caseId ? { caseId } : {}) },
+      orderBy: STABLE_ORDER,
+      select: ROW_SELECT,
+      ...prismaPage(args),
     });
-    if (!current) throw new NotFoundException(`Documento ${id} no encontrado`);
-    if (current.locked) {
-      throw new ConflictException({
-        error: 'DOCUMENT_FROZEN',
-        message: 'El PDF congelado no acepta otra escritura',
-      });
-    }
-
-    const sha256 = sha256Hex(bytes);
-    const stored = await this.storage.putObject({
-      prefix: `documents/${current.tenantId}/${current.caseId}`,
-      filename: current.filename,
-      bytes,
-      contentType: 'application/pdf',
-    });
-    if (stored.sha256 !== sha256) {
-      throw new ConflictException({
-        error: 'HASH_MISMATCH',
-        message: 'El storage devolvió un SHA-256 distinto al de los bytes subidos',
-      });
-    }
-    return this.prisma.document.update({
-      where: { id },
-      data: {
-        hash: sha256,
-        objectKey: stored.objectKey,
-        enc: stored.enc as unknown as object,
-        sizeBytes: stored.sizeBytes,
-        version: current.version + 1,
-        presentedObjectKey: null,
-        presentedEnc: Prisma.JsonNull,
-        presentedHash: null,
-        frozenAt: null,
-      },
-      select: { hash: true, version: true },
-    });
+    return finishPage(rows.map(publish), args);
   }
 
-  list(caseId: string | undefined, tenantId: string): Promise<PublicDocument[]> {
-    return this.prisma.document
-      .findMany({
-        where: { tenantId, ...(caseId ? { caseId } : {}) },
-        orderBy: { createdAt: 'desc' },
-        select: ROW_SELECT,
-      })
-      .then((rows) => rows.map(publish));
+  /** Carga en lote (una sola consulta) para evitar N+1 en la bandeja. */
+  async findManyByIds(ids: string[], tenantId?: string): Promise<Map<string, PublicDocument>> {
+    if (!tenantId || ids.length === 0) return new Map();
+    const rows = await this.prisma.document.findMany({
+      where: { id: { in: [...new Set(ids)] }, tenantId },
+      select: ROW_SELECT,
+    });
+    return new Map(rows.map((r) => [r.id, publish(r)]));
   }
 
   find(id: string, tenantId?: string): Promise<PublicDocument | null> {

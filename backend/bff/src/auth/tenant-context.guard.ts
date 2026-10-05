@@ -13,9 +13,9 @@ import type { AuthenticatedUser } from './jwt-auth.guard';
  * Elige el tenant de la petición.
  *
  * Header `X-Tenant-Id` (id o slug). Si no viene, se queda el claim del token.
- * Con filas en `TenantMembership`, el usuario tiene que pertenecer a ese
- * tenant. Sin filas (directorio aún vacío) se acepta el claim, para no
- * cerrar el sandbox antes de sembrar membresías.
+ * El usuario tiene que pertenecer a ese tenant (`TenantMembership`). Sin
+ * filas se RECHAZA (fail-closed), salvo `ALLOW_UNMAPPED_TENANT=true` fuera de
+ * producción (solo dev, antes de sembrar membresías).
  *
  * El `tenantId` que queda en el usuario es el slug: es el valor que ya
  * guardan `Case` y `Document`.
@@ -48,6 +48,13 @@ export class TenantContextGuard implements CanActivate {
     });
 
     if (memberships.length === 0) {
+      // Fail-closed: un directorio vacío ya no abre el sandbox. Solo con
+      // ALLOW_UNMAPPED_TENANT=true Y fuera de producción se acepta el claim.
+      const allowUnmapped =
+        process.env.ALLOW_UNMAPPED_TENANT === 'true' && process.env.NODE_ENV !== 'production';
+      if (!allowUnmapped) {
+        throw new ForbiddenException('Usuario sin membresía de tenant');
+      }
       if (header && header !== user.tenantId) {
         throw new ForbiddenException('Sin membresía en ese tenant');
       }

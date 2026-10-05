@@ -1,4 +1,6 @@
 import { apiClient, newIdempotencyKey } from "./api-client";
+import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
+import { buildSignPayload } from "./payloads";
 import type { SignatureRequest, SignatureMethod, SigningOrder } from "@/libs/types";
 
 export interface CreateSignatureRequestBody {
@@ -28,9 +30,11 @@ export function signRequest(
     method: SignatureMethod;
     consentAccepted?: boolean;
     biometricSessionId?: string;
+    passkeyAssertionId?: string;
   },
   autograph?: Blob,
 ) {
+  body = buildSignPayload(body) as typeof body;
   const path = `/signature-requests/${requestId}/actions/sign`;
   const opts = { idempotencyKey: newIdempotencyKey() };
   if (autograph) {
@@ -39,6 +43,7 @@ export function signRequest(
     form.append("method", body.method);
     if (body.consentAccepted !== undefined) form.append("consentAccepted", String(body.consentAccepted));
     if (body.biometricSessionId) form.append("biometricSessionId", body.biometricSessionId);
+    if (body.passkeyAssertionId) form.append("passkeyAssertionId", body.passkeyAssertionId);
     return apiClient.post<SignatureRequest>(path, form, opts);
   }
   return apiClient.post<SignatureRequest>(path, body, opts);
@@ -64,11 +69,40 @@ export function cancelRequest(requestId: string, actorId?: string) {
 
 export function delegateRequest(
   requestId: string,
-  body: { fromSignerId: string; toSignerId: string; toName?: string },
+  body: { toSignerId: string; toName?: string },
 ) {
   return apiClient.post<SignatureRequest>(
     `/signature-requests/${requestId}/actions/delegate`,
     body,
     { idempotencyKey: newIdempotencyKey() },
   );
+}
+
+/**
+ * Ceremonia passkey del firmante INTERNO (sesión autenticada, vía proxy /api/bff).
+ * Rutas reales del backend (backend/bff/src/webauthn/passkey-authenticate.controller.ts):
+ *   POST /webauthn/authenticate/begin   body { signatureRequestId } -> { assertionId, options }
+ *   POST /webauthn/authenticate/finish  body { assertionId, response } -> { ok }
+ * El firmante sale del token. El assertionId verificado se manda como `passkeyAssertionId` en sign.
+ */
+export function beginInternalPasskey(signatureRequestId: string) {
+  return apiClient.post<{ assertionId: string; options: PublicKeyCredentialRequestOptionsJSON }>(
+    "/webauthn/authenticate/begin",
+    { signatureRequestId },
+  );
+}
+
+export function finishInternalPasskey(assertionId: string, response: unknown) {
+  return apiClient.post<{ ok: true }>("/webauthn/authenticate/finish", {
+    assertionId,
+    response,
+  });
+}
+
+/** Ejecuta begin -> WebAuthn del navegador -> finish; devuelve el assertionId verificado. */
+export async function verifyInternalPasskey(signatureRequestId: string): Promise<string> {
+  const { assertionId, options } = await beginInternalPasskey(signatureRequestId);
+  const response = await startAuthentication({ optionsJSON: options });
+  await finishInternalPasskey(assertionId, response);
+  return assertionId;
 }

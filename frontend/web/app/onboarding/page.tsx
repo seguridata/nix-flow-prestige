@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/documents/status-badge";
-import { useSession } from "@/store/session-store";
+import { buildOnboardingCreatePayload } from "@/services/payloads";
 import { apiClient } from "@/services/api-client";
 
 interface OnboardingRow {
@@ -27,11 +27,10 @@ interface OnboardingRow {
 }
 
 export default function OnboardingListPage() {
-  const { signerId, name } = useSession();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    kind: "EMPLEADO",
+    kind: "EMPLEADO" as "EMPLEADO" | "PROVEEDOR" | "CLIENTE",
     fullName: "",
     email: "",
     curp: "",
@@ -48,12 +47,7 @@ export default function OnboardingListPage() {
   });
   const create = useMutation({
     mutationFn: () =>
-      apiClient.post<OnboardingRow>("/onboarding", {
-        ...form,
-        requestedBy: signerId,
-        requestedByName: name,
-        biometricConsent: true,
-      }),
+      apiClient.post<OnboardingRow>("/onboarding", buildOnboardingCreatePayload(form)),
     onSuccess: (row) => {
       toast.success("Alta creada. Continúa con INE y prueba de vida.");
       queryClient.invalidateQueries({ queryKey: ["onboarding"] });
@@ -78,7 +72,7 @@ export default function OnboardingListPage() {
               <select
                 className="mt-1.5 h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
                 value={form.kind}
-                onChange={(e) => setForm({ ...form, kind: e.target.value })}
+                onChange={(e) => setForm({ ...form, kind: e.target.value as typeof form.kind })}
               >
                 <option value="EMPLEADO">Empleado</option>
                 <option value="PROVEEDOR">Proveedor</option>

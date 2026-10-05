@@ -1,4 +1,5 @@
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { PageQueryDto } from '../common/pagination';
 
 export class CreateDocumentDto {
   @IsString()
@@ -13,7 +14,7 @@ export class CreateDocumentDto {
   filename?: string;
 }
 
-export class ListDocumentsQueryDto {
+export class ListDocumentsQueryDto extends PageQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(200)

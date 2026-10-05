@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import {
+  acceptPublicConsent,
   beginPasskey,
   finishPasskey,
   resolvePublicLink,
@@ -46,12 +47,15 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
   });
 
   const sign = useMutation({
-    mutationFn: () =>
-      signPublicLink(
+    mutationFn: async () => {
+      // Registra la prueba de consentimiento (IP/UA los toma el servidor) antes de firmar.
+      await acceptPublicConsent(token);
+      return signPublicLink(
         token,
         { method: method!, consentAccepted: consent, passkeyAssertionId: assertionId ?? undefined },
         method === "AUTOGRAFA" ? stroke ?? undefined : undefined,
-      ),
+      );
+    },
     onSuccess: () => {
       setDone(true);
       toast.success("Firma aplicada.");
@@ -59,7 +63,8 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const passkeySatisfied = !link.data?.requirePasskey || Boolean(assertionId) || method === "PASSKEY";
+  const needsPasskey = Boolean(link.data?.requirePasskey) || method === "PASSKEY";
+  const passkeySatisfied = !needsPasskey || Boolean(assertionId);
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-4 py-10">
@@ -96,11 +101,11 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
           onVerifyPasskey={() => verifyPasskey.mutate()}
           verifyingPasskey={verifyPasskey.isPending}
           passkeyVerified={Boolean(assertionId)}
+          needsPasskey={needsPasskey}
           canSubmit={
             consent &&
             !!method &&
             (method !== "AUTOGRAFA" || !!stroke) &&
-            method !== "PASSKEY" &&
             passkeySatisfied &&
             !sign.isPending
           }
@@ -122,6 +127,7 @@ function FirmarForm({
   onVerifyPasskey,
   verifyingPasskey,
   passkeyVerified,
+  needsPasskey,
   canSubmit,
   onSubmit,
   pending,
@@ -135,6 +141,7 @@ function FirmarForm({
   onVerifyPasskey: () => void;
   verifyingPasskey: boolean;
   passkeyVerified: boolean;
+  needsPasskey: boolean;
   canSubmit: boolean;
   onSubmit: () => void;
   pending: boolean;
@@ -172,9 +179,11 @@ function FirmarForm({
         </span>
       </label>
 
-      {ctx.requirePasskey ? (
+      {needsPasskey ? (
         <div className="rounded-md border border-border bg-muted/40 p-3">
-          <p className="text-sm font-medium">Esta firma exige verificación con passkey</p>
+          <p className="text-sm font-medium">
+            {ctx.requirePasskey ? "Esta firma exige verificación con passkey" : "Verifica con tu passkey"}
+          </p>
           <Button
             type="button"
             size="sm"

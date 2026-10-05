@@ -1,6 +1,13 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { EvidenceService } from '../evidence/evidence.service';
 import { SignerMailService } from '../notifications/signer-mail.service';
 import { AuditChainService } from '../collaboration/audit-chain.service';
@@ -21,7 +28,18 @@ const NUDGE_DEDUPE_MS = 90_000;
 const CLOSED_REQUEST = ['COMPLETADA', 'RECHAZADA', 'EXPIRADA'];
 const SIGN_SIGNAL = 'signCompleted';
 const REJECT_SIGNAL = 'rejected';
+const CANCEL_SIGNAL = 'cancelled';
 const STATE_QUERY = 'getState';
+const OPEN_TASK: Array<'CREADA' | 'ASIGNADA'> = ['CREADA', 'ASIGNADA'];
+
+/** Usuario autenticado tal como lo entrega JwtAuthGuard + TenantContextGuard. */
+export interface WorkflowActor {
+  actorId: string;
+  tenantId: string;
+  roles: string[];
+}
+
+const isAdmin = (u: WorkflowActor) => u.roles.includes('admin') || u.roles.includes('platform_admin');
 
 /**
  * Workflow Port: único lugar que conoce Temporal.
@@ -54,8 +72,62 @@ export class WorkflowService {
     return this.clientPromise;
   }
 
-  async startInstance(processDefinitionKey: string, businessKey: string, variables: Record<string, unknown>) {
+  /**
+   * Entrada para el endpoint HTTP: valida que `caseId` y
+   * `variables.signatureRequestId` pertenezcan al tenant del usuario (404 si
+   * no) y exige rol sender/admin. Los llamadores internos de confianza (p. ej.
+   * SignatureRequestsService al crear una solicitud) usan `startInstance`.
+   */
+  async startInstanceForUser(
+    user: WorkflowActor,
+    processDefinitionKey: string,
+    businessKey: string,
+    variables: Record<string, unknown>,
+  ) {
+    if (!user.roles.includes('sender') && !isAdmin(user)) {
+      throw new ForbiddenException('Requiere rol sender o admin');
+    }
     const signatureRequestId = String(variables.signatureRequestId ?? businessKey);
+    const request = await this.prisma.signatureRequest.findFirst({
+      where: { id: signatureRequestId, tenantId: user.tenantId },
+      select: { id: true, order: true, documentId: true },
+    });
+    if (!request) throw new NotFoundException('Solicitud de firma no encontrada');
+    // `caseId` puede ser un Case real o el id de la propia solicitud.
+    if (businessKey !== signatureRequestId) {
+      const kase = await this.prisma.case.findFirst({
+        where: { id: businessKey, tenantId: user.tenantId },
+        select: { id: true },
+      });
+      if (!kase) throw new NotFoundException('Caso no encontrado');
+    }
+    // Lo que alimenta al workflow sale de la BD, no del cliente.
+    const signerRows = await this.prisma.signer.findMany({
+      where: { signatureRequestId },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return this.startInstance(
+      processDefinitionKey,
+      businessKey,
+      {
+        ...variables,
+        signatureRequestId,
+        order: request.order,
+        documentId: request.documentId,
+        signers: signerRows.map((x) => ({ signerId: x.signerId, name: x.name ?? undefined })),
+      },
+      user.tenantId,
+    );
+  }
+
+  async startInstance(
+    processDefinitionKey: string,
+    businessKey: string,
+    variables: Record<string, unknown>,
+    tenantId?: string,
+  ) {
+    const signatureRequestId = String(variables.signatureRequestId ?? businessKey);
+    const tenant = tenantId ?? (await this.tenantOfRequest(signatureRequestId));
     const input: ContratoWorkflowInput = {
       signatureRequestId,
       documentId: String(variables.documentId ?? ''),
@@ -76,6 +148,7 @@ export class WorkflowService {
       await this.prisma.workflowRun.upsert({
         where: { signatureRequestId },
         create: {
+          tenantId: tenant,
           signatureRequestId,
           workflowId,
           runId: handle.firstExecutionRunId,
@@ -83,16 +156,23 @@ export class WorkflowService {
           processKey: processDefinitionKey,
           status: 'ACTIVO',
         },
-        update: { workflowId, runId: handle.firstExecutionRunId, status: 'ACTIVO', lastError: null },
+        update: {
+          workflowId,
+          runId: handle.firstExecutionRunId,
+          status: 'ACTIVO',
+          lastError: null,
+          tenantId: tenant,
+        },
       });
       return { id: workflowId, processDefinitionKey, caseId: businessKey, status: 'ACTIVO' as const };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log.warn(`Temporal no arrancó el flujo: ${message}`);
-      await this.seedTasks(input, workflowId);
+      await this.seedTasks(input, workflowId, tenant);
       await this.prisma.workflowRun.upsert({
         where: { signatureRequestId },
         create: {
+          tenantId: tenant,
           signatureRequestId,
           workflowId,
           taskQueue: PRESTIGE_TASK_QUEUE,
@@ -100,13 +180,18 @@ export class WorkflowService {
           status: 'LOCAL',
           lastError: message,
         },
-        update: { status: 'LOCAL', lastError: message },
+        update: { status: 'LOCAL', lastError: message, tenantId: tenant },
       });
       return { id: workflowId, processDefinitionKey, caseId: businessKey, status: 'ACTIVO' as const };
     }
   }
 
-  async describe(signatureRequestId: string) {
+  async describe(signatureRequestId: string, tenantId: string) {
+    const owned = await this.prisma.signatureRequest.findFirst({
+      where: { id: signatureRequestId, tenantId },
+      select: { id: true },
+    });
+    if (!owned) throw new NotFoundException('Solicitud de firma no encontrada');
     const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
     const tasks = await this.prisma.humanTask.findMany({
       where: { signatureRequestId },
@@ -126,20 +211,38 @@ export class WorkflowService {
     return { run, tasks, live };
   }
 
-  async listRuns() {
-    return this.prisma.workflowRun.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
+  async listRuns(tenantId: string, page?: PageQueryDto) {
+    // Antes: take 50 fijo. Sin limit/cursor sigue devolviendo array (tope 200).
+    const args = pageArgs(page);
+    const rows = await this.prisma.workflowRun.findMany({
+      where: { OR: [{ tenantId }, { tenantId: null, signatureRequest: { tenantId } }] },
+      orderBy: STABLE_ORDER,
+      ...prismaPage(args),
+    });
+    return finishPage(rows, args);
   }
 
-  async listTasks(params: { assignee?: string; candidateGroup?: string; tenantId?: string }) {
+  async listTasks(
+    params: { assignee?: string; candidateGroup?: string; tenantId?: string },
+    page?: PageQueryDto,
+  ) {
+    const args = pageArgs(page);
     const tasks = await this.prisma.humanTask.findMany({
       where: {
         ...(params.assignee ? { signerId: params.assignee } : {}),
-        // A-07 — HumanTask no lleva tenant; se filtra por el de la solicitud.
-        ...(params.tenantId ? { signatureRequest: { tenantId: params.tenantId } } : {}),
+        ...(params.tenantId
+          ? {
+              OR: [
+                { tenantId: params.tenantId },
+                { tenantId: null, signatureRequest: { tenantId: params.tenantId } },
+              ],
+            }
+          : {}),
       },
-      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
+      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      ...prismaPage(args),
     });
-    return tasks.map((task) => ({
+    return mapPage(finishPage(tasks, args), (task) => ({
       id: task.id,
       name: task.name,
       processInstanceId: task.workflowId ?? task.signatureRequestId,
@@ -159,39 +262,103 @@ export class WorkflowService {
     }));
   }
 
-  async completeTask(taskId: string, variables: Record<string, unknown> = {}) {
-    const task = await this.prisma.humanTask.findUnique({ where: { id: taskId } });
+  /** Carga la tarea por {id, tenantId}: otro tenant => 404 (no revela existencia). */
+  private async loadTask(taskId: string, tenantId: string) {
+    const task = await this.prisma.humanTask.findFirst({
+      where: {
+        id: taskId,
+        OR: [{ tenantId }, { tenantId: null, signatureRequest: { tenantId } }],
+      },
+    });
     if (!task) throw new NotFoundException(`Tarea ${taskId} no encontrada`);
-    await this.prisma.humanTask.update({
-      where: { id: taskId },
+    return task;
+  }
+
+  private assertTaskActor(task: { signerId: string; claimedBy: string | null }, user: WorkflowActor) {
+    if (isAdmin(user) || task.signerId === user.actorId || task.claimedBy === user.actorId) return;
+    throw new ForbiddenException('La tarea no está asignada a ti');
+  }
+
+  async completeTask(taskId: string, variables: Record<string, unknown>, user: WorkflowActor) {
+    const task = await this.loadTask(taskId, user.tenantId);
+    this.assertTaskActor(task, user);
+    // Cierre condicionado a que siga abierta (dos completes no la cierran dos veces).
+    const res = await this.prisma.humanTask.updateMany({
+      where: { id: task.id, status: { in: OPEN_TASK } },
       data: {
         status: 'COMPLETADA',
         completedAt: new Date(),
         outcome: typeof variables.outcome === 'string' ? variables.outcome : 'COMPLETADA',
       },
     });
+    if (res.count !== 1) throw new BadRequestException(`La tarea ${taskId} ya no está abierta`);
     return { ok: true };
   }
 
-  async claimTask(taskId: string, userId: string) {
-    const task = await this.prisma.humanTask.findUnique({ where: { id: taskId } });
-    if (!task) throw new NotFoundException(`Tarea ${taskId} no encontrada`);
-    if (!['CREADA', 'ASIGNADA'].includes(task.status)) {
+  async claimTask(taskId: string, user: WorkflowActor) {
+    const task = await this.loadTask(taskId, user.tenantId);
+    if (!(OPEN_TASK as string[]).includes(task.status)) {
       throw new BadRequestException(`La tarea ${taskId} ya no está abierta`);
     }
+    if (!isAdmin(user) && task.signerId !== user.actorId) {
+      throw new ForbiddenException('La tarea no está asignada a ti');
+    }
+    if (!isAdmin(user) && task.claimedBy && task.claimedBy !== user.actorId) {
+      throw new ForbiddenException('La tarea ya fue reclamada por otra persona');
+    }
     return this.prisma.humanTask.update({
-      where: { id: taskId },
-      data: { claimedBy: userId, claimedAt: new Date(), status: 'ASIGNADA' },
+      where: { id: task.id },
+      data: { claimedBy: user.actorId, claimedAt: new Date(), status: 'ASIGNADA' },
     });
   }
 
-  async reassignTask(taskId: string, userId: string) {
-    const task = await this.prisma.humanTask.findUnique({ where: { id: taskId } });
-    if (!task) throw new NotFoundException(`Tarea ${taskId} no encontrada`);
-    return this.prisma.humanTask.update({
-      where: { id: taskId },
-      data: { signerId: userId, claimedBy: userId, claimedAt: new Date(), status: 'ASIGNADA' },
+  async reassignTask(taskId: string, targetUserId: string, user: WorkflowActor) {
+    const task = await this.loadTask(taskId, user.tenantId);
+    this.assertTaskActor(task, user);
+    // El destino debe ser miembro activo del tenant (directorio real).
+    const member = await this.prisma.tenantMembership.findFirst({
+      where: { userId: targetUserId, active: true, tenant: { slug: user.tenantId, active: true } },
+      select: { id: true },
     });
+    if (!member) throw new BadRequestException('El destinatario no pertenece a este tenant');
+    return this.prisma.humanTask.update({
+      where: { id: task.id },
+      data: { signerId: targetUserId, claimedBy: targetUserId, claimedAt: new Date(), status: 'ASIGNADA' },
+    });
+  }
+
+  /**
+   * Cancela el flujo de una solicitud: emite la señal `cancelled` a Temporal
+   * (el workflow termina en CANCELADO), cancela las tareas abiertas y marca el
+   * WorkflowRun. NO valida tenant ni permisos: el llamador (p. ej.
+   * `SignatureRequestsService.cancel()`, que ya cargó la solicitud por tenant)
+   * debe haberlo hecho. Idempotente y tolerante a que Temporal no esté.
+   */
+  async cancelRun(signatureRequestId: string) {
+    await this.prisma.humanTask.updateMany({
+      where: { signatureRequestId, status: { in: OPEN_TASK } },
+      data: { status: 'CANCELADA' },
+    });
+    await this.prisma.workflowRun.updateMany({
+      where: { signatureRequestId },
+      data: { status: 'CANCELADO' },
+    });
+    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
+    if (!run?.workflowId) return;
+    try {
+      const client = await this.client();
+      await client.workflow.getHandle(run.workflowId).signal(CANCEL_SIGNAL);
+    } catch (error) {
+      this.log.warn(`cancelSignal Temporal omitido: ${(error as Error).message}`);
+    }
+  }
+
+  private async tenantOfRequest(signatureRequestId: string): Promise<string | undefined> {
+    const r = await this.prisma.signatureRequest.findUnique({
+      where: { id: signatureRequestId },
+      select: { tenantId: true },
+    });
+    return r?.tenantId;
   }
 
   async signalSigned(signatureRequestId: string, signerId: string) {
@@ -214,7 +381,8 @@ export class WorkflowService {
     await this.signal(signatureRequestId, 'reject', signerId);
   }
 
-  async seedTasks(input: ContratoWorkflowInput, workflowId?: string) {
+  async seedTasks(input: ContratoWorkflowInput, workflowId?: string, tenantId?: string) {
+    const tenant = tenantId ?? (await this.tenantOfRequest(input.signatureRequestId));
     // Idempotente frente a reintentos del activity de Temporal.
     const existing = await this.prisma.humanTask.count({
       where: { signatureRequestId: input.signatureRequestId },
@@ -236,6 +404,7 @@ export class WorkflowService {
       const delegate = delegatedBy.get(signer.signerId);
       await this.prisma.humanTask.create({
         data: {
+          tenantId: tenant,
           signatureRequestId: input.signatureRequestId,
           signerId: delegate ?? signer.signerId,
           delegatedFrom: delegate ? signer.signerId : null,

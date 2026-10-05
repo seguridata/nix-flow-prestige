@@ -98,10 +98,13 @@ async function bootstrap() {
     .addApiKey({ type: 'apiKey', name: 'X-Prestige-Worker-Token', in: 'header' }, 'worker-token')
     .build();
   const openapi = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, openapi, {
-    swaggerOptions: { persistAuthorization: true },
-    jsonDocumentUrl: 'docs-json',
-  });
+  // Sin /docs ni /docs-json en producción (no exponer el mapa de la API).
+  if (process.env.NODE_ENV !== 'production') {
+    SwaggerModule.setup('docs', app, openapi, {
+      swaggerOptions: { persistAuthorization: true },
+      jsonDocumentUrl: 'docs-json',
+    });
+  }
   if (process.env.NODE_ENV !== 'production') {
     try {
       writeFileSync(

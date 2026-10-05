@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { DocumentsService, type PublicDocument } from './documents.service';
+import type { Page } from '../common/pagination';
 import { CreateDocumentDto, ListDocumentsQueryDto } from './dto';
 
 const MAX_PDF_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -64,8 +65,8 @@ export class DocumentsController {
   list(
     @Query() query: ListDocumentsQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<PublicDocument[]> {
-    return this.documents.list(query.caseId, user.tenantId);
+  ): Promise<PublicDocument[] | Page<PublicDocument>> {
+    return this.documents.list(query.caseId, user.tenantId, query);
   }
 
   @Get(':id')

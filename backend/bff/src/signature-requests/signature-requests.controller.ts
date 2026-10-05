@@ -69,6 +69,7 @@ export class SignatureRequestsController {
       query.documentId,
       requestedBy,
       user.tenantId,
+      { limit: query.limit, cursor: query.cursor },
     );
   }
 
@@ -125,7 +126,11 @@ export class SignatureRequestsController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return this.signatureRequests.recordConsent(id, { signerId: user.actorId, ip, userAgent });
+    return this.signatureRequests.recordConsent(
+      id,
+      { signerId: user.actorId, ip, userAgent },
+      user.tenantId,
+    );
   }
 
   /**
@@ -154,6 +159,7 @@ export class SignatureRequestsController {
       id,
       { ...body, signerId: user.actorId, ip, userAgent },
       file?.buffer,
+      user.tenantId,
     );
   }
 
@@ -169,11 +175,15 @@ export class SignatureRequestsController {
   @Roles('sender', 'admin')
   @Post(':id/actions/cancel')
   cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.signatureRequests.cancel(id, { actorId: user.actorId });
+    return this.signatureRequests.cancel(id, { actorId: user.actorId }, user.tenantId);
   }
 
   @Post(':id/actions/delegate')
   delegate(@Param('id') id: string, @Body() body: DelegateDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.signatureRequests.delegate(id, { fromSignerId: user.actorId, ...body });
+    return this.signatureRequests.delegate(
+      id,
+      { fromSignerId: user.actorId, ...body },
+      user.tenantId,
+    );
   }
 }

@@ -1,5 +1,7 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { RedisService } from '../redis/redis.service';
 import { evaluateDmn } from './dmn-engine';
 import {
@@ -28,6 +30,11 @@ const SEEDS = [
   },
 ];
 
+/**
+ * Las definiciones BPMN/DMN son catálogo de PLATAFORMA: no se parten por
+ * tenant en este sprint (lectura abierta a cualquier usuario autenticado).
+ * Mutarlas exige rol admin (ver ProcessController).
+ */
 @Injectable()
 export class ProcessService implements OnModuleInit {
   constructor(
@@ -50,17 +57,28 @@ export class ProcessService implements OnModuleInit {
         orderBy: { version: 'desc' },
       });
       if (!existing) {
-        await this.prisma.processDefinition.create({ data: seed });
+        try {
+          await this.prisma.processDefinition.create({ data: seed });
+        } catch (error) {
+          // Arranques paralelos (varias réplicas): @@unique([key, version]) → ya lo creó otra.
+          if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+        }
       }
     }
   }
 
-  list() {
+  async list(page?: PageQueryDto) {
+    const args = pageArgs(page);
+    // Orden de dominio estable (key asc, version desc, id desc).
+    const orderBy = [{ key: 'asc' as const }, { version: 'desc' as const }, { id: 'desc' as const }];
+    // Paginado: sin caché (la clave dependería del cursor). Sin limit/cursor: array con caché.
+    if (args.paged) {
+      const rows = await this.prisma.processDefinition.findMany({ orderBy, ...prismaPage(args) });
+      return finishPage(rows, args);
+    }
     // D10 — lectura caliente: el diseñador la pide seguido y cambia poco.
     return this.redis.withCache('process:list', 60, () =>
-      this.prisma.processDefinition.findMany({
-        orderBy: [{ key: 'asc' }, { version: 'desc' }],
-      }),
+      this.prisma.processDefinition.findMany({ orderBy, ...prismaPage(args) }),
     );
   }
 
@@ -152,9 +170,38 @@ export class ProcessService implements OnModuleInit {
     };
   }
 
-  listAudit(params: { signatureRequestId?: string; documentId?: string; onboardingId?: string }) {
+  /**
+   * Auditoría del tenant. Si se filtra por un recurso, se comprueba antes que
+   * pertenezca al tenant (404 si no).
+   */
+  async listAudit(
+    params: { signatureRequestId?: string; documentId?: string; onboardingId?: string },
+    tenantId: string,
+  ) {
+    if (params.signatureRequestId) {
+      const r = await this.prisma.signatureRequest.findFirst({
+        where: { id: params.signatureRequestId, tenantId },
+        select: { id: true },
+      });
+      if (!r) throw new NotFoundException('Solicitud no encontrada');
+    }
+    if (params.documentId) {
+      const d = await this.prisma.document.findFirst({
+        where: { id: params.documentId, tenantId },
+        select: { id: true },
+      });
+      if (!d) throw new NotFoundException('Documento no encontrado');
+    }
+    if (params.onboardingId) {
+      const o = await this.prisma.onboardingCase.findFirst({
+        where: { id: params.onboardingId, tenantId },
+        select: { id: true },
+      });
+      if (!o) throw new NotFoundException('Onboarding no encontrado');
+    }
     return this.prisma.processAuditEvent.findMany({
       where: {
+        tenantId,
         signatureRequestId: params.signatureRequestId,
         documentId: params.documentId,
         onboardingId: params.onboardingId,

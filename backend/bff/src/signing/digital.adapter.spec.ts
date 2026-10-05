@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import forge from 'node-forge';
 import { extractSignature } from '@signpdf/utils';
-import { DigitalSignerAdapter } from './digital.adapter';
+import { DigitalSignerAdapter, countSignatures } from './digital.adapter';
 import { PdfStampService } from './pdf-stamp.service';
 import { SoftwareKeyCustodian } from './pki/software-key-custodian';
 import type { SignCommand } from './signer-adapter';
@@ -81,5 +81,54 @@ describe('DigitalSignerAdapter — PAdES real', () => {
     });
     await expect(adapter.verify(signed.signedPdf!)).resolves.toMatchObject({ valid: true, signatures: 1 });
     await expect(adapter.verify(pdf)).resolves.toMatchObject({ valid: false, signatures: 0 });
+  });
+
+  it('multi-firma en serie: la 2.ª firma DIGITAL es una actualización incremental que no toca los bytes de la 1.ª', async () => {
+    const pdf = await minimalPdf();
+    const base = {
+      method: 'DIGITAL' as const,
+      documentId: 'doc-1',
+      tenantId: 'seguridata',
+      signatureRequestId: 'sr-1',
+      documentHash: 'abc',
+      field: { page: 1, xPct: 0.1, yPct: 0.8, widthPct: 0.4, heightPct: 0.1 },
+    };
+    const first = await adapter.sign({ ...base, signerId: 'ana@x.mx', signerName: 'Ana', pdfBytes: pdf });
+    const second = await adapter.sign({
+      ...base,
+      signerId: 'beto@x.mx',
+      signerName: 'Beto',
+      pdfBytes: first.signedPdf!,
+    });
+    const third = await adapter.sign({
+      ...base,
+      signerId: 'carla@x.mx',
+      signerName: 'Carla',
+      pdfBytes: second.signedPdf!,
+    });
+
+    expect(countSignatures(first.signedPdf!)).toBe(1);
+    expect(countSignatures(second.signedPdf!)).toBe(2);
+    expect(countSignatures(third.signedPdf!)).toBe(3);
+    // Propiedad que preserva el ByteRange previo: el PDF anterior es PREFIJO exacto del nuevo.
+    expect(second.signedPdf!.subarray(0, first.signedPdf!.length).equals(first.signedPdf!)).toBe(true);
+    expect(third.signedPdf!.subarray(0, second.signedPdf!.length).equals(second.signedPdf!)).toBe(true);
+    expect(second.certificate?.subject).toContain('Beto');
+  });
+
+  it('si no puede garantizar la actualización incremental, falla explícitamente (no invalida en silencio)', async () => {
+    // Parece firmado (ByteRange con enteros) pero no es un PDF anexable.
+    const fake = Buffer.from(['%PDF-1.7', '/ByteRange [0 10 20 30]', '%%EOF'].join('\n'));
+    await expect(
+      adapter.sign({
+        method: 'DIGITAL',
+        signerId: 'x',
+        documentId: 'd',
+        tenantId: 'seguridata',
+        signatureRequestId: 'sr-1',
+        documentHash: 'h',
+        pdfBytes: fake,
+      }),
+    ).rejects.toMatchObject({ response: { error: 'INCREMENTAL_SIGN_UNSUPPORTED' } });
   });
 });

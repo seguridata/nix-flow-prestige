@@ -1,4 +1,5 @@
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
+import { buildConsentPayload, buildSignPayload } from "@/services/payloads";
 
 const BASE = "/api/public-sign";
 
@@ -31,11 +32,12 @@ export function resolvePublicLink(token: string) {
   );
 }
 
-export function acceptPublicConsent(token: string, userAgent?: string) {
+/** El BFF toma IP y user-agent de la conexión; el cuerpo va vacío (ConsentAcceptDto). */
+export function acceptPublicConsent(token: string) {
   return fetch(`${BASE}/${encodeURIComponent(token)}/consent`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userAgent: userAgent ?? navigator.userAgent }),
+    body: JSON.stringify(buildConsentPayload()),
   }).then(parse);
 }
 
@@ -50,6 +52,7 @@ export function signPublicLink(
   autograph?: Blob,
 ) {
   const url = `${BASE}/${encodeURIComponent(token)}/sign`;
+  body = buildSignPayload(body);
   if (autograph) {
     const form = new FormData();
     form.append("file", autograph, "trazo.png");

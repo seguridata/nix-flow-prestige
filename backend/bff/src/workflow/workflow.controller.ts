@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { PageQueryDto } from '../common/pagination';
 import { IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
@@ -24,41 +25,45 @@ export class WorkflowController {
 
   @Roles('sender', 'admin')
   @Post('workflows/:key/instances')
-  start(@Param('key') key: string, @Body() body: StartInstanceDto) {
-    return this.workflow.startInstance(key, body.caseId, body.variables ?? {});
+  start(@Param('key') key: string, @Body() body: StartInstanceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.startInstanceForUser(user, key, body.caseId, body.variables ?? {});
   }
 
   /** Tareas del usuario autenticado. */
   @Get('tasks')
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.workflow.listTasks({ assignee: user.actorId, tenantId: user.tenantId });
+  list(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.listTasks({ assignee: user.actorId, tenantId: user.tenantId }, page);
   }
 
   @Post('tasks/:id/complete')
-  complete(@Param('id') id: string, @Body() body: Record<string, unknown> = {}) {
-    return this.workflow.completeTask(id, body);
+  complete(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: Record<string, unknown> = {},
+  ) {
+    return this.workflow.completeTask(id, body, user);
   }
 
   /** Reclamar una tarea para el usuario autenticado. */
   @Post('tasks/:id/claim')
   claim(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.workflow.claimTask(id, user.actorId);
+    return this.workflow.claimTask(id, user);
   }
 
   /** Reasignar a otra persona: acción de supervisión. */
   @Roles('sender', 'admin')
   @Post('tasks/:id/reassign')
-  reassign(@Param('id') id: string, @Body() body: ReassignDto) {
-    return this.workflow.reassignTask(id, body.userId);
+  reassign(@Param('id') id: string, @Body() body: ReassignDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.reassignTask(id, body.userId, user);
   }
 
   @Get('workflows')
-  listRuns() {
-    return this.workflow.listRuns();
+  listRuns(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.listRuns(user.tenantId, page);
   }
 
   @Get('workflows/by-request/:signatureRequestId')
-  describe(@Param('signatureRequestId') signatureRequestId: string) {
-    return this.workflow.describe(signatureRequestId);
+  describe(@Param('signatureRequestId') signatureRequestId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.workflow.describe(signatureRequestId, user.tenantId);
   }
 }

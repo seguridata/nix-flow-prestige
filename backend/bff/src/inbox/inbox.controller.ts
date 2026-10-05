@@ -1,4 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
+import { PageQueryDto, finishPage, pageArgs, prismaPage } from '../common/pagination';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { InboxService, type InboxItem } from './inbox.service';
@@ -31,8 +32,9 @@ export class InboxController {
    * autenticado del tenant puede leerlo; el filtro sale del token.
    */
   @Get('colleagues')
-  colleagues(@CurrentUser() user: AuthenticatedUser) {
-    return this.prisma.tenantMembership.findMany({
+  async colleagues(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    const args = pageArgs(page);
+    const rows = await this.prisma.tenantMembership.findMany({
       where: {
         // `user.tenantId` del JWT puede ser el slug o el id del tenant;
         // `TenantMembership.tenantId` es el id. Se acepta cualquiera de los dos.
@@ -40,9 +42,20 @@ export class InboxController {
         active: true,
         OR: [{ name: { not: null } }, { email: { not: null } }],
       },
-      select: { userId: true, name: true, email: true },
-      orderBy: [{ name: 'asc' }, { userId: 'asc' }],
+      // id se selecciona solo como cursor de paginación.
+      select: { id: true, userId: true, name: true, email: true },
+      orderBy: [{ name: 'asc' }, { userId: 'asc' }, { id: 'asc' }],
+      ...prismaPage(args),
     });
+    const out = finishPage(rows, args);
+    const strip = ({ userId, name, email }: { userId: string; name: string | null; email: string | null }) => ({
+      userId,
+      name,
+      email,
+    });
+    return Array.isArray(out)
+      ? out.map(strip)
+      : { items: out.items.map(strip), nextCursor: out.nextCursor };
   }
 
   @Get('snapshot')

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/store/session-store";
+import { buildDelegatePayload } from "@/services/payloads";
 import { signerBlockedBy } from "@/libs/signing-turn";
 import { useDocumentRealtime } from "@/hooks/use-document-realtime";
 import { fetchDocument, documentContentUrl } from "@/services/documents-service";
@@ -27,6 +28,7 @@ import {
   fetchSignatureRequestsForDocument,
   fetchSigningCapabilities,
   signRequest,
+  verifyInternalPasskey,
 } from "@/services/signature-requests-service";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -107,11 +109,16 @@ export default function DocumentDetailPage({
       method: SignatureMethod;
       autograph?: Blob;
       consentAccepted: boolean;
+      passkeyAssertionId?: string;
     }) => {
       if (!request) throw new Error("No hay solicitud de firma para este documento");
       return signRequest(
         request.id,
-        { method: payload.method, consentAccepted: payload.consentAccepted },
+        {
+          method: payload.method,
+          consentAccepted: payload.consentAccepted,
+          passkeyAssertionId: payload.passkeyAssertionId,
+        },
         payload.autograph,
       );
     },
@@ -140,11 +147,7 @@ export default function DocumentDetailPage({
   const delegateMutation = useMutation({
     mutationFn: () => {
       if (!request) throw new Error("No hay solicitud");
-      return delegateRequest(request.id, {
-        fromSignerId: signerId,
-        toSignerId: delegateTo.trim(),
-        toName: delegateName.trim() || undefined,
-      });
+      return delegateRequest(request.id, buildDelegatePayload(delegateTo, delegateName));
     },
     onSuccess: () => {
       toast.success("Firma delegada.");
@@ -371,6 +374,8 @@ export default function DocumentDetailPage({
           onOpenChange={setMethodDialogOpen}
           allowedMethods={request.methods}
           consentText={consentQuery.data}
+          requirePasskey={request.requirePasskey}
+          onVerifyPasskey={() => verifyInternalPasskey(request.id)}
           biometricReady={capsQuery.data?.find((c) => c.method === "BIOMETRICA")?.configured}
           isSubmitting={signMutation.isPending}
           onConfirm={(payload) => signMutation.mutate(payload)}

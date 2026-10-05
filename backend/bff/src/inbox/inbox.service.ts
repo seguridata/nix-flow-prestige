@@ -37,16 +37,24 @@ export class InboxService {
     private readonly cases: CasesService,
   ) {}
 
+  /** Documentos y casos en 2 consultas en lote (antes: 2 por solicitud). */
+  private async lookups(documentIds: string[], tenantId?: string) {
+    const docs = await this.documents.findManyByIds(documentIds, tenantId);
+    const kases = await this.cases.findManyByIds([...docs.values()].map((d) => d.caseId), tenantId);
+    return { docs, kases };
+  }
+
   async forSigner(signerId: string, tenantId?: string): Promise<InboxItem[]> {
-    const requests = await this.signatureRequests.list(signerId, undefined, undefined, undefined, tenantId);
+    const requests = await this.signatureRequests.listAll(signerId, undefined, undefined, undefined, tenantId);
+    const { docs, kases } = await this.lookups(requests.map((r) => r.documentId), tenantId);
 
     const items = await Promise.all(
       requests.map(async (request) => {
-        const document = await this.documents.find(request.documentId, tenantId);
+        const document = docs.get(request.documentId) ?? null;
         const signer = request.signers.find(
           (s) => s.signerId === signerId || s.delegatedTo === signerId,
         );
-        const kase = document ? await this.cases.find(document.caseId, tenantId) : null;
+        const kase = document ? (kases.get(document.caseId) ?? null) : null;
 
         const currentSignerId =
           request.order === 'SECUENCIAL'
@@ -80,17 +88,18 @@ export class InboxService {
   }
 
   async forRequester(requestedBy: string, tenantId?: string): Promise<InboxItem[]> {
-    const requests = await this.signatureRequests.list(
+    const requests = await this.signatureRequests.listAll(
       undefined,
       undefined,
       undefined,
       requestedBy,
       tenantId,
     );
+    const { docs, kases } = await this.lookups(requests.map((r) => r.documentId), tenantId);
     const items = await Promise.all(
       requests.map(async (request) => {
-        const document = await this.documents.find(request.documentId, tenantId);
-        const kase = document ? await this.cases.find(document.caseId, tenantId) : null;
+        const document = docs.get(request.documentId) ?? null;
+        const kase = document ? (kases.get(document.caseId) ?? null) : null;
         const pending = request.signers.filter((s) => s.status === 'PENDIENTE');
         return {
           signatureRequestId: request.id,

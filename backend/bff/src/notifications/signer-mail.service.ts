@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationOutboxService } from './notification-outbox.service';
+import { LINK_PLACEHOLDER, NotificationOutboxService } from './notification-outbox.service';
 import { OneTimeLinkService } from './one-time-link.service';
 import { templates } from './templates';
 
@@ -71,9 +71,9 @@ export class SignerMailService {
       signerName: signer.name ?? undefined,
       requesterName: ctx.request.requestedByName ?? undefined,
       documentTitle: ctx.documentTitle,
-      url,
+      url: LINK_PLACEHOLDER,
     });
-    await this.enqueue(signer.email, t, 'signInvite', `invite:${signatureRequestId}:${signer.signerId}`);
+    await this.enqueue(signer.email, t, 'signInvite', `invite:${signatureRequestId}:${signer.signerId}`, ctx.request.tenantId, url);
   }
 
   async sendReminder(signatureRequestId: string, signerId: string, ratio: number) {
@@ -86,10 +86,10 @@ export class SignerMailService {
     const t = templates.reminder({
       signerName: signer?.delegatedToName ?? signer?.name ?? undefined,
       documentTitle: ctx.documentTitle,
-      url,
+      url: LINK_PLACEHOLDER,
     });
     const bucket = Math.round(ratio * 100);
-    await this.enqueue(to, t, 'reminder', `reminder:${signatureRequestId}:${signerId}:${bucket}`);
+    await this.enqueue(to, t, 'reminder', `reminder:${signatureRequestId}:${signerId}:${bucket}`, ctx.request.tenantId, url);
   }
 
   async sendEscalation(signatureRequestId: string, signerLabel: string, ratio: number) {
@@ -107,7 +107,7 @@ export class SignerMailService {
         documentTitle: ctx.documentTitle,
         url,
       });
-      await this.enqueue(to, t, 'escalation', `escalation:${signatureRequestId}:${signerLabel}:${Math.round(ratio * 100)}`);
+      await this.enqueue(to, t, 'escalation', `escalation:${signatureRequestId}:${signerLabel}:${Math.round(ratio * 100)}`, ctx.request.tenantId);
     }
   }
 
@@ -128,7 +128,7 @@ export class SignerMailService {
     }
     for (const [to, name] of recipients) {
       const t = templates.completed({ name, documentTitle: ctx.documentTitle, url });
-      await this.enqueue(to, t, 'completed', `completed:${signatureRequestId}:${to}`);
+      await this.enqueue(to, t, 'completed', `completed:${signatureRequestId}:${to}`, ctx.request.tenantId);
     }
   }
 
@@ -151,9 +151,11 @@ export class SignerMailService {
     t: { subject: string; html: string },
     template: string,
     dedupeKey: string,
+    tenantId?: string,
+    link?: string,
   ) {
     try {
-      await this.outbox.enqueueEmail({ to, subject: t.subject, html: t.html, template, dedupeKey });
+      await this.outbox.enqueueEmail({ to, subject: t.subject, html: t.html, template, dedupeKey, tenantId, link });
     } catch (error) {
       this.log.warn(`No se pudo encolar correo (${template}): ${(error as Error).message}`);
     }

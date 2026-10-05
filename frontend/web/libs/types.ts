@@ -22,7 +22,7 @@ export interface DocumentRecord {
   locked: boolean;
 }
 
-export type SignatureMethod = "DIGITAL" | "AUTOGRAFA" | "BIOMETRICA" | "ACCEPT";
+export type SignatureMethod = "DIGITAL" | "AUTOGRAFA" | "BIOMETRICA" | "ACCEPT" | "PASSKEY";
 export type SigningOrder = "SECUENCIAL" | "PARALELO";
 export type SignerStatus = "PENDIENTE" | "FIRMADO" | "RECHAZADO";
 export type SignatureRequestStatus =
@@ -58,6 +58,8 @@ export interface SignatureRequest {
   methods: SignatureMethod[];
   order: SigningOrder;
   status: SignatureRequestStatus;
+  /** El sobre exige verificación con passkey antes de firmar. */
+  requirePasskey?: boolean;
   requestedBy?: string;
   requestedByName?: string;
   createdAt: string;

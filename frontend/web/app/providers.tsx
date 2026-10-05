@@ -14,10 +14,13 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/firmar");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (skip) return;
     let alive = true;
+    setFailed(false);
     fetch("/api/auth/me", { cache: "no-store" })
       .then(async (r) => {
         if (!alive) return;
@@ -25,6 +28,7 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
           window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
           return;
         }
+        if (!r.ok) throw new Error(`auth/me ${r.status}`);
         const data = await r.json();
         setUser({
           signerId: data.actorId,
@@ -35,13 +39,31 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
         });
         setReady(true);
       })
-      .catch(() => alive && setReady(true));
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
     return () => {
       alive = false;
     };
-  }, [skip]);
+  }, [skip, attempt]);
 
   if (skip) return <>{children}</>;
+
+  if (failed) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+        <p className="text-sm font-medium">No se pudo cargar tu sesión.</p>
+        <p className="text-xs text-muted-foreground">Revisa tu conexión e inténtalo de nuevo.</p>
+        <button
+          type="button"
+          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
+          onClick={() => setAttempt((n) => n + 1)}
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
 
   if (!ready || !user) {
     return (

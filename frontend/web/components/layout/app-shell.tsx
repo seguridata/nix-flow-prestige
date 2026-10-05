@@ -28,15 +28,16 @@ import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
 import { CommandPalette, useCommandPalette } from "@/components/command/command-palette";
 
-const NAV: { href: Route; label: string; icon: typeof Inbox }[] = [
+/** `roles`: la entrada solo se muestra si el usuario tiene alguno (espeja los @Roles del BFF). */
+const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/inbox", label: "Bandeja", icon: Inbox },
   { href: "/sent", label: "Enviados", icon: Send },
-  { href: "/new", label: "Enviar", icon: FilePlus2 },
-  { href: "/onboarding", label: "Onboarding", icon: UserPlus },
+  { href: "/new", label: "Enviar", icon: FilePlus2, roles: ["sender", "admin"] },
+  { href: "/onboarding", label: "Onboarding", icon: UserPlus, roles: ["rh", "admin"] },
   { href: "/tasks", label: "Tareas", icon: ListChecks },
-  { href: "/process", label: "Proceso", icon: GitBranch },
-  { href: "/operations", label: "Operación", icon: Server },
+  { href: "/process", label: "Proceso", icon: GitBranch, roles: ["sender", "admin"] },
+  { href: "/operations", label: "Operación", icon: Server, roles: ["sender", "rh", "admin"] },
 ];
 
 export function AppShell({
@@ -50,6 +51,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const { name, email, roles } = useSession();
+  const visibleNav = NAV.filter((n) => !n.roles || n.roles.some((r) => roles.includes(r)));
   const palette = useCommandPalette();
   const initials = name
     .split(" ")
@@ -65,7 +67,7 @@ export function AppShell({
           <SeguriDataLogo inverted />
         </div>
         <nav className="flex flex-1 flex-col gap-1 px-3" data-tour="nav">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
             return (
@@ -108,7 +110,7 @@ export function AppShell({
                   <SeguriDataLogo inverted />
                 </div>
                 <nav className="flex flex-col gap-1 px-3">
-                  {NAV.map((item) => {
+                  {visibleNav.map((item) => {
                     const Icon = item.icon;
                     return (
                       <Link

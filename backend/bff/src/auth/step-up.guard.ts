@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { STEP_UP_KEY } from './step-up.decorator';
@@ -10,7 +10,15 @@ import type { AuthenticatedUser } from './jwt-auth.guard';
  */
 @Injectable()
 export class StepUpGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  private readonly logger = new Logger(StepUpGuard.name);
+
+  constructor(private readonly reflector: Reflector) {
+    if (process.env.STEP_UP_ENFORCE !== 'true') {
+      this.logger.warn(
+        'STEP_UP_ENFORCE no está activo: las rutas @StepUp() NO exigen re-autenticación reciente cuando el token no trae auth_time. Actívalo en producción.',
+      );
+    }
+  }
 
   canActivate(ctx: ExecutionContext): boolean {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [

@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { PageQueryDto } from '../common/pagination';
 import { ApiTags } from '@nestjs/swagger';
 import {
   ArrayNotEmpty,
@@ -16,7 +17,7 @@ import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { WebhooksService } from './webhooks.service';
 
 class CreateWebhookDto {
-  @IsUrl({ require_tld: false, protocols: ['http', 'https'] }) @MaxLength(2000)
+  @IsUrl({ require_tld: true, protocols: ['https', 'http'], require_protocol: true }) @MaxLength(2000)
   url!: string;
 
   @IsOptional() @IsArray() @ArrayNotEmpty() @IsString({ each: true }) @MaxLength(120, { each: true })
@@ -30,7 +31,7 @@ class CreateWebhookDto {
 }
 
 class UpdateWebhookDto {
-  @IsOptional() @IsUrl({ require_tld: false, protocols: ['http', 'https'] }) @MaxLength(2000)
+  @IsOptional() @IsUrl({ require_tld: true, protocols: ['https', 'http'], require_protocol: true }) @MaxLength(2000)
   url?: string;
 
   @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true })
@@ -59,8 +60,8 @@ export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
 
   @Get('subscriptions')
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.webhooks.list(user.tenantId);
+  list(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.webhooks.list(user.tenantId, page);
   }
 
   @Post('subscriptions')
@@ -80,6 +81,12 @@ export class WebhooksController {
   @Delete('subscriptions/:id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.webhooks.remove(user.tenantId, id);
+  }
+
+  /** Rota el secreto y lo devuelve UNA vez (el listado solo lo muestra enmascarado). */
+  @Post('subscriptions/:id/rotate-secret')
+  rotate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.webhooks.rotateSecret(user.tenantId, id);
   }
 
   @Post('subscriptions/:id/ping')

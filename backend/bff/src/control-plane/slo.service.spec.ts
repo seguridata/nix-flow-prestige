@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SloService } from './slo.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
-function fakePrisma(counts: Record<string, number>, done: unknown[] = []) {
+function fakePrisma(counts: Record<string, number>, avgSeconds: number | null = null) {
   const c = (k: string) => counts[k] ?? 0;
   return {
     signatureRequest: {
@@ -10,8 +10,8 @@ function fakePrisma(counts: Record<string, number>, done: unknown[] = []) {
         const s = (where?.status as string) ?? 'all';
         return c(`sr:${s}`);
       },
-      findMany: async () => done,
     },
+    $queryRaw: async () => [{ avg_seconds: avgSeconds }],
     workflowRun: {
       count: async ({ where }: { where?: Record<string, unknown> }) =>
         where?.lastError ? c('run:broken') : c('run:local'),
@@ -48,6 +48,12 @@ describe('SloService.snapshot', () => {
     expect(snap.indicators.webhookDlq.level).toBe('crit');
     expect(snap.indicators.expiryRate.level).toBe('crit'); // 50% expiran
     expect(snap.overall).toBe('crit');
+  });
+
+  it('tiempo medio a COMPLETADA sale de la agregación SQL (segundos -> horas)', async () => {
+    const svc = new SloService(fakePrisma({ 'sr:all': 4, 'sr:COMPLETADA': 4 }, 7200));
+    const snap = await svc.snapshot('t1');
+    expect(snap.indicators.avgHoursToComplete.value).toBe(2);
   });
 
   it('sin datos (0 solicitudes) no revienta y da ok', async () => {

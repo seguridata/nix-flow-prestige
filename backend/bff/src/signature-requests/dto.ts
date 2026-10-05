@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -16,6 +17,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { PageQueryDto } from '../common/pagination';
+import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 
 const METHODS = ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA', 'ACCEPT', 'PASSKEY'] as const;
 const ORDERS = ['SECUENCIAL', 'PARALELO'] as const;
@@ -56,7 +59,7 @@ export class CreateSignatureRequestDto {
   @IsOptional() @IsInt() @Min(1) @Max(2160)
   slaHours?: number;
 
-  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => SignerInputDto)
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => SignerInputDto)
   signers!: SignerInputDto[];
 
   @IsOptional() @Transform(toBool) @IsBoolean()
@@ -89,7 +92,7 @@ export class PasskeyFinishDto {
   // pena describir campo a campo con class-validator: se valida
   // criptográficamente dentro de `PasskeyCeremonyService.finish`, no aquí.
   @IsObject()
-  response!: Record<string, unknown>;
+  response!: AuthenticationResponseJSON;
 }
 
 /**
@@ -111,7 +114,7 @@ export class DelegateDto {
   toName?: string;
 }
 
-export class ListSignatureRequestsQueryDto {
+export class ListSignatureRequestsQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(200) signerId?: string;
   @IsOptional() @IsString() @MaxLength(40) status?: string;
   @IsOptional() @IsString() @MaxLength(200) documentId?: string;

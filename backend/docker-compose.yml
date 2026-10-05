@@ -2,7 +2,9 @@ name: prestige-sandbox
 
 # Prestige local stack.
 # Levanta: Postgres, Keycloak, Temporal (+ UI), MinIO, Redis.
-# El BFF y el worker TypeScript corren en el host con `bun run dev`.
+# El BFF y el worker TypeScript corren en el host con `bun run dev`; opcionalmente
+# en contenedor con `docker compose --profile app up -d --build` (ver bff/worker abajo).
+# Postgres, Redis y Keycloak sólo escuchan en 127.0.0.1.
 
 services:
   postgres:
@@ -16,7 +18,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./infra/create-multiple-dbs.sh:/docker-entrypoint-initdb.d/create-multiple-dbs.sh:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prestige}"]
       interval: 5s
@@ -38,7 +40,7 @@ services:
     volumes:
       - ./infra/keycloak/prestige-realm.json:/opt/keycloak/data/import/prestige-realm.json:ro
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,7 +95,7 @@ services:
       - miniodata:/data
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       - minio
     restart: on-failure
@@ -135,7 +137,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -171,6 +173,62 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Opcional (profile `app`): BFF en contenedor. Construye desde la raíz del monorepo.
+  # Requiere backend/bff/.env (STORAGE_MASTER_KEY, WORKER_SHARED_SECRET, KEYCLOAK_*, ...)
+  # y la PKI en backend/bff/pki. Aplica `prisma migrate deploy` al arrancar.
+  bff:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: backend/bff/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: ./bff/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prestige}:${POSTGRES_PASSWORD:-prestige}@postgres:5432/prestige?schema=public
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      S3_ENDPOINT: http://minio:9000
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      RUN_MIGRATIONS: "true"
+    volumes:
+      - ./bff/pki:/app/backend/bff/pki:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+
+  # Opcional (profile `app`): worker de Temporal (misma imagen, sin migrar).
+  worker:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: backend/bff/Dockerfile
+    restart: unless-stopped
+    command: ["node", "dist/src/temporal/worker.js"]
+    env_file:
+      - path: ./bff/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prestige}:${POSTGRES_PASSWORD:-prestige}@postgres:5432/prestige?schema=public
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      S3_ENDPOINT: http://minio:9000
+      BFF_INTERNAL_URL: http://bff:3000
+      RUN_MIGRATIONS: "false"
+    volumes:
+      - ./bff/pki:/app/backend/bff/pki:ro
+    depends_on:
+      - bff
+      - temporal
 
 volumes:
   pgdata:

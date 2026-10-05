@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
 import { SignatureRequestsService } from './signature-requests.service';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -51,6 +51,7 @@ function makeService(templates: Record<string, Record<string, unknown>>) {
   const collab = { audit: async () => undefined, notify: async () => undefined };
   const mail = { sendInvite: async () => undefined, sendInvites: async () => undefined };
 
+  const documents = { freeze: vi.fn(async () => ({ locked: true })) };
   const svc = new SignatureRequestsService(
     prisma,
     undefined as never,
@@ -63,8 +64,9 @@ function makeService(templates: Record<string, Record<string, unknown>>) {
     mail as never,
     policyService,
     undefined as never,
+    documents as never,
   );
-  return { svc, created };
+  return { svc, created, documents };
 }
 
 describe('SignatureRequestsService.create — plantillas', () => {

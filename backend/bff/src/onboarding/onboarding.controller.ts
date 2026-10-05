@@ -7,10 +7,12 @@ import {
   Param,
   ParseFilePipeBuilder,
   Post,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { PageQueryDto } from '../common/pagination';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { StepUp } from '../auth/step-up.decorator';
@@ -39,8 +41,8 @@ export class OnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.onboarding.list(user.tenantId);
+  list(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.onboarding.list(user.tenantId, page);
   }
 
   @Get('biometric-consent')

@@ -8,6 +8,7 @@ import type { SignerMailService } from '../notifications/signer-mail.service';
 type Req = {
   id: string;
   documentId: string;
+  tenantId?: string;
   signers: { signerId: string; name: string | null; status: string; sortOrder: number }[];
 };
 
@@ -64,6 +65,12 @@ describe('SignatureRequestsService.notifyNextInSequence', () => {
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'SIGNATURE_TURN', payload: expect.objectContaining({ signerId: 'beto' }) }),
     );
+  });
+
+  it('pasa el tenantId de la solicitud a collab.notify', async () => {
+    const { call, notify } = makeService();
+    await call({ ...REQ, tenantId: 'tenant-a' });
+    expect(notify).toHaveBeenCalledWith('beto', expect.any(String), expect.any(String), '/inbox', 'tenant-a');
   });
 
   it('es idempotente: no repite si ya se auditó el turno de ese firmante', async () => {

@@ -10,7 +10,8 @@
       { "name": "sender", "description": "Puede crear casos y enviar solicitudes de firma" },
       { "name": "rh", "description": "Recursos Humanos: opera el onboarding e identidad" },
       { "name": "auditor", "description": "Solo lectura: expedientes, evidencia y auditoría" },
-      { "name": "admin", "description": "Administración: procesos, políticas, tenants" }
+      { "name": "admin", "description": "Administración: procesos, políticas, tenants" },
+      { "name": "platform_admin", "description": "Operador de plataforma (control-plane multi-tenant). Solo SeguriData." }
     ]
   },
   "clients": [
@@ -88,7 +89,7 @@
       "emailVerified": true,
       "attributes": { "tenant": ["seguridata"] },
       "credentials": [{ "type": "password", "value": "roberto123", "temporary": false }],
-      "realmRoles": ["signer", "sender", "rh", "admin"]
+      "realmRoles": ["signer", "sender", "rh", "admin", "platform_admin"]
     }
   ]
 }

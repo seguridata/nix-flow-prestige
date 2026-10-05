@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { TaskKanban } from "@/components/bpm/task-kanban";
 import { useSession } from "@/store/session-store";
+import { buildDelegatePayload } from "@/services/payloads";
 import { apiClient } from "@/services/api-client";
 import { delegateRequest } from "@/services/signature-requests-service";
 import {
@@ -131,16 +132,11 @@ function OutOfOfficeCard() {
 }
 
 function DelegateBox({ task, onDone }: { task: Task; onDone: () => void }) {
-  const { signerId } = useSession();
   const [to, setTo] = useState("");
   const [toName, setToName] = useState("");
   const delegate = useMutation({
     mutationFn: () =>
-      delegateRequest(task.signatureRequestId, {
-        fromSignerId: signerId,
-        toSignerId: to.trim(),
-        toName: toName.trim() || undefined,
-      }),
+      delegateRequest(task.signatureRequestId, buildDelegatePayload(to, toName)),
     onSuccess: () => {
       toast.success("Firma delegada.");
       onDone();
@@ -181,7 +177,7 @@ export default function TasksPage() {
     },
   });
   const claim = useMutation({
-    mutationFn: (id: string) => apiClient.post(`/tasks/${id}/claim`, { userId: signerId }),
+    mutationFn: (id: string) => apiClient.post(`/tasks/${id}/claim`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["human-tasks"] }),
   });
 

@@ -15,11 +15,17 @@ import {
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
-import { ControlPlaneService } from './control-plane.service';
+import { PageQueryDto } from '../common/pagination';
+import { ControlPlaneService, isPlatformAdmin } from './control-plane.service';
 import { SloService } from './slo.service';
 
 const SLUG = /^[a-z0-9-]{2,40}$/;
 const PRINCIPAL = /^[A-Za-z0-9._@+-]{1,120}$/;
+
+class CatalogQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(200)
+  kind?: string;
+}
 
 class CreateTenantDto {
   @Matches(SLUG, { message: 'slug inválido (a-z0-9-)' }) slug!: string;
@@ -50,7 +56,8 @@ class CatalogDto {
 }
 
 /**
- * M15 — control plane. Rol `admin`. `:tenant` acepta id o slug.
+ * M15 — control plane. Rol `admin` (acotado a su propio tenant); tenants y SLO
+ * global requieren `platform_admin`. `:tenant` acepta id o slug.
  */
 @ApiTags('control-plane')
 @Roles('admin')
@@ -61,25 +68,29 @@ export class ControlPlaneController {
     private readonly slo: SloService,
   ) {}
 
+  /** Solo operador de plataforma (rol `platform_admin`). */
+  @Roles('platform_admin')
   @Get('tenants')
   tenants() {
     return this.cp.listTenants();
   }
 
+  @Roles('platform_admin')
   @Post('tenants')
   createTenant(@Body() body: CreateTenantDto) {
     return this.cp.createTenant(body);
   }
 
+  @Roles('platform_admin')
   @Patch('tenants/:id')
   updateTenant(@Param('id') id: string, @Body() body: UpdateTenantDto) {
     return this.cp.updateTenant(id, body);
   }
 
   @Get('tenants/:tenant/members')
-  async members(@Param('tenant') tenant: string, @CurrentUser() user: AuthenticatedUser) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
-    return this.cp.listMembers(tenant);
+  async members(@Param('tenant') tenant: string, @Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    await this.cp.assertOwnTenant(tenant, user);
+    return this.cp.listMembers(tenant, page);
   }
 
   @Put('tenants/:tenant/members')
@@ -88,7 +99,7 @@ export class ControlPlaneController {
     @Body() body: MemberDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
+    await this.cp.assertOwnTenant(tenant, user);
     return this.cp.upsertMember(tenant, body);
   }
 
@@ -98,14 +109,14 @@ export class ControlPlaneController {
     @Param('userId') userId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
+    await this.cp.assertOwnTenant(tenant, user);
     return this.cp.removeMember(tenant, userId);
   }
 
   @Get('tenants/:tenant/policies')
-  async policies(@Param('tenant') tenant: string, @CurrentUser() user: AuthenticatedUser) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
-    return this.cp.listPolicies(tenant);
+  async policies(@Param('tenant') tenant: string, @Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    await this.cp.assertOwnTenant(tenant, user);
+    return this.cp.listPolicies(tenant, page);
   }
 
   @Put('tenants/:tenant/policies')
@@ -114,7 +125,7 @@ export class ControlPlaneController {
     @Body() body: PolicyDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
+    await this.cp.assertOwnTenant(tenant, user);
     return this.cp.setPolicy(tenant, body.key, body.value, user.actorId);
   }
 
@@ -122,10 +133,10 @@ export class ControlPlaneController {
   async catalogs(
     @Param('tenant') tenant: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Query('kind') kind?: string,
+    @Query() query: CatalogQueryDto,
   ) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
-    return this.cp.listCatalog(tenant, kind);
+    await this.cp.assertOwnTenant(tenant, user);
+    return this.cp.listCatalog(tenant, query.kind, query);
   }
 
   @Put('tenants/:tenant/catalogs')
@@ -134,7 +145,7 @@ export class ControlPlaneController {
     @Body() body: CatalogDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
+    await this.cp.assertOwnTenant(tenant, user);
     return this.cp.upsertCatalog(tenant, body);
   }
 
@@ -145,12 +156,13 @@ export class ControlPlaneController {
     @Param('key') key: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.cp.assertOwnTenant(tenant, user.tenantId);
+    await this.cp.assertOwnTenant(tenant, user);
     return this.cp.removeCatalog(tenant, kind, key);
   }
 
   @Get('slo')
-  sloSnapshot() {
-    return this.slo.snapshot();
+  sloSnapshot(@CurrentUser() user: AuthenticatedUser) {
+    // Vista global solo para platform_admin; el resto ve únicamente su tenant.
+    return this.slo.snapshot(isPlatformAdmin(user) ? undefined : user.tenantId);
   }
 }

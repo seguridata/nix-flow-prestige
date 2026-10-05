@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
 import { SignatureRequestsService } from './signature-requests.service';
@@ -25,7 +26,8 @@ function makeService(opts: { kycPolicy: 'NONE' | 'ONCE' | 'EVERY_SIGN'; onboardi
     documentId: 'doc-1',
     createdAt: REQUEST_CREATED_AT,
     requestedBy: null as string | null,
-    document: { hash: 'a'.repeat(64), objectKey: 'k', enc: {}, locked: false, presentedObjectKey: null },
+    // FREEZE obligatorio: el canónico va congelado y su hash coincide con el storage.
+    document: { hash: createHash('sha256').update('%PDF-1.4').digest('hex'), objectKey: 'k', enc: {}, locked: true, presentedObjectKey: null },
     signers: [
       {
         id: 'signer-row-1',
@@ -54,6 +56,7 @@ function makeService(opts: { kycPolicy: 'NONE' | 'ONCE' | 'EVERY_SIGN'; onboardi
       findFirst: async ({ where }: { where: { updatedAt: { gte: Date } } }) =>
         opts.onboardingCases.find((c) => (c.updatedAt as Date).getTime() >= where.updatedAt.gte.getTime()) ?? null,
     },
+    $queryRaw: async () => [],
     $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
   } as unknown as PrismaService;
   const signing = {

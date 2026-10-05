@@ -15,6 +15,7 @@ import {
   fetchSignatureRequestsForDocument,
   fetchSigningCapabilities,
   signRequest,
+  verifyInternalPasskey,
 } from "@/services/signature-requests-service";
 import type { SignatureMethod } from "@/libs/types";
 
@@ -24,6 +25,8 @@ const METHOD_LABEL: Record<string, string> = {
   DIGITAL: "Firma digital (PAdES)",
   AUTOGRAFA: "Firma autógrafa",
   BIOMETRICA: "Firma biométrica",
+  ACCEPT: "Acepto",
+  PASSKEY: "Passkey",
 };
 
 /**
@@ -39,6 +42,9 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   const [method, setMethod] = useState<SignatureMethod | null>(null);
   const [stroke, setStroke] = useState<Blob | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [assertionId, setAssertionId] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
   const doc = useQuery({ queryKey: ["document", documentId], queryFn: () => fetchDocument(documentId) });
   // URL same-origin: el navegador la sirve con su visor nativo, sin blob que revocar.
@@ -76,7 +82,7 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
     try {
       await signRequest(
         mine.request.id,
-        { method, consentAccepted: consent },
+        { method, consentAccepted: consent, passkeyAssertionId: assertionId ?? undefined },
         method === "AUTOGRAFA" ? stroke ?? undefined : undefined,
       );
       setStep("listo");
@@ -85,6 +91,22 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
       toast.error((e as Error).message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  const needsPasskey = Boolean(mine?.request.requirePasskey) || method === "PASSKEY";
+
+  async function verifyPasskey() {
+    if (!mine) return;
+    setVerifying(true);
+    setPasskeyError(null);
+    try {
+      setAssertionId(await verifyInternalPasskey(mine.request.id));
+      toast.success("Passkey verificada.");
+    } catch (e) {
+      setPasskeyError((e as Error).message);
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -233,6 +255,26 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
                         </div>
                       </div>
                     )}
+                    {needsPasskey && (
+                      <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                        <p className="font-medium">
+                          {mine?.request.requirePasskey
+                            ? "Esta firma exige verificación con passkey"
+                            : "Verifica con tu passkey"}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-2"
+                          variant={assertionId ? "outline" : "default"}
+                          disabled={verifying || Boolean(assertionId)}
+                          onClick={verifyPasskey}
+                        >
+                          {assertionId ? "Passkey verificada ✓" : verifying ? "Verificando…" : "Verificar con passkey"}
+                        </Button>
+                        {passkeyError ? <p className="mt-1 text-xs text-destructive">{passkeyError}</p> : null}
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Button variant="outline" onClick={() => setStep("consentimiento")}>
                         Atrás
@@ -240,7 +282,10 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
                       <Button
                         className="flex-1"
                         disabled={
-                          !method || submitting || (method === "AUTOGRAFA" && !stroke)
+                          !method ||
+                          submitting ||
+                          (needsPasskey && !assertionId) ||
+                          (method === "AUTOGRAFA" && !stroke)
                         }
                         onClick={submit}
                       >

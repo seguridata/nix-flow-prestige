@@ -41,3 +41,51 @@ describe('inspectRuntimeSecrets', () => {
     ).toMatch(/localhost/);
   });
 });
+
+describe('inspectRuntimeSecrets — endurecimiento de producción', () => {
+  const prodOk = (extra: NodeJS.ProcessEnv = {}) =>
+    env({
+      NODE_ENV: 'production',
+      KEYCLOAK_ISSUER: 'https://id.ejemplo.mx/realms/prestige',
+      DATABASE_URL: 'postgresql://prestige:Xk39!zz@db.interno:5432/prestige',
+      S3_ACCESS_KEY: 'AKIAREAL',
+      S3_SECRET_KEY: 'secreto-real-largo',
+      SMTP_HOST: 'smtp.ejemplo.mx',
+      TSA_URL: 'https://tsa.seguridata.mx/tsr',
+      ...extra,
+    });
+  const keyPresent = () => true;
+
+  it('una configuración de producción completa no tiene fatales', () => {
+    expect(inspectRuntimeSecrets(prodOk(), keyPresent).fatal).toEqual([]);
+  });
+
+  it.each([
+    ['S3 por defecto', { S3_ACCESS_KEY: 'prestige', S3_SECRET_KEY: 'prestige-minio' }, /S3_/],
+    ['S3 vacío', { S3_ACCESS_KEY: '', S3_SECRET_KEY: '' }, /S3_/],
+    [
+      'DATABASE_URL con password prestige',
+      { DATABASE_URL: 'postgresql://prestige:prestige@db:5432/prestige' },
+      /DATABASE_URL/,
+    ],
+    ['sin KEYCLOAK_ISSUER', { KEYCLOAK_ISSUER: '' }, /KEYCLOAK_ISSUER/],
+    ['sin SMTP_HOST', { SMTP_HOST: '' }, /SMTP_HOST/],
+    ['sin TSA_URL', { TSA_URL: '' }, /TSA_URL/],
+  ])('production: %s es fatal', (_name, extra, re) => {
+    expect(inspectRuntimeSecrets(prodOk(extra as NodeJS.ProcessEnv), keyPresent).fatal.join(' ')).toMatch(re);
+  });
+
+  it('production: falta la llave Ed25519 del manifiesto es fatal', () => {
+    expect(inspectRuntimeSecrets(prodOk(), () => false).fatal.join(' ')).toMatch(/Ed25519/);
+  });
+
+  it('fuera de production los mismos problemas son solo warnings', () => {
+    const res = inspectRuntimeSecrets(
+      env({ S3_ACCESS_KEY: 'prestige', S3_SECRET_KEY: 'prestige-minio', SMTP_HOST: '', TSA_URL: '' }),
+      () => false,
+    );
+    expect(res.fatal).toEqual([]);
+    expect(res.warnings.join(' ')).toMatch(/S3_/);
+    expect(res.warnings.join(' ')).toMatch(/Ed25519/);
+  });
+});

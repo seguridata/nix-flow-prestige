@@ -26,7 +26,7 @@ export class RedisService implements OnModuleDestroy {
         enableOfflineQueue: true,
       });
       this.main.on('error', (e) => this.log.warn(`redis: ${e.message}`));
-      this.main.once('connect', () => this.log.log(`Redis conectado (${process.env.REDIS_URL})`));
+      this.main.once('connect', () => this.log.log(`Redis conectado (${maskRedisUrl(process.env.REDIS_URL)})`));
     }
     return this.main;
   }
@@ -93,5 +93,20 @@ export class RedisService implements OnModuleDestroy {
         /* noop */
       }
     }
+  }
+}
+
+/** Oculta usuario/contraseña de una URL redis:// para poder loguearla. */
+export function maskRedisUrl(url?: string): string {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    if (u.username || u.password) {
+      u.username = '***';
+      u.password = '';
+    }
+    return u.toString();
+  } catch {
+    return '<redis-url>';
   }
 }

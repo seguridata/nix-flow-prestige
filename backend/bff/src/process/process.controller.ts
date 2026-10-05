@@ -1,5 +1,8 @@
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { PageQueryDto } from '../common/pagination';
 import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { AuditChainService } from '../collaboration/audit-chain.service';
 import { ProcessService } from './process.service';
@@ -40,9 +43,10 @@ export class ProcessController {
     private readonly auditChain: AuditChainService,
   ) {}
 
+  // Catálogo de plataforma (no por tenant): lectura abierta, escritura solo admin.
   @Get('process-definitions')
-  list() {
-    return this.process.list();
+  list(@Query() page: PageQueryDto) {
+    return this.process.list(page);
   }
 
   @Get('process-definitions/:key')
@@ -74,19 +78,31 @@ export class ProcessController {
   }
 
   @Get('process-audit')
-  audit(@Query() query: AuditQueryDto) {
-    return this.process.listAudit(query);
+  audit(@Query() query: AuditQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.listAudit(query, user.tenantId);
   }
 
   /**
-   * M11 — verifica la cadena de auditoría inmutable. Sin parámetros: cadena
-   * GLOBAL (recalcula todo). Con `signatureRequestId`/`onboardingId`: SCOPED.
+   * M11 — verifica la cadena de auditoría inmutable DEL TENANT del usuario
+   * (modo scoped: coherencia de cada evento + seq creciente), solo admin,
+   * con tope de eventos. Con `signatureRequestId`/`onboardingId` se acota más.
    */
+  @Roles('admin')
   @Get('process-audit/verify')
-  verifyAudit(@Query() query: AuditQueryDto) {
+  async verifyAudit(@Query() query: AuditQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    // Siempre acotado al tenant del usuario (no hay noción de admin de plataforma)
+    // y con tope de eventos en AuditChainService.verify. Si se pasa un recurso,
+    // debe pertenecer al tenant (404 si no).
+    if (query.signatureRequestId || query.onboardingId) {
+      await this.process.listAudit(
+        { signatureRequestId: query.signatureRequestId, onboardingId: query.onboardingId },
+        user.tenantId,
+      );
+    }
     return this.auditChain.verify({
       signatureRequestId: query.signatureRequestId,
       onboardingId: query.onboardingId,
+      tenantId: user.tenantId,
     });
   }
 }

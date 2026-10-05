@@ -1,0 +1,21 @@
+# Contexto = RAÍZ del monorepo (builds con `-f backend/bff/Dockerfile .`).
+# BuildKit usa `<Dockerfile>.dockerignore` junto al Dockerfile.
+**/node_modules
+**/dist
+**/.turbo
+**/.next
+**/.env
+**/.env.*
+!**/.env.example
+**/pki
+**/*.tsbuildinfo
+**/*.spec.ts
+.git
+backups
+Documentacion
+Documentacion.zip
+MasterPlan
+docs
+nix-flow-prestige
+frontend/web
+!frontend/web/package.json

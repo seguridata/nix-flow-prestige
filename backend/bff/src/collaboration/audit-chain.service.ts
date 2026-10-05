@@ -11,7 +11,12 @@ export interface AuditInput {
   actorName?: string;
   action: string;
   payload?: unknown;
+  /** Tenant dueño del evento. Si se omite se deriva de la solicitud/documento/onboarding. */
+  tenantId?: string;
 }
+
+/** Tope de eventos que `verify()` recalcula por llamada (anti-DoS). */
+export const VERIFY_MAX_EVENTS = 5000;
 
 export interface ChainVerification {
   mode: 'global' | 'scoped';
@@ -23,6 +28,8 @@ export interface ChainVerification {
   headSeq?: string;
   headHash?: string;
   checkedAt: string;
+  /** true si había más eventos que `VERIFY_MAX_EVENTS`: sólo se verificó el primer tramo. */
+  truncated?: boolean;
 }
 
 function sortDeep(value: unknown): unknown {
@@ -87,6 +94,7 @@ export class AuditChainService {
       const prevHash = head[0]?.hash ?? '';
       const seq = (head[0]?.seq ?? 0n) + 1n;
       const createdAt = new Date();
+      const tenantId = input.tenantId ?? (await this.deriveTenant(tx, input));
 
       const body = canonicalBody({
         seq,
@@ -109,6 +117,8 @@ export class AuditChainService {
           signatureRequestId: input.signatureRequestId,
           documentId: input.documentId,
           onboardingId: input.onboardingId,
+          // El tenantId NO entra al hash canónico (no romper eventos ya existentes).
+          tenantId,
           actorId: input.actorId,
           actorName: input.actorName,
           action: input.action,
@@ -125,6 +135,37 @@ export class AuditChainService {
     });
   }
 
+  /** Deriva el tenant del recurso referenciado por el evento (best-effort). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async deriveTenant(tx: any, input: AuditInput): Promise<string | undefined> {
+    try {
+      if (input.signatureRequestId) {
+        const r = await tx.signatureRequest?.findUnique({
+          where: { id: input.signatureRequestId },
+          select: { tenantId: true },
+        });
+        if (r?.tenantId) return r.tenantId as string;
+      }
+      if (input.documentId) {
+        const d = await tx.document?.findUnique({
+          where: { id: input.documentId },
+          select: { tenantId: true },
+        });
+        if (d?.tenantId) return d.tenantId as string;
+      }
+      if (input.onboardingId) {
+        const o = await tx.onboardingCase?.findUnique({
+          where: { id: input.onboardingId },
+          select: { tenantId: true },
+        });
+        if (o?.tenantId) return o.tenantId as string;
+      }
+    } catch (err) {
+      this.log.warn(`no se pudo derivar tenant del evento: ${(err as Error).message}`);
+    }
+    return undefined;
+  }
+
   /**
    * `signatureRequestId`/`onboardingId` omitidos → verificación GLOBAL (recalcula
    * toda la cadena). Con un scope → verificación SCOPED: comprueba que cada
@@ -132,17 +173,26 @@ export class AuditChainService {
    * que los `seq` crecen; no puede recomputar el enlace inter-evento (los
    * vecinos pertenecen a otros scopes).
    */
-  async verify(scope?: { signatureRequestId?: string; onboardingId?: string }): Promise<ChainVerification> {
-    const scoped = Boolean(scope?.signatureRequestId || scope?.onboardingId);
+  async verify(scope?: {
+    signatureRequestId?: string;
+    onboardingId?: string;
+    tenantId?: string;
+  }): Promise<ChainVerification> {
+    // Con tenantId siempre es scoped: los vecinos de la cadena global son de otros tenants.
+    const scoped = Boolean(scope?.signatureRequestId || scope?.onboardingId || scope?.tenantId);
     const rows = await this.prisma.processAuditEvent.findMany({
       where: {
         hash: { not: null },
         seq: { not: null },
         ...(scope?.signatureRequestId ? { signatureRequestId: scope.signatureRequestId } : {}),
         ...(scope?.onboardingId ? { onboardingId: scope.onboardingId } : {}),
+        ...(scope?.tenantId ? { tenantId: scope.tenantId } : {}),
       },
       orderBy: { seq: 'asc' },
+      take: VERIFY_MAX_EVENTS + 1,
     });
+    const truncated = rows.length > VERIFY_MAX_EVENTS;
+    if (truncated) rows.pop();
 
     const now = new Date().toISOString();
     if (rows.length === 0) {
@@ -204,6 +254,7 @@ export class AuditChainService {
       mode: scoped ? 'scoped' : 'global',
       ok: true,
       count: rows.length,
+      truncated: truncated || undefined,
       headSeq: anchor?.seq.toString(),
       headHash: anchor?.hash,
       checkedAt: now,

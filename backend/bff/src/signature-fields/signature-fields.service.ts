@@ -45,10 +45,22 @@ function assertValid(field: SignatureFieldInput) {
 export class SignatureFieldsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(body: SignatureFieldInput) {
+  /** 404 si el documento no existe o pertenece a otro tenant. */
+  private async assertDocument(documentId: string, tenantId: string) {
+    if (!tenantId) throw new BadRequestException('tenantId es requerido');
+    const doc = await this.prisma.document.findFirst({
+      where: { id: documentId, tenantId },
+      select: { id: true },
+    });
+    if (!doc) throw new NotFoundException(`Documento ${documentId} no encontrado`);
+  }
+
+  async create(body: SignatureFieldInput, tenantId: string) {
     assertValid(body);
+    await this.assertDocument(body.documentId, tenantId);
     return this.prisma.signatureField.create({
       data: {
+        tenantId,
         documentId: body.documentId,
         signerId: body.signerId,
         type: body.type,
@@ -62,18 +74,27 @@ export class SignatureFieldsService {
     });
   }
 
-  listByDocument(documentId: string) {
+  async listByDocument(documentId: string, tenantId: string) {
     if (!documentId) throw new BadRequestException('documentId es requerido');
+    await this.assertDocument(documentId, tenantId);
     return this.prisma.signatureField.findMany({
       where: { documentId },
       orderBy: [{ page: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
-  async remove(id: string) {
-    const found = await this.prisma.signatureField.findUnique({ where: { id } });
+  /**
+   * El campo se considera del tenant por su documento (los campos previos al
+   * hardening pueden tener `tenantId` nulo): 404 si el documento es ajeno.
+   */
+  async remove(id: string, tenantId: string) {
+    if (!tenantId) throw new BadRequestException('tenantId es requerido');
+    const found = await this.prisma.signatureField.findFirst({
+      where: { id, document: { tenantId } },
+      select: { id: true },
+    });
     if (!found) throw new NotFoundException(`Campo de firma ${id} no encontrado`);
-    await this.prisma.signatureField.delete({ where: { id } });
+    await this.prisma.signatureField.deleteMany({ where: { id, document: { tenantId } } });
     return { id };
   }
 
@@ -81,9 +102,10 @@ export class SignatureFieldsService {
    * Reemplaza de forma atómica todos los campos de un documento por el
    * conjunto enviado — así el remitente puede agregar, mover y borrar
    * campos libremente en el editor y guardar el resultado final en un
-   * solo POST idempotente.
+   * solo POST idempotente. El documento se valida contra el tenant ANTES de
+   * borrar nada: un documento ajeno responde 404 y no se toca.
    */
-  async createMany(documentId: string, fields: SignatureFieldInput[]) {
+  async createMany(documentId: string, fields: SignatureFieldInput[], tenantId: string) {
     if (!documentId) throw new BadRequestException('documentId es requerido');
     const mismatched = fields.some((f) => f.documentId && f.documentId !== documentId);
     if (mismatched) {
@@ -93,12 +115,14 @@ export class SignatureFieldsService {
     // inyecta en cada campo aquí para no obligar a repetirlo por elemento.
     fields = fields.map((f) => ({ ...f, documentId }));
     fields.forEach(assertValid);
+    await this.assertDocument(documentId, tenantId);
 
     return this.prisma.$transaction(async (tx) => {
       await tx.signatureField.deleteMany({ where: { documentId } });
       if (fields.length === 0) return [];
       await tx.signatureField.createMany({
         data: fields.map((f) => ({
+          tenantId,
           documentId,
           signerId: f.signerId,
           type: f.type,

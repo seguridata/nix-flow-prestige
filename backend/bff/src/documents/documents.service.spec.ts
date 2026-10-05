@@ -1,5 +1,5 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
-import { describe, expect, it } from 'vitest';
+import { NotFoundException, ConflictException } from '@nestjs/common';
+import { describe, expect, it, vi } from 'vitest';
 import { DocumentsService, sha256Hex } from './documents.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageService } from '../storage/storage.service';
@@ -22,6 +22,8 @@ type Row = {
   enc: object;
 };
 
+const auditSpy = vi.fn(async () => undefined);
+
 function makeService(opts: { docs: Record<string, Row>; bytesByKey: Record<string, Buffer> }) {
   const { docs, bytesByKey } = opts;
 
@@ -36,6 +38,20 @@ function makeService(opts: { docs: Record<string, Row>; bytesByKey: Record<strin
       update: async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
         docs[where.id] = { ...docs[where.id], ...data };
         return docs[where.id];
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; tenantId?: string; locked?: boolean };
+        data: Partial<Row>;
+      }) => {
+        const row = docs[where.id];
+        if (!row) return { count: 0 };
+        if (where.tenantId && row.tenantId !== where.tenantId) return { count: 0 };
+        if (where.locked !== undefined && row.locked !== where.locked) return { count: 0 };
+        docs[where.id] = { ...row, ...data };
+        return { count: 1 };
       },
       findMany: async ({ where }: { where: { tenantId: string; caseId?: string } }) =>
         Object.values(docs)
@@ -58,7 +74,7 @@ function makeService(opts: { docs: Record<string, Row>; bytesByKey: Record<strin
     },
   } as unknown as StorageService;
 
-  const collab = { audit: async () => undefined } as unknown as CollaborationService;
+  const collab = { audit: auditSpy } as unknown as CollaborationService;
 
   return new DocumentsService(prisma, storage, collab);
 }
@@ -81,7 +97,7 @@ function row(overrides: Partial<Row> & { id: string; hash: string; objectKey: st
 }
 
 describe('DocumentsService — freeze e integridad', () => {
-  it('freeze congela el documento y un segundo intento de escribir bytes encima responde 409 DOCUMENT_FROZEN', async () => {
+  it('freeze congela el documento y deja el canónico intacto', async () => {
     const bytes = Buffer.from('%PDF-1.4 contenido original');
     const hash = sha256Hex(bytes);
     const docs = { 'doc-1': row({ id: 'doc-1', hash, objectKey: 'k1' }) };
@@ -91,17 +107,24 @@ describe('DocumentsService — freeze e integridad', () => {
     expect(frozen.locked).toBe(true);
     expect(frozen.frozenAt).not.toBeNull();
     expect(docs['doc-1'].locked).toBe(true);
-
-    try {
-      await svc.replaceContent('doc-1', Buffer.from('%PDF-1.4 otro contenido'), 'seguridata');
-      expect.unreachable('replaceContent debía rechazar el documento congelado');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ConflictException);
-      expect((e as ConflictException).getStatus()).toBe(409);
-      expect((e as ConflictException).getResponse()).toMatchObject({ error: 'DOCUMENT_FROZEN' });
-    }
-    // El canónico no se movió: mismo hash tras el intento rechazado.
     expect(docs['doc-1'].hash).toBe(hash);
+    // Ya no existe ninguna vía de reemplazo del canónico en el servicio.
+    expect((svc as unknown as Record<string, unknown>).replaceContent).toBeUndefined();
+  });
+
+  it('dos freeze concurrentes congelan y auditan una sola vez (updateMany locked:false)', async () => {
+    auditSpy.mockClear();
+    const bytes = Buffer.from('%PDF-1.4 carrera');
+    const docs = { 'doc-1': row({ id: 'doc-1', hash: sha256Hex(bytes), objectKey: 'k1' }) };
+    const svc = makeService({ docs, bytesByKey: { k1: bytes } });
+
+    const [a, b] = await Promise.all([
+      svc.freeze('doc-1', 'seguridata', 'actor-1'),
+      svc.freeze('doc-1', 'seguridata', 'actor-2'),
+    ]);
+    expect(a.locked).toBe(true);
+    expect(b.locked).toBe(true);
+    expect(auditSpy).toHaveBeenCalledTimes(1);
   });
 
   it('freeze es idempotente: un segundo freeze sobre un documento ya congelado no vuelve a escribir', async () => {
@@ -134,7 +157,7 @@ describe('DocumentsService — freeze e integridad', () => {
 });
 
 describe('DocumentsService — aislamiento por tenant', () => {
-  it('el tenant B no puede leer, congelar ni escribir sobre un documento del tenant A (404)', async () => {
+  it('el tenant B no puede leer ni congelar un documento del tenant A (404)', async () => {
     const bytes = Buffer.from('%PDF-1.4 confidencial de A');
     const hash = sha256Hex(bytes);
     const docs = { 'doc-a': row({ id: 'doc-a', hash, objectKey: 'k1', tenantId: 'tenant-a' }) };
@@ -142,9 +165,6 @@ describe('DocumentsService — aislamiento por tenant', () => {
 
     await expect(svc.get('doc-a', 'tenant-b')).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.freeze('doc-a', 'tenant-b', 'actor-1')).rejects.toBeInstanceOf(NotFoundException);
-    await expect(svc.replaceContent('doc-a', Buffer.from('%PDF-1.4 intruso'), 'tenant-b')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
     await expect(svc.getContent('doc-a', 'tenant-b')).rejects.toBeInstanceOf(NotFoundException);
 
     // El dueño real sigue pudiendo leerlo.

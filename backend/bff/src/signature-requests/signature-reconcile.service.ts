@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import { withAdvisoryLock } from '../common/advisory-lock';
+import { PrismaService } from '../prisma/prisma.service';
 import { SigningRouter } from '../signing/signing.router';
 import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
@@ -19,6 +21,7 @@ export class SignatureReconcileService {
     private readonly signatureRequests: SignatureRequestsService,
     private readonly signing: SigningRouter,
     private readonly storage: StorageService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Interval('signature-reconcile', 30_000)
@@ -26,7 +29,7 @@ export class SignatureReconcileService {
     if (this.running) return;
     this.running = true;
     try {
-      await this.reconcileDue();
+      await withAdvisoryLock(this.prisma, 'prestige:signature-reconcile', () => this.reconcileDue());
     } catch (error) {
       this.log.error(`reconcileDue: ${(error as Error).message}`);
     } finally {

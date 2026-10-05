@@ -153,6 +153,29 @@ async function main() {
     await prisma.onboardingCase.deleteMany({ where: { fullName: 'Ana Torres Rincón' } });
   }
 
+  // ---- Directorio de tenant (directo en BD) ----
+  // TenantContextGuard es fail-closed: sin membresías ningún usuario entra, ni
+  // siquiera para llamar al control-plane que las crearía. Se siembran aquí.
+  {
+    const tenant = await prisma.tenant.upsert({
+      where: { slug: 'seguridata' },
+      create: { slug: 'seguridata', name: 'SeguriData' },
+      update: {},
+    });
+    for (const [userId, name, email, roles] of [
+      ['roberto', 'Roberto Díaz', 'roberto@seguridata.mx', ['sender', 'rh', 'admin', 'auditor']],
+      ['maria', 'María González', 'maria@seguridata.mx', ['signer']],
+      ['carlos', 'Carlos Ramírez', 'carlos@seguridata.mx', ['signer', 'auditor']],
+    ] as const) {
+      await prisma.tenantMembership.upsert({
+        where: { tenantId_userId: { tenantId: tenant.id, userId } },
+        create: { tenantId: tenant.id, userId, name, email, roles: [...roles], active: true },
+        update: { name, email, roles: [...roles], active: true },
+      });
+    }
+    c.ok('membresías de tenant sembradas (roberto / maria / carlos)');
+  }
+
   const [roberto, maria, carlos] = await Promise.all([
     token('roberto', 'roberto123'),
     token('maria', 'maria123'),

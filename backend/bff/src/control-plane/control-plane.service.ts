@@ -1,6 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
+
+/** Operador de plataforma: rol de realm explícito, nunca inferido del tenant. */
+export const PLATFORM_ADMIN_ROLE = 'platform_admin';
+export const isPlatformAdmin = (u: { roles?: string[] }) => (u.roles ?? []).includes(PLATFORM_ADMIN_ROLE);
 
 /**
  * M15 — control plane. CRUD de tenants, membresías, políticas y catálogos.
@@ -47,25 +52,36 @@ export class ControlPlaneService implements OnModuleInit {
   }
 
   /**
-   * `admin` es un rol de realm de Keycloak, no está acotado por tenant. El
-   * tenant `seguridata` es el operador de la plataforma (ve/administra todos
-   * los tenants); cualquier otro tenant solo puede administrarse a sí mismo.
+   * `admin` es un rol de realm de Keycloak, no está acotado por tenant: un
+   * admin solo administra SU tenant. Solo el operador de plataforma
+   * (rol explícito `platform_admin` en el token) administra cualquier tenant;
+   * ser del tenant 'seguridata' ya NO concede ese poder.
    */
-  async assertOwnTenant(tenantIdOrSlug: string, callerTenantId: string): Promise<void> {
-    if (callerTenantId === 'seguridata') return;
+  async assertOwnTenant(
+    tenantIdOrSlug: string,
+    caller: { tenantId: string; roles?: string[] },
+  ): Promise<void> {
+    if (isPlatformAdmin(caller)) return;
     const t =
       (await this.prisma.tenant.findUnique({ where: { id: tenantIdOrSlug } })) ??
       (await this.prisma.tenant.findUnique({ where: { slug: tenantIdOrSlug } }));
     if (!t) throw new NotFoundException(`Tenant ${tenantIdOrSlug} no encontrado`);
-    if (t.id !== callerTenantId && t.slug !== callerTenantId) {
+    if (t.id !== caller.tenantId && t.slug !== caller.tenantId) {
       throw new ForbiddenException('No puedes administrar un tenant distinto al tuyo');
     }
   }
 
   // ---- Membresías ----
-  async listMembers(tenantIdOrSlug: string) {
+  async listMembers(tenantIdOrSlug: string, page?: PageQueryDto) {
     const tenantId = await this.resolveTenantId(tenantIdOrSlug);
-    return this.prisma.tenantMembership.findMany({ where: { tenantId }, orderBy: { userId: 'asc' } });
+    const args = pageArgs(page);
+    // Orden de dominio estable (userId asc, id asc); el cursor sigue siendo el id.
+    const rows = await this.prisma.tenantMembership.findMany({
+      where: { tenantId },
+      orderBy: [{ userId: 'asc' }, { id: 'asc' }],
+      ...prismaPage(args),
+    });
+    return finishPage(rows, args);
   }
 
   async upsertMember(
@@ -104,9 +120,15 @@ export class ControlPlaneService implements OnModuleInit {
   }
 
   // ---- Políticas ----
-  async listPolicies(tenantIdOrSlug: string) {
+  async listPolicies(tenantIdOrSlug: string, page?: PageQueryDto) {
     const tenantId = await this.resolveTenantId(tenantIdOrSlug);
-    return this.prisma.policy.findMany({ where: { tenantId }, orderBy: { key: 'asc' } });
+    const args = pageArgs(page);
+    const rows = await this.prisma.policy.findMany({
+      where: { tenantId },
+      orderBy: [{ key: 'asc' }, { id: 'asc' }],
+      ...prismaPage(args),
+    });
+    return finishPage(rows, args);
   }
 
   async setPolicy(tenantIdOrSlug: string, key: string, value: unknown, updatedBy?: string) {
@@ -127,12 +149,15 @@ export class ControlPlaneService implements OnModuleInit {
   }
 
   // ---- Catálogos ----
-  async listCatalog(tenantIdOrSlug: string, kind?: string) {
+  async listCatalog(tenantIdOrSlug: string, kind?: string, page?: PageQueryDto) {
     const tenantId = await this.resolveTenantId(tenantIdOrSlug);
-    return this.prisma.catalogEntry.findMany({
+    const args = pageArgs(page);
+    const rows = await this.prisma.catalogEntry.findMany({
       where: { tenantId, kind: kind || undefined },
-      orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }],
+      orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+      ...prismaPage(args),
     });
+    return finishPage(rows, args);
   }
 
   async upsertCatalog(

@@ -41,13 +41,18 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
   });
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
-  const upstream = await fetch(target, {
-    method: req.method,
-    headers,
-    body: hasBody ? await req.arrayBuffer() : undefined,
-    redirect: "manual",
-    cache: "no-store",
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body: hasBody ? await req.arrayBuffer() : undefined,
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json({ message: "Servicio no disponible, intenta de nuevo." }, { status: 502 });
+  }
 
   const resHeaders = new Headers();
   upstream.headers.forEach((v, k) => {

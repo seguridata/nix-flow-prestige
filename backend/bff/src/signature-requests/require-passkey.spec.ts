@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
 import { SignatureRequestsService } from './signature-requests.service';
@@ -23,7 +24,8 @@ function makeService(opts: { requirePasskey: boolean; consumeOk: boolean }) {
     requirePasskey: opts.requirePasskey,
     documentId: 'doc-1',
     requestedBy: null as string | null,
-    document: { hash: 'a'.repeat(64), objectKey: 'k', enc: {}, locked: false, presentedObjectKey: null },
+    // FREEZE obligatorio: el canónico va congelado y su hash coincide con el storage.
+    document: { hash: createHash('sha256').update('%PDF-1.4').digest('hex'), objectKey: 'k', enc: {}, locked: true, presentedObjectKey: null },
     signers: [{ id: 'signer-row-1', signerId: 'maria', status: 'PENDIENTE', sortOrder: 0, delegatedTo: null }],
   };
   const prisma = {
@@ -39,6 +41,7 @@ function makeService(opts: { requirePasskey: boolean; consumeOk: boolean }) {
     },
     signatureField: { findFirst: async () => null },
     consentAcceptance: { upsert: async () => ({}) },
+    $queryRaw: async () => [],
     $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
   } as unknown as PrismaService;
   const passkeys = {

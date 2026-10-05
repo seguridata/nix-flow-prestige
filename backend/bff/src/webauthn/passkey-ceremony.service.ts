@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
@@ -39,7 +39,12 @@ export class PasskeyCeremonyService {
       .digest();
 
     const credentials = await this.prisma.passkeyCredential.findMany({
-      where: { tenantId: request.tenantId, signerId: params.signerId },
+      where: {
+        tenantId: request.tenantId,
+        // El registro interno guarda `userId` (= actorId); `signerId` queda
+        // para credenciales atadas a un firmante externo. Se aceptan ambos.
+        OR: [{ userId: params.signerId }, { signerId: params.signerId }],
+      },
       select: { credentialId: true, transports: true },
     });
     // Un firmante externo sin passkey registrada llega aquí con la lista
@@ -48,7 +53,7 @@ export class PasskeyCeremonyService {
 
     const options = await generateAuthenticationOptions({
       rpID: this.config.rpID,
-      userVerification: 'preferred',
+      userVerification: 'required',
       challenge: challengeBytes,
       allowCredentials: credentials.map((c) => ({
         id: Buffer.from(c.credentialId).toString('base64url'),
@@ -70,11 +75,41 @@ export class PasskeyCeremonyService {
     return { assertionId: assertion.id, options };
   }
 
-  async finish(params: { assertionId: string; response: AuthenticationResponseJSON }) {
+  /**
+   * Variante autenticada (firmante interno): el firmante ES `user.actorId`
+   * (o el delegado de un firmante). Solo emite el challenge si la solicitud es
+   * del tenant del usuario y el usuario figura como firmante/delegado.
+   */
+  async beginForUser(user: { actorId: string; tenantId: string }, signatureRequestId: string) {
+    const request = await this.prisma.signatureRequest.findFirst({
+      where: { id: signatureRequestId, tenantId: user.tenantId },
+      include: { signers: true },
+    });
+    if (!request) throw new NotFoundException('Solicitud de firma no encontrada');
+    const isSigner = request.signers.some(
+      (s) => s.signerId === user.actorId || s.delegatedTo === user.actorId,
+    );
+    if (!isSigner) throw new ForbiddenException('No eres firmante de esta solicitud');
+    return this.begin({ signatureRequestId, signerId: user.actorId });
+  }
+
+  async finish(params: {
+    assertionId: string;
+    response: AuthenticationResponseJSON;
+    /** Si se pasa, la aserción debe ser de este firmante (lo usa el endpoint autenticado). */
+    expectedSignerId?: string;
+    expectedTenantId?: string;
+  }) {
     const assertion = await this.prisma.passkeyAssertion.findUnique({
       where: { id: params.assertionId },
     });
     if (!assertion) throw new NotFoundException('Verificación de passkey no encontrada');
+    if (
+      (params.expectedSignerId && assertion.signerId !== params.expectedSignerId) ||
+      (params.expectedTenantId && assertion.tenantId !== params.expectedTenantId)
+    ) {
+      throw new NotFoundException('Verificación de passkey no encontrada');
+    }
     if (assertion.verifiedAt || assertion.consumedAt) {
       throw new ConflictException('Esta verificación de passkey ya se resolvió');
     }
@@ -86,6 +121,11 @@ export class PasskeyCeremonyService {
     const credential = await this.prisma.passkeyCredential.findUnique({ where: { credentialId } });
     if (!credential || credential.tenantId !== assertion.tenantId) {
       throw new NotFoundException('Passkey no registrada para este firmante');
+    }
+    // La credencial debe pertenecer al firmante de ESTA aserción: otra
+    // passkey del mismo tenant no puede satisfacer la firma de alguien más.
+    if (credential.userId !== assertion.signerId && credential.signerId !== assertion.signerId) {
+      throw new ForbiddenException('La passkey no pertenece a este firmante');
     }
 
     const verification = await verifyAuthenticationResponse({
@@ -105,25 +145,39 @@ export class PasskeyCeremonyService {
     }
 
     const newCounter = verification.authenticationInfo.newCounter;
-    // Contador que no avanza (y no es 0 — algunos autenticadores no lo
-    // soportan y siempre mandan 0) es la señal clásica de clon o reintento.
-    if (newCounter !== 0 && newCounter <= Number(credential.counter)) {
+    const storedCounter = Number(credential.counter);
+    // Un contador que no avanza es la señal clásica de clon o reintento. Solo
+    // se tolera 0 cuando el guardado también es 0 (autenticadores sin contador).
+    if (newCounter <= storedCounter && !(newCounter === 0 && storedCounter === 0)) {
       throw new ConflictException({
         error: 'PASSKEY_REPLAY',
         message: 'El contador de la passkey no avanzó: posible reintento o clon',
       });
     }
 
-    await this.prisma.$transaction([
-      this.prisma.passkeyCredential.update({
-        where: { id: credential.id },
-        data: { counter: newCounter },
-      }),
-      this.prisma.passkeyAssertion.update({
-        where: { id: assertion.id },
-        data: { verifiedAt: new Date(), credentialId },
-      }),
-    ]);
+    // Avance ATÓMICO del contador: dos finish concurrentes con la misma
+    // aserción del autenticador no pueden pasar ambos (solo uno ve count 1).
+    if (newCounter > 0) {
+      const advanced = await this.prisma.passkeyCredential.updateMany({
+        where: { id: credential.id, counter: { lt: BigInt(newCounter) } },
+        data: { counter: BigInt(newCounter) },
+      });
+      if (advanced.count !== 1) {
+        throw new ConflictException({
+          error: 'PASSKEY_REPLAY',
+          message: 'El contador de la passkey no avanzó: posible reintento o clon',
+        });
+      }
+    }
+    // Reclamo único de la aserción: si otra petición la resolvió mientras
+    // tanto, esta pierde.
+    const claimed = await this.prisma.passkeyAssertion.updateMany({
+      where: { id: assertion.id, verifiedAt: null, consumedAt: null },
+      data: { verifiedAt: new Date(), credentialId },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException('Esta verificación de passkey ya se resolvió');
+    }
 
     await this.collab.audit({
       signatureRequestId: assertion.signatureRequestId,
@@ -136,7 +190,10 @@ export class PasskeyCeremonyService {
   }
 
   /**
-   * Gasta una aserción ya verificada. Un solo `updateMany` con todas las
+   * Gasta una aserción ya verificada. `signerId` debe ser el firmante ACTUANTE
+   * (el mismo con el que se hizo `begin`: actorId del usuario / signerId del
+   * enlace), no el firmante original cuando hay delegación.
+   * Un solo `updateMany` con todas las
    * condiciones en el `where` es la comprobación Y el gasto: dos peticiones
    * concurrentes con el mismo `assertionId` no pueden ver ambas `count === 1`.
    */

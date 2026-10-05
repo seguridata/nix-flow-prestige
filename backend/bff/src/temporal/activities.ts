@@ -1,31 +1,33 @@
-import { createHmac } from 'node:crypto';
+import { WORKER_TOKEN_HEADER, WORKER_TS_HEADER, signWorkerRequest } from '../auth/worker-signature';
 import { CONTRATO_DOS_PARTES, type ContratoWorkflowInput, type NudgeCommand } from './shared';
 
 /**
  * Activities talk to the BFF over HTTP so the workflow sandbox never
  * imports Nest/Prisma. The BFF exposes internal endpoints for the worker,
- * protegidos por WorkerGuard: hay que firmar un token HMAC del minuto actual
- * con WORKER_SHARED_SECRET (mismo algoritmo que backend/bff/src/auth/worker.guard.ts).
+ * protegidos por WorkerGuard: cada petición se firma con HMAC sobre
+ * (timestamp, método, path, hash del body) usando WORKER_SHARED_SECRET
+ * (ver backend/bff/src/auth/worker-signature.ts); el BFF acepta ±60 s y
+ * rechaza replays.
  */
 const bffBase = () => process.env.BFF_INTERNAL_URL ?? 'http://127.0.0.1:3000';
+const REQUEST_TIMEOUT_MS = 30_000;
 
-function workerToken(): string {
+async function post(path: string, body: unknown) {
   const secret = process.env.WORKER_SHARED_SECRET;
   if (!secret) {
     throw new Error('WORKER_SHARED_SECRET no está definido para el worker de Temporal');
   }
-  const minute = Math.floor(Date.now() / 60_000);
-  return createHmac('sha256', secret).update(`worker:${minute}`).digest('hex');
-}
-
-async function post(path: string, body: unknown) {
+  // La firma se calcula sobre el MISMO objeto que se serializa en el body.
+  const { ts, token } = signWorkerRequest(secret, { method: 'POST', path, body });
   const res = await fetch(`${bffBase()}${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-prestige-worker-token': workerToken(),
+      [WORKER_TOKEN_HEADER]: token,
+      [WORKER_TS_HEADER]: ts,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     const text = await res.text();

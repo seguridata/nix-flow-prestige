@@ -1,8 +1,20 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import type { CloudEvent } from './cloud-events';
+import {
+  UnsafeWebhookUrlError,
+  assertSafeWebhookUrl,
+  defaultResolver,
+  type HostResolver,
+} from './ssrf-guard';
+
+/** Enmascara el secreto para listados: solo los últimos 4 caracteres. */
+export function maskSecret(secret: string): string {
+  return `••••${secret.slice(-4)}`;
+}
 
 /** Backoff exponencial acotado a 15 min (attempt empieza en 1: 1,2,4,8,15,15…). */
 function backoffMs(attempt: number): number {
@@ -30,11 +42,31 @@ export function verifySignature(
 export class WebhooksService {
   private readonly log = new Logger(WebhooksService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly resolveHost: HostResolver = defaultResolver,
+  ) {}
+
+  private async assertUrl(url: string) {
+    try {
+      await assertSafeWebhookUrl(url, this.resolveHost);
+    } catch (error) {
+      if (error instanceof UnsafeWebhookUrlError) throw new BadRequestException(error.message);
+      throw error;
+    }
+  }
 
   // ---- Suscripciones (CRUD, ámbito admin del tenant) ----
 
-  create(tenantId: string, body: { url: string; events?: string[]; description?: string; secret?: string }) {
+  /**
+   * Devuelve la suscripción CON el secreto completo: es la única vez que se
+   * ve (create y rotateSecret). `list`/`update` lo enmascaran.
+   */
+  async create(
+    tenantId: string,
+    body: { url: string; events?: string[]; description?: string; secret?: string },
+  ) {
+    await this.assertUrl(body.url);
     return this.prisma.webhookSubscription.create({
       data: {
         tenantId,
@@ -46,11 +78,29 @@ export class WebhooksService {
     });
   }
 
-  list(tenantId: string) {
-    return this.prisma.webhookSubscription.findMany({
+  async list(tenantId: string, page?: PageQueryDto) {
+    const args = pageArgs(page);
+    const rows = await this.prisma.webhookSubscription.findMany({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: STABLE_ORDER,
+      ...prismaPage(args),
     });
+    return mapPage(finishPage(rows, args), (r) => ({ ...r, secret: maskSecret(r.secret) }));
+  }
+
+  /**
+   * Genera un secreto nuevo y lo devuelve UNA vez. Hoy hay un solo secreto por
+   * suscripción, así que el cambio es inmediato (sin ventana de doble firma).
+   * TODO(migración): rotación con dos secretos — añadir
+   * `WebhookSubscription.previousSecret String?` + `previousSecretUntil DateTime?`
+   * y firmar con ambos (`X-Prestige-Signature` con dos `sha256=`) durante la
+   * ventana. Requiere editar schema.prisma + migración; no se hizo aquí.
+   */
+  async rotateSecret(tenantId: string, id: string) {
+    await this.getOwned(tenantId, id);
+    const secret = randomBytes(24).toString('base64url');
+    await this.prisma.webhookSubscription.update({ where: { id }, data: { secret } });
+    return { id, secret };
   }
 
   async update(
@@ -59,7 +109,8 @@ export class WebhooksService {
     body: { url?: string; events?: string[]; active?: boolean; description?: string },
   ) {
     await this.getOwned(tenantId, id);
-    return this.prisma.webhookSubscription.update({
+    if (body.url) await this.assertUrl(body.url);
+    const row = await this.prisma.webhookSubscription.update({
       where: { id },
       data: {
         url: body.url,
@@ -68,6 +119,7 @@ export class WebhooksService {
         description: body.description,
       },
     });
+    return { ...row, secret: maskSecret(row.secret) };
   }
 
   async remove(tenantId: string, id: string) {
@@ -120,7 +172,12 @@ export class WebhooksService {
 
   async dispatchDue(limit = 20) {
     const due = await this.prisma.webhookDelivery.findMany({
-      where: { status: { in: ['PENDIENTE', 'FALLIDO'] }, nextAttemptAt: { lte: new Date() } },
+      where: {
+        status: { in: ['PENDIENTE', 'FALLIDO'] },
+        nextAttemptAt: { lte: new Date() },
+        // Una suscripción desactivada no recibe entregas (ni las ya encoladas).
+        subscription: { active: true },
+      },
       orderBy: { nextAttemptAt: 'asc' },
       take: limit,
       include: { subscription: true },
@@ -136,8 +193,12 @@ export class WebhooksService {
       const signature = signPayload(row.subscription.secret, timestamp, body);
       let responseStatus: number | undefined;
       try {
+        // SSRF: se revalida en cada despacho (el DNS pudo cambiar) y NO se
+        // siguen redirecciones (un 302 a una IP interna saltaría la validación).
+        await assertSafeWebhookUrl(row.subscription.url, this.resolveHost);
         const res = await fetch(row.subscription.url, {
           method: 'POST',
+          redirect: 'manual',
           headers: {
             'content-type': 'application/json',
             'user-agent': 'Prestige-Webhooks/1.0',

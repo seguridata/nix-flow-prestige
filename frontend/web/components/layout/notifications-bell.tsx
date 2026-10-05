@@ -30,7 +30,7 @@ export function NotificationsBell() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications", signerId] }),
   });
   const markAll = useMutation({
-    mutationFn: () => apiClient.post("/me/notifications/read-all", { userId: signerId }),
+    mutationFn: () => apiClient.post("/me/notifications/read-all", {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications", signerId] }),
   });
 

@@ -169,6 +169,8 @@ enum SignatureFieldType {
 /// Feature: colocación interactiva de campos de firma sobre el PDF.
 model SignatureField {
   id         String             @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   documentId String
   signerId   String
   type       SignatureFieldType
@@ -183,6 +185,7 @@ model SignatureField {
   document Document @relation(fields: [documentId], references: [id])
 
   @@index([documentId])
+  @@index([tenantId])
 }
 
 /// Feature: evidencia y verificación criptográfica del expediente de firma.
@@ -231,6 +234,8 @@ enum HumanTaskStatus {
 
 model HumanTask {
   id                 String          @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   signatureRequestId String
   signerId           String
   name               String
@@ -256,6 +261,7 @@ model HumanTask {
   @@index([signerId, status])
   @@index([signatureRequestId])
   @@index([status, priority])
+  @@index([tenantId])
 }
 
 /// M07 — «fuera de oficina»: mientras esté activo, las firmas asignadas al
@@ -288,6 +294,8 @@ model ConsentAcceptance {
 
 model WorkflowRun {
   id                 String   @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   signatureRequestId String   @unique
   workflowId         String
   runId              String?
@@ -301,10 +309,13 @@ model WorkflowRun {
   signatureRequest SignatureRequest @relation(fields: [signatureRequestId], references: [id])
 
   @@index([workflowId])
+  @@index([tenantId])
 }
 
 model DocumentComment {
   id         String   @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   documentId String
   authorId   String
   authorName String
@@ -312,10 +323,13 @@ model DocumentComment {
   createdAt  DateTime @default(now())
 
   @@index([documentId, createdAt])
+  @@index([tenantId])
 }
 
 model UserNotification {
   id        String   @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   userId    String
   title     String
   body      String
@@ -324,6 +338,7 @@ model UserNotification {
   createdAt DateTime @default(now())
 
   @@index([userId, read, createdAt])
+  @@index([tenantId])
 }
 
 enum OutboxStatus {
@@ -337,6 +352,8 @@ enum OutboxStatus {
 /// con reintentos exponenciales y cola de mensajes muertos (DLQ).
 model NotificationOutbox {
   id            String       @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   channel       String       @default("email")
   toAddress     String
   subject       String
@@ -355,6 +372,7 @@ model NotificationOutbox {
   updatedAt     DateTime     @updatedAt
 
   @@index([status, nextAttemptAt])
+  @@index([tenantId])
 }
 
 /// M14 — suscripción a webhooks firmados (HMAC-SHA256 por suscriptor).
@@ -508,6 +526,8 @@ model ProcessDefinition {
 /// La cabeza global vive en `AuditAnchor` y se toma con `FOR UPDATE` al escribir.
 model ProcessAuditEvent {
   id                 String   @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   seq                BigInt?  @unique
   prevHash           String?
   hash               String?
@@ -524,6 +544,7 @@ model ProcessAuditEvent {
   @@index([documentId, createdAt])
   @@index([onboardingId, createdAt])
   @@index([seq])
+  @@index([tenantId])
 }
 
 /// Fase B — sello de tiempo RFC 3161 por evento de firma (además del sello del
@@ -553,12 +574,15 @@ model AuditAnchor {
 
 model ProcessWatcher {
   id                 String   @id @default(uuid())
+  /// P1 hardening — aislamiento por tenant (nullable: backfill desde el padre).
+  tenantId String?
   signatureRequestId String
   userId             String
   name               String?
   createdAt          DateTime @default(now())
 
   @@unique([signatureRequestId, userId])
+  @@index([tenantId])
 }
 
 /// M15 — control plane. Directorio de tenants del lado de la app (Keycloak

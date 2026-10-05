@@ -1,5 +1,18 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 import { Public } from '../auth/public.decorator';
 import { WorkerGuard } from '../auth/worker.guard';
 import { WorkflowService } from './workflow.service';
@@ -19,11 +32,47 @@ class NudgeCommandDto {
   signerId?: string;
 }
 
+class SignatureRequestIdDto {
+  @IsString() @MinLength(1) @MaxLength(200)
+  signatureRequestId!: string;
+}
+
+class SeedSignerDto {
+  @IsString() @MinLength(1) @MaxLength(200)
+  signerId!: string;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  name?: string;
+}
+
+class SeedTasksDto {
+  @IsString() @MinLength(1) @MaxLength(200)
+  signatureRequestId!: string;
+
+  @IsString() @MaxLength(200)
+  documentId!: string;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  caseId?: string;
+
+  @IsIn(['SECUENCIAL', 'PARALELO'])
+  order!: 'SECUENCIAL' | 'PARALELO';
+
+  @IsNumber() @Min(1) @Max(24 * 365)
+  slaHours!: number;
+
+  @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => SeedSignerDto)
+  signers!: SeedSignerDto[];
+
+  @IsOptional() @IsString() @MaxLength(100)
+  processKey?: string;
+}
+
 /**
  * Endpoints que consume el worker de Temporal (activities vía HTTP).
  * `@Public()` es intencional y no los deja abiertos: salta solo el JWT de
  * Keycloak. La clase exige `WorkerGuard` (HMAC con `WORKER_SHARED_SECRET`
- * en `X-Prestige-Worker-Token`, minuto actual o el anterior). Sin ese
+ * sobre método+path+body+timestamp, ventana de 60 s y anti-replay). Sin ese
  * header responden 401.
  */
 @Controller('internal/workflows')
@@ -33,19 +82,19 @@ export class WorkflowInternalController {
 
   @Public()
   @Post('seed-tasks')
-  seed(@Body() body: ContratoWorkflowInput & { processKey?: string }) {
-    return this.workflow.seedTasks(body, `${body.processKey ?? 'contratoDosPartes'}:${body.signatureRequestId}`);
+  seed(@Body() body: SeedTasksDto) {
+    return this.workflow.seedTasks(body as ContratoWorkflowInput, `${body.processKey ?? 'contratoDosPartes'}:${body.signatureRequestId}`);
   }
 
   @Public()
   @Post('expire')
-  expire(@Body() body: { signatureRequestId: string }) {
+  expire(@Body() body: SignatureRequestIdDto) {
     return this.workflow.expire(body.signatureRequestId);
   }
 
   @Public()
   @Post('seal-evidence')
-  seal(@Body() body: { signatureRequestId: string }) {
+  seal(@Body() body: SignatureRequestIdDto) {
     return this.workflow.seal(body.signatureRequestId);
   }
 
