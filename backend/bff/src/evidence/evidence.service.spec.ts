@@ -116,3 +116,46 @@ describe('EvidenceService.buildDossier', () => {
     expect(sha!.content).toBe(`${MANIFEST.originalHash}  document.pdf\n`);
   });
 });
+
+describe('EvidenceService.verify (checks coherentes con valid)', () => {
+  it('solicitud DIGITAL: presentado distinto del canónico → valid, sin mismatches y ningún check en false', async () => {
+    const presented = 'd'.repeat(64);
+    const canonical = 'a'.repeat(64);
+    const probe = new EvidenceService({} as never, {} as never, {} as never, undefined as never, undefined as never);
+    const signedHash = (probe as unknown as { hashSignedSet: (s: unknown[]) => string }).hashSignedSet([]);
+    const packageHash = createHash('sha256').update(`man-1${signedHash}doc-1`).digest('hex');
+    const manifest = {
+      ...MANIFEST,
+      originalHash: canonical,
+      presentedHash: presented,
+      signedHash,
+      packageHash,
+    };
+    const prisma = {
+      evidenceManifest: { findUnique: async () => manifest },
+      signatureRequest: {
+        findUnique: async () => ({
+          id: 'sr-1',
+          signers: [],
+          document: { hash: canonical, presentedHash: presented },
+        }),
+      },
+      signatureEventTimestamp: { findFirst: async () => null },
+    } as unknown as PrismaService;
+    const auditChain = { verify: async () => ({ ok: true }) };
+    const svc = new EvidenceService(
+      prisma,
+      { publicKeyPem: null } as unknown as ManifestSigner,
+      {} as unknown as StorageService,
+      undefined as never,
+      auditChain as never,
+    );
+
+    const r = await svc.verify('man-1');
+    expect(r.mismatches).toEqual([]);
+    expect(r.valid).toBe(true);
+    expect(r.checks.documentHash).toBe(true);
+    expect(r.checks.presentedHash).toBe(true);
+    expect(Object.values(r.checks).includes(false)).toBe(false);
+  });
+});

@@ -8,6 +8,7 @@ interface Row {
   seq: bigint;
   prevHash: string | null;
   hash: string | null;
+  tenantId?: string | null;
   signatureRequestId: string | null;
   documentId: string | null;
   onboardingId: string | null;
@@ -45,6 +46,7 @@ function fakePrisma() {
           seq: data.seq as bigint,
           prevHash: data.prevHash ?? null,
           hash: data.hash ?? null,
+          tenantId: (data as { tenantId?: string }).tenantId ?? null,
           signatureRequestId: data.signatureRequestId ?? null,
           documentId: data.documentId ?? null,
           onboardingId: data.onboardingId ?? null,
@@ -61,6 +63,8 @@ function fakePrisma() {
         let out = rows.filter((r) => r.hash !== null && r.seq !== null);
         const sr = (where?.signatureRequestId as string) ?? null;
         if (sr) out = out.filter((r) => r.signatureRequestId === sr);
+        const tn = (where?.tenantId as string) ?? null;
+        if (tn) out = out.filter((r) => r.tenantId === tn);
         return [...out].sort((a, b) => Number(a.seq - b.seq));
       },
     },
@@ -128,5 +132,24 @@ describe('AuditChainService (M11)', () => {
     rows[2].actorId = 'intruso';
     const bad = await svc.verify({ signatureRequestId: 'r1' });
     expect(bad.ok).toBe(false);
+  });
+
+  it('verify scoped por tenant devuelve el head del tenant, nunca el global', async () => {
+    const { prisma, rows, anchor } = fakePrisma();
+    const svc = new AuditChainService(prisma);
+    await svc.append({ actorId: 'a', action: 'X', tenantId: 'A' });
+    await svc.append({ actorId: 'b', action: 'Y', tenantId: 'B' });
+    await svc.append({ actorId: 'c', action: 'Z', tenantId: 'A' });
+    await svc.append({ actorId: 'd', action: 'W', tenantId: 'B' });
+    await svc.append({ actorId: 'e', action: 'V', tenantId: 'B' });
+
+    const a = await svc.verify({ tenantId: 'A' });
+    const b = await svc.verify({ tenantId: 'B' });
+    expect(a).toMatchObject({ mode: 'scoped', ok: true, count: 2, headSeq: '3', headHash: rows[2].hash });
+    expect(b).toMatchObject({ mode: 'scoped', ok: true, count: 3, headSeq: '5', headHash: rows[4].hash });
+    expect(a.headHash).not.toBe(b.headHash);
+    // Ninguno coincide con el ancla global salvo que el último evento global sea del propio tenant.
+    expect(a.headSeq).not.toBe(anchor.seq.toString());
+    expect(a.headHash).not.toBe(anchor.hash);
   });
 });

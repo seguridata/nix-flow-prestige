@@ -5,7 +5,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
+import {
+  Client,
+  Connection,
+  WorkflowExecutionAlreadyStartedError,
+  WorkflowNotFoundError,
+} from '@temporalio/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -45,6 +50,13 @@ const isAdmin = (u: WorkflowActor) => u.roles.includes('admin') || u.roles.inclu
  * Workflow Port: único lugar que conoce Temporal.
  * La bandeja y el portal leen HumanTask / WorkflowRun en Postgres.
  */
+/** `WorkflowExecutionAlreadyStartedError` de Temporal (también por nombre/mensaje, por si cruza versiones). */
+export function isAlreadyStarted(error: unknown): boolean {
+  if (error instanceof WorkflowExecutionAlreadyStartedError) return true;
+  const e = error as { name?: string; message?: string } | null;
+  return e?.name === 'WorkflowExecutionAlreadyStartedError' || /already started/i.test(e?.message ?? '');
+}
+
 @Injectable()
 export class WorkflowService {
   private readonly log = new Logger(WorkflowService.name);
@@ -167,6 +179,24 @@ export class WorkflowService {
       return { id: workflowId, processDefinitionKey, caseId: businessKey, status: 'ACTIVO' as const };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // Idempotencia: el workflowId ya está en marcha en Temporal. Es un reintento,
+      // no una caída: no se degrada el run a LOCAL ni se escribe lastError.
+      if (isAlreadyStarted(error)) {
+        this.log.log(`Flujo ${workflowId} ya iniciado; se reutiliza el run existente`);
+        await this.prisma.workflowRun.upsert({
+          where: { signatureRequestId },
+          create: {
+            tenantId: tenant,
+            signatureRequestId,
+            workflowId,
+            taskQueue: PRESTIGE_TASK_QUEUE,
+            processKey: processDefinitionKey,
+            status: 'ACTIVO',
+          },
+          update: {},
+        });
+        return { id: workflowId, processDefinitionKey, caseId: businessKey, status: 'ACTIVO' as const };
+      }
       this.log.warn(`Temporal no arrancó el flujo: ${message}`);
       await this.seedTasks(input, workflowId, tenant);
       await this.prisma.workflowRun.upsert({

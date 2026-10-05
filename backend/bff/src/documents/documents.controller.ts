@@ -18,6 +18,7 @@ import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { DocumentsService, type PublicDocument } from './documents.service';
 import type { Page } from '../common/pagination';
 import { CreateDocumentDto, ListDocumentsQueryDto } from './dto';
+import { fixMulterFilename } from './multer-filename';
 
 const MAX_PDF_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -46,7 +47,7 @@ export class DocumentsController {
   ): Promise<PublicDocument> {
     return this.documents.create({
       caseId: dto.caseId,
-      filename: dto.filename ?? file.originalname ?? 'documento.pdf',
+      filename: dto.filename ?? (file.originalname ? fixMulterFilename(file.originalname) : 'documento.pdf'),
       bytes: file.buffer,
       tenantId: user.tenantId,
       actorId: user.actorId,

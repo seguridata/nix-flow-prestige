@@ -249,9 +249,24 @@ export class AuditChainService {
       prevHash = r.hash;
     }
 
+    // Scoped: NUNCA el ancla global (idéntica para todos los tenants y delata su
+    // actividad). Se devuelve el último evento del propio scope, y solo si no se
+    // truncó la lectura (si no, no sería el head real del scope).
+    if (scoped) {
+      const last = rows[rows.length - 1];
+      return {
+        mode: 'scoped',
+        ok: true,
+        count: rows.length,
+        truncated: truncated || undefined,
+        headSeq: truncated ? undefined : (last.seq as bigint).toString(),
+        headHash: truncated ? undefined : (last.hash as string),
+        checkedAt: now,
+      };
+    }
     const anchor = await this.prisma.auditAnchor.findUnique({ where: { id: 'head' } });
     return {
-      mode: scoped ? 'scoped' : 'global',
+      mode: 'global',
       ok: true,
       count: rows.length,
       truncated: truncated || undefined,

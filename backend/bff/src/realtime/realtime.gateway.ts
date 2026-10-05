@@ -83,10 +83,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   afterInit(server: Server): void {
     const pub = this.redis.duplicate();
     const sub = this.redis.duplicate();
-    if (pub && sub) {
-      server.adapter(createAdapter(pub, sub));
-      this.logger.log('Socket.IO usando el adaptador Redis (multi-réplica)');
+    if (!pub || !sub) return;
+    // Solo se instala el adaptador si Redis responde; si no, se degrada a memoria
+    // (por instancia) en lugar de dejar suscripciones/publicaciones rechazadas.
+    void this.installRedisAdapter(server, pub, sub);
+  }
+
+  private async installRedisAdapter(
+    server: Server,
+    pub: Parameters<typeof createAdapter>[0],
+    sub: Parameters<typeof createAdapter>[1],
+  ): Promise<void> {
+    const attempts = 5;
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        await Promise.all([pub.ping(), sub.ping()]);
+        server.adapter(createAdapter(pub, sub));
+        this.logger.log('Socket.IO usando el adaptador Redis (multi-réplica)');
+        return;
+      } catch (err) {
+        this.logger.warn(`Redis no responde para el adaptador Socket.IO (${i}/${attempts}): ${(err as Error).message}`);
+        if (i < attempts) await new Promise((r) => setTimeout(r, 1000));
+      }
     }
+    this.logger.warn('Socket.IO sigue en modo memoria por instancia (sin adaptador Redis)');
   }
 
   // documentId -> (actorId -> presence info)

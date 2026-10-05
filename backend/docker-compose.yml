@@ -95,7 +95,10 @@ services:
       - miniodata:/data
 
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # minio/mc tampoco se publica ya en Docker Hub. rancher/mirrored-minio-mc es el
+    # espejo de SUSE del mc upstream (tag RELEASE real, verificado con docker pull;
+    # soporta `mb --with-lock`, `version enable` y `retention set --default`).
+    image: rancher/mirrored-minio-mc:RELEASE.2023-06-28T21-54-17Z
     depends_on:
       - minio
     restart: on-failure

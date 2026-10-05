@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
+import { guardRedis } from './redis-guard';
 
 /**
  * M-transversal (D10) — cliente Redis real (`ioredis`). Sin `REDIS_URL` todo es
@@ -25,7 +26,7 @@ export class RedisService implements OnModuleDestroy {
         lazyConnect: false,
         enableOfflineQueue: true,
       });
-      this.main.on('error', (e) => this.log.warn(`redis: ${e.message}`));
+      guardRedis(this.main, 'redis', this.log);
       this.main.once('connect', () => this.log.log(`Redis conectado (${maskRedisUrl(process.env.REDIS_URL)})`));
     }
     return this.main;
@@ -36,7 +37,7 @@ export class RedisService implements OnModuleDestroy {
     const base = this.client();
     if (!base) return null;
     const dup = base.duplicate();
-    dup.on('error', (e) => this.log.warn(`redis(dup): ${e.message}`));
+    guardRedis(dup, 'redis(dup)', this.log);
     this.extra.push(dup);
     return dup;
   }

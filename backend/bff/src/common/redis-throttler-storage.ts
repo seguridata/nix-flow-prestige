@@ -2,6 +2,7 @@ import { Logger, type OnModuleDestroy } from '@nestjs/common';
 import { ThrottlerStorageService, type ThrottlerStorage } from '@nestjs/throttler';
 import type { ThrottlerStorageRecord } from '@nestjs/throttler/dist/throttler-storage-record.interface';
 import Redis from 'ioredis';
+import { guardRedis } from '../redis/redis-guard';
 
 /**
  * Almacén del rate-limit en Redis, compartido entre réplicas del BFF. Un único
@@ -33,7 +34,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy 
   constructor(urlOrClient: string | { eval: Eval }) {
     if (typeof urlOrClient === 'string') {
       this.redis = new Redis(urlOrClient, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
-      this.redis.on('error', (e) => this.log.warn(`throttler redis: ${e.message}`));
+      guardRedis(this.redis, 'throttler redis', this.log);
       this.run = (s, n, ...a) => this.redis!.eval(s, n, ...a);
     } else {
       this.redis = null;

@@ -24,7 +24,13 @@ export interface EvidenceVerificationResult {
   mismatches: string[];
   /** Detalle por comprobación (para el verificador y la UI). */
   checks: {
+    /** Hash canónico (PDF congelado) vs `originalHash` del manifiesto. */
     documentHash: boolean;
+    /**
+     * Copia de ceremonia vs `presentedHash` registrado. Puede diferir del
+     * canónico (firma embebida DIGITAL/AUTOGRAFA), por eso es un check aparte.
+     */
+    presentedHash: boolean;
     signedHash: boolean;
     packageHash: boolean;
     chainOfCustody: boolean;
@@ -359,6 +365,7 @@ export class EvidenceService {
         mismatches: ['La solicitud de firma asociada ya no existe'],
         checks: {
           documentHash: false,
+          presentedHash: false,
           signedHash: false,
           packageHash: false,
           chainOfCustody: false,
@@ -474,7 +481,8 @@ export class EvidenceService {
       valid: mismatches.length === 0,
       mismatches,
       checks: {
-        documentHash: document.hash === manifest.originalHash && document.hash === manifest.presentedHash,
+        documentHash: document.hash === manifest.originalHash,
+        presentedHash: livePresented === manifest.presentedHash,
         signedHash: recomputedSignedHash === manifest.signedHash,
         packageHash: recomputedPackageHash === manifest.packageHash,
         chainOfCustody: chainOk,
