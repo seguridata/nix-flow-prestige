@@ -78,6 +78,13 @@ jobs:
       - name: Build
         run: bun run build
 
+      # Los tests de vitest no emiten metadatos de decoradores: un parámetro de constructor
+      # no inyectable (p. ej. un tipo función) pasa los tests y tumba el arranque del BFF.
+      - name: DI check (parámetros no inyectables)
+        working-directory: backend/bff
+        timeout-minutes: 2
+        run: bun run check:di
+
   secrets-scan:
     runs-on: ubuntu-latest
     steps:
