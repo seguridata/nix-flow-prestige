@@ -37,22 +37,23 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit | null>(null);
+  // Resultado asociado a la consulta que lo originó: si la consulta actual es
+  // corta o distinta, no se muestra (derivado en render, sin setState en el efecto).
+  const [result, setResult] = useState<{ q: string; data: SearchHit } | null>(null);
+  const trimmed = query.trim();
+  const hits = trimmed.length >= 2 && result?.q === trimmed ? result.data : null;
 
   useEffect(() => {
     if (!open) return;
-    if (query.trim().length < 2) {
-      setHits(null);
-      return;
-    }
+    if (trimmed.length < 2) return;
     const handle = window.setTimeout(() => {
       apiClient
-        .get<SearchHit>(`/operations/search?q=${encodeURIComponent(query.trim())}`)
-        .then(setHits)
-        .catch(() => setHits(null));
+        .get<SearchHit>(`/operations/search?q=${encodeURIComponent(trimmed)}`)
+        .then((data) => setResult({ q: trimmed, data }))
+        .catch(() => setResult(null));
     }, 180);
     return () => window.clearTimeout(handle);
-  }, [query, open]);
+  }, [trimmed, open]);
 
   if (!open) return null;
 

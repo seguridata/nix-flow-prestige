@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -117,14 +117,17 @@ export default function SignatureFieldsPage({
 
   const [draftFields, setDraftFields] = useState<DraftField[]>([]);
   const [seeded, setSeeded] = useState(false);
-  const [selectedSignerId, setSelectedSignerId] = useState<string | null>(null);
+  const [pickedSignerId, setSelectedSignerId] = useState<string | null>(null);
+  // Por defecto, el primer firmante hasta que el usuario elija otro.
+  const selectedSignerId = pickedSignerId ?? signers[0]?.signerId ?? null;
   const [selectedType, setSelectedType] = useState<SignatureFieldType>("SIGNATURE");
   const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
 
-  useEffect(() => {
-    if (seeded || !fieldsQuery.data) return;
+  if (!seeded && fieldsQuery.data) {
+    // Siembra única de los borradores desde el servidor (en render, sin efecto).
+    setSeeded(true);
     setDraftFields(
       fieldsQuery.data.map((f) => ({
         key: crypto.randomUUID(),
@@ -138,15 +141,7 @@ export default function SignatureFieldsPage({
         required: f.required,
       })),
     );
-    setSeeded(true);
-  }, [fieldsQuery.data, seeded]);
-
-  useEffect(() => {
-    const first = signers[0];
-    if (selectedSignerId === null && first) {
-      setSelectedSignerId(first.signerId);
-    }
-  }, [signers, selectedSignerId]);
+  }
 
   const colorFor = (signerId: string): SignerColor => {
     const index = signers.findIndex((s) => s.signerId === signerId);

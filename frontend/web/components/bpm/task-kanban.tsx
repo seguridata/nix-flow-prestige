@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -86,9 +86,12 @@ export function TaskKanban({
   onMove: (taskId: string, status: string) => void;
 }) {
   const [local, setLocal] = useState(tasks);
-  useEffect(() => {
+  const [prevTasks, setPrevTasks] = useState(tasks);
+  if (prevTasks !== tasks) {
+    // Resincroniza el estado local cuando cambian las tareas del servidor (en render, sin efecto).
+    setPrevTasks(tasks);
     setLocal(tasks);
-  }, [tasks]);
+  }
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const grouped = useMemo(() => {

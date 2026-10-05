@@ -20,7 +20,6 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (skip) return;
     let alive = true;
-    setFailed(false);
     fetch("/api/auth/me", { cache: "no-store" })
       .then(async (r) => {
         if (!alive) return;
@@ -57,7 +56,10 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
-          onClick={() => setAttempt((n) => n + 1)}
+          onClick={() => {
+            setFailed(false);
+            setAttempt((n) => n + 1);
+          }}
         >
           Reintentar
         </button>

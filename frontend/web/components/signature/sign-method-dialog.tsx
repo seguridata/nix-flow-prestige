@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CheckCircle2, Fingerprint, KeyRound, PenTool, ShieldCheck } from "lucide-react";
 
 import {
@@ -83,18 +83,22 @@ export function SignMethodDialog({
   const [verifying, setVerifying] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    setStroke(null);
-    setAccepted(false);
-    setAssertionId(null);
-    setPasskeyError(null);
-    if (allowedMethods.includes("AUTOGRAFA")) {
-      setSelected("AUTOGRAFA");
-    } else {
-      setSelected(allowedMethods[0] ?? null);
+  // Reinicia la ceremonia al abrir (o si cambian los métodos permitidos) derivando
+  // durante el render en lugar de setState dentro de un efecto.
+  const [prevKey, setPrevKey] = useState<{ open: boolean; methods: SignatureMethod[] | null }>({
+    open: false,
+    methods: null,
+  });
+  if (prevKey.open !== open || prevKey.methods !== allowedMethods) {
+    setPrevKey({ open, methods: allowedMethods });
+    if (open) {
+      setStroke(null);
+      setAccepted(false);
+      setAssertionId(null);
+      setPasskeyError(null);
+      setSelected(allowedMethods.includes("AUTOGRAFA") ? "AUTOGRAFA" : (allowedMethods[0] ?? null));
     }
-  }, [open, allowedMethods]);
+  }
 
   const blocked = selected === "BIOMETRICA" && !biometricReady;
   const needsStroke = selected === "AUTOGRAFA";

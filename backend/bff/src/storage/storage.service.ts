@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'crypto';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -46,6 +47,33 @@ export class StorageService {
 
   get enabled(): boolean {
     return this.client !== null;
+  }
+
+  /**
+   * Comprobacion de conectividad real al bucket (HeadBucket) con timeout corto.
+   * Nunca lanza: devuelve false si no esta configurado, falla o expira.
+   */
+  async ping(timeoutMs = 2000): Promise<boolean> {
+    if (!this.client) return false;
+    const ac = new AbortController();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          ac.abort();
+          reject(new Error('timeout'));
+        }, timeoutMs);
+      });
+      await Promise.race([
+        this.client.send(new HeadBucketCommand({ Bucket: this.bucket }), { abortSignal: ac.signal }),
+        timeout,
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private require(): S3Client {

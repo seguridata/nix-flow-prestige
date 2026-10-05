@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SigningRouter } from '../signing/signing.router';
 import { StorageService } from '../storage/storage.service';
 
+const HEALTH_TIMEOUT_MS = 2000;
+
 @Controller('operations')
 export class OperationsController {
   constructor(
@@ -18,21 +20,36 @@ export class OperationsController {
   @Public()
   @Get('health')
   async health() {
-    let postgres = false;
-    try {
-      await this.prisma.$queryRaw`SELECT 1`;
-      postgres = true;
-    } catch {
-      postgres = false;
-    }
+    const [postgres, objectStorage] = await Promise.all([
+      this.checkPostgres(),
+      this.storage.ping(HEALTH_TIMEOUT_MS).catch(() => false),
+    ]);
     return {
       service: 'prestige-bff',
       postgres,
-      objectStorage: this.storage.enabled,
+      objectStorage,
       biometric: this.signing.capabilities().find((c) => c.method === 'BIOMETRICA'),
       adapters: this.signing.capabilities(),
       at: new Date().toISOString(),
     };
+  }
+
+  /** SELECT 1 con timeout corto; nunca lanza ni expone el error. */
+  private async checkPostgres(): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.prisma.$queryRaw`SELECT 1`,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('timeout')), HEALTH_TIMEOUT_MS);
+        }),
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   @Roles('admin', 'sender', 'rh')

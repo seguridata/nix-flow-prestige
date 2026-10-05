@@ -56,25 +56,27 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   const consentText = useQuery({ queryKey: ["consent-text"], queryFn: fetchConsentText });
   const caps = useQuery({ queryKey: ["signing-capabilities"], queryFn: fetchSigningCapabilities });
 
+  const requestsData = requests.data;
+  const capsData = caps.data;
+
   const mine = useMemo(() => {
-    for (const r of requests.data ?? []) {
-      const s = r.signers.find(
-        (x) => x.signerId === signerId || x.delegatedTo === signerId,
-      );
-      if (!s || s.status !== "PENDIENTE" || !["PENDIENTE", "EN_FIRMA"].includes(r.status)) {
-        continue;
-      }
-      // Secuencial: `blockedBy` = firmante anterior aún pendiente (o null si me toca).
-      return { request: r, signer: s, blockedBy: signerBlockedBy(r, signerId) };
-    }
-    return null;
-  }, [requests.data, signerId]);
+    const isMine = (x: { signerId: string; delegatedTo?: string | null }) =>
+      x.signerId === signerId || x.delegatedTo === signerId;
+    const request = (requestsData ?? []).find((r) => {
+      const s = r.signers.find(isMine);
+      return Boolean(s) && s?.status === "PENDIENTE" && ["PENDIENTE", "EN_FIRMA"].includes(r.status);
+    });
+    const signer = request?.signers.find(isMine);
+    if (!request || !signer) return null;
+    // Secuencial: `blockedBy` = firmante anterior aún pendiente (o null si me toca).
+    return { request, signer, blockedBy: signerBlockedBy(request, signerId) };
+  }, [requestsData, signerId]);
 
   const methods = useMemo(() => {
     const allowed = mine?.request.methods ?? [];
-    const configured = new Set((caps.data ?? []).filter((c) => c.configured).map((c) => c.method));
+    const configured = new Set((capsData ?? []).filter((c) => c.configured).map((c) => c.method));
     return allowed.filter((m) => configured.size === 0 || configured.has(m));
-  }, [mine, caps.data]);
+  }, [mine, capsData]);
 
   async function submit() {
     if (!mine || mine.blockedBy || !method) return;

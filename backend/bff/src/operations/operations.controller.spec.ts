@@ -6,7 +6,7 @@ import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 const userA = { tenantId: 'A' } as AuthenticatedUser;
 const userB = { tenantId: 'B' } as AuthenticatedUser;
 
-function setup() {
+function setup(ping: () => Promise<boolean> = async () => true) {
   const mk = () => ({
     count: vi.fn().mockResolvedValue(0),
     groupBy: vi.fn().mockResolvedValue([]),
@@ -22,7 +22,7 @@ function setup() {
     $queryRaw: vi.fn().mockResolvedValue([1]),
   };
   const signing = { capabilities: () => [{ method: 'BIOMETRICA' }] };
-  const storage = { enabled: true };
+  const storage = { enabled: true, ping: vi.fn(ping) };
   const ctrl = new OperationsController(prisma as any, signing as any, storage as any);
   return { prisma, ctrl };
 }
@@ -72,5 +72,27 @@ describe('OperationsController - aislamiento por tenant', () => {
     expect(res).not.toContain('redis://');
     delete process.env.REDIS_URL;
     delete process.env.TEMPORAL_ADDRESS;
+  });
+
+  it('health: objectStorage true si el ping al bucket responde', async () => {
+    const { ctrl } = setup(async () => true);
+    expect((await ctrl.health()).objectStorage).toBe(true);
+  });
+
+  it('health: objectStorage false (sin romper) si el ping falla, sin filtrar el error', async () => {
+    const { ctrl } = setup(async () => {
+      throw new Error('getaddrinfo ENOTFOUND s3.interno secret-key');
+    });
+    const body = await ctrl.health();
+    expect(body.objectStorage).toBe(false);
+    expect(body.postgres).toBe(true);
+    const res = JSON.stringify(body);
+    expect(res).not.toContain('ENOTFOUND');
+    expect(res).not.toContain('REDIS_URL');
+  });
+
+  it('health: objectStorage false si no esta configurado', async () => {
+    const { ctrl } = setup(async () => false);
+    expect((await ctrl.health()).objectStorage).toBe(false);
   });
 });
