@@ -12,7 +12,6 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/libs/utils";
 
 export interface KanbanTask {

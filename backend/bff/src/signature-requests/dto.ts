@@ -101,6 +101,20 @@ export class PasskeyFinishDto {
  */
 export class ConsentAcceptDto {}
 
+/** Quita caracteres de control y marcado (<, >) y recorta; vacío => undefined. */
+const sanitizeReason = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  // eslint-disable-next-line no-control-regex
+  const clean = value.replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim();
+  return clean === '' ? undefined : clean;
+};
+
+/** Cuerpo de `POST /public/links/:token/reject`. El firmante sale del enlace, nunca del cliente. */
+export class PublicRejectDto {
+  @IsOptional() @Transform(sanitizeReason) @IsString() @MaxLength(500)
+  reason?: string;
+}
+
 export class RejectDto {
   @IsOptional() @IsString() @MaxLength(2000)
   reason?: string;

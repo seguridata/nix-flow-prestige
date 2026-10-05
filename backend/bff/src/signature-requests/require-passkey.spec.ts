@@ -40,7 +40,7 @@ function makeService(opts: { requirePasskey: boolean; consumeOk: boolean }) {
       update: async () => ({}),
     },
     signatureField: { findFirst: async () => null },
-    consentAcceptance: { upsert: async () => ({}) },
+    consentAcceptance: { findUnique: async () => null, create: async () => ({}) },
     $queryRaw: async () => [],
     $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
   } as unknown as PrismaService;

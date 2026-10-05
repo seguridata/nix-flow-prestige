@@ -51,7 +51,7 @@ function makeService(opts: { kycPolicy: 'NONE' | 'ONCE' | 'EVERY_SIGN'; onboardi
       update: async () => ({}),
     },
     signatureField: { findFirst: async () => null },
-    consentAcceptance: { upsert: async () => ({}) },
+    consentAcceptance: { findUnique: async () => null, create: async () => ({}) },
     onboardingCase: {
       findFirst: async ({ where }: { where: { updatedAt: { gte: Date } } }) =>
         opts.onboardingCases.find((c) => (c.updatedAt as Date).getTime() >= where.updatedAt.gte.getTime()) ?? null,

@@ -381,6 +381,9 @@ model WebhookSubscription {
   tenantId    String   @default("seguridata")
   url         String
   secret      String
+  /// Rotación: secreto anterior, válido (firma secundaria) hasta previousSecretUntil. Nunca se expone por API.
+  previousSecret      String?
+  previousSecretUntil DateTime?
   /// Tipos de evento CloudEvents a los que se suscribe (`*` = todos).
   events      String[]
   active      Boolean  @default(true)

@@ -18,7 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { OneTimeLinkService } from '../notifications/one-time-link.service';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
 import { SignatureRequestsService } from './signature-requests.service';
-import { ConsentAcceptDto, PasskeyFinishDto, SignActionDto } from './dto';
+import { ConsentAcceptDto, PasskeyFinishDto, PublicRejectDto, SignActionDto } from './dto';
 
 const MAX_STROKE_BYTES = 2 * 1024 * 1024;
 
@@ -154,5 +154,26 @@ export class PublicSignController {
       signedAt: result.signedAt,
       requestStatus: result.requestStatus,
     };
+  }
+
+  /**
+   * Rechazo por el firmante externo. Mismo mecanismo que `sign`: el enlace de
+   * un solo uso es la autorización (resolve => 404/410 si no sirve), el
+   * firmante sale del enlace y el tenant de la solicitud ligada. Tras rechazar
+   * se consume el enlace. `reject` responde 409 si ya firmó.
+   */
+  @Public()
+  @Post(':token/reject')
+  async reject(@Param('token') token: string, @Body() body: PublicRejectDto) {
+    const link = await this.links.resolve(token);
+    if (link.purpose !== 'sign' || !link.signatureRequestId) {
+      throw new BadRequestException('El enlace no sirve para rechazar');
+    }
+    await this.signatureRequests.reject(link.signatureRequestId, {
+      signerId: link.signerId,
+      reason: body.reason,
+    });
+    await this.links.consume(token);
+    return { status: 'RECHAZADO' };
   }
 }

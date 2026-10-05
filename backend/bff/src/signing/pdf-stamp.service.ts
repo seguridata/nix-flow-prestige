@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { assertNoPriorSignatureForVisualStamp } from './pdf-signatures';
 
 interface FieldPct {
   page: number;
@@ -37,7 +38,9 @@ export class PdfStampService {
     pngBytes: Buffer,
     field?: { page: number; xPct: number; yPct: number; widthPct: number; heightPct: number },
   ): Promise<Buffer> {
-    try {
+    // Nunca se traga el error: si el estampado falla, se propaga y el firmante NO queda FIRMADO.
+    assertNoPriorSignatureForVisualStamp(pdfBytes);
+    {
       const pdf = await PDFDocument.load(pdfBytes);
       const png = await pdf.embedPng(pngBytes);
       const pages = pdf.getPages();
@@ -73,9 +76,6 @@ export class PdfStampService {
       );
       page.drawImage(png, { x: drawX, y: drawY, width: drawW, height: drawH });
       return Buffer.from(await pdf.save());
-    } catch (error) {
-      this.log.warn(`No se pudo incrustar la autógrafa: ${(error as Error).message}`);
-      return pdfBytes;
     }
   }
 
@@ -88,7 +88,8 @@ export class PdfStampService {
     info: { name: string; subject: string; serialNumber: string; at: Date },
     field?: FieldPct,
   ): Promise<Buffer> {
-    try {
+    assertNoPriorSignatureForVisualStamp(pdfBytes);
+    {
       const pdf = await PDFDocument.load(pdfBytes);
       const font = await pdf.embedFont(StandardFonts.Helvetica);
       const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -133,9 +134,6 @@ export class PdfStampService {
         ty -= strong ? 11 : 9;
       }
       return Buffer.from(await pdf.save());
-    } catch (error) {
-      this.log.warn(`No se pudo dibujar la apariencia de firma: ${(error as Error).message}`);
-      return pdfBytes;
     }
   }
 }

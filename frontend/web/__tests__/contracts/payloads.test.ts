@@ -5,6 +5,7 @@ import {
   buildDelegatePayload,
   buildOnboardingActionPayload,
   buildOnboardingCreatePayload,
+  buildPublicRejectPayload,
   buildSignPayload,
 } from "@/services/payloads";
 
@@ -24,6 +25,8 @@ const ONBOARDING_ACTION_KEYS = ["notes", "approve"];
 const SIGN_KEYS = ["method", "biometricSessionId", "passkeyAssertionId", "consentAccepted"];
 // backend/bff/src/signature-requests/dto.ts (ConsentAcceptDto: vacío)
 const CONSENT_KEYS: string[] = [];
+// backend/bff/src/signature-requests/dto.ts (PublicRejectDto)
+const PUBLIC_REJECT_KEYS = ["reason"];
 
 function onlyAllowed(obj: object, allowed: string[]) {
   return Object.keys(obj).filter((k) => !allowed.includes(k));
@@ -72,6 +75,14 @@ describe("contratos de payload hacia el BFF", () => {
     expect(p).toEqual({ method: "PASSKEY", consentAccepted: true, passkeyAssertionId: "a1" });
   });
 
+  it("public reject: solo reason, recortado a 500 y sin signerId", () => {
+    expect(onlyAllowed(buildPublicRejectPayload("  no procede "), PUBLIC_REJECT_KEYS)).toEqual([]);
+    expect(buildPublicRejectPayload("  no procede ")).toEqual({ reason: "no procede" });
+    expect(buildPublicRejectPayload("   ")).toEqual({});
+    expect(buildPublicRejectPayload()).toEqual({});
+    expect(buildPublicRejectPayload("x".repeat(900)).reason).toHaveLength(500);
+  });
+
   it("consent: cuerpo vacío", () => {
     expect(onlyAllowed(buildConsentPayload(), CONSENT_KEYS)).toEqual([]);
   });
@@ -87,6 +98,17 @@ describe("servicios usan los constructores", () => {
     await acceptPublicConsent("tok");
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(JSON.parse(init.body as string)).toEqual({});
+    vi.unstubAllGlobals();
+  });
+
+  it("rejectPublicLink va a /reject con solo reason", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"status":"RECHAZADO"}', { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { rejectPublicLink } = await import("@/services/public-sign-service");
+    await rejectPublicLink("tok", " motivo ");
+    expect(fetchMock.mock.calls[0]![0]).toBe("/api/public-sign/tok/reject");
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ reason: "motivo" });
     vi.unstubAllGlobals();
   });
 

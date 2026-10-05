@@ -16,6 +16,20 @@ export function maskSecret(secret: string): string {
   return `••••${secret.slice(-4)}`;
 }
 
+/** Ventana (ms) en que el secreto anterior sigue firmando tras una rotación. */
+function rotationWindowMs(): number {
+  const hours = Number(process.env.WEBHOOK_SECRET_ROTATION_HOURS);
+  return (Number.isFinite(hours) && hours > 0 ? hours : 24) * 3_600_000;
+}
+
+/** Quita los secretos anteriores (nunca salen por API) y enmascara el actual. */
+function toPublic<T extends { secret: string; previousSecret?: string | null; previousSecretUntil?: Date | null }>(
+  row: T,
+) {
+  const { previousSecret: _ps, previousSecretUntil: _pu, ...rest } = row;
+  return { ...rest, secret: maskSecret(row.secret) };
+}
+
 /** Backoff exponencial acotado a 15 min (attempt empieza en 1: 1,2,4,8,15,15…). */
 function backoffMs(attempt: number): number {
   return Math.min(2 ** (attempt - 1), 15) * 60_000;
@@ -85,22 +99,24 @@ export class WebhooksService {
       orderBy: STABLE_ORDER,
       ...prismaPage(args),
     });
-    return mapPage(finishPage(rows, args), (r) => ({ ...r, secret: maskSecret(r.secret) }));
+    return mapPage(finishPage(rows, args), (r) => toPublic(r));
   }
 
   /**
-   * Genera un secreto nuevo y lo devuelve UNA vez. Hoy hay un solo secreto por
-   * suscripción, así que el cambio es inmediato (sin ventana de doble firma).
-   * TODO(migración): rotación con dos secretos — añadir
-   * `WebhookSubscription.previousSecret String?` + `previousSecretUntil DateTime?`
-   * y firmar con ambos (`X-Prestige-Signature` con dos `sha256=`) durante la
-   * ventana. Requiere editar schema.prisma + migración; no se hizo aquí.
+   * Genera un secreto nuevo y lo devuelve UNA vez. El actual pasa a
+   * `previousSecret` con validez `WEBHOOK_SECRET_ROTATION_HOURS` (24 h por
+   * defecto): durante esa ventana cada entrega lleva además la cabecera
+   * `x-prestige-signature-previous` para que el receptor migre sin cortes.
    */
   async rotateSecret(tenantId: string, id: string) {
-    await this.getOwned(tenantId, id);
+    const sub = await this.getOwned(tenantId, id);
     const secret = randomBytes(24).toString('base64url');
-    await this.prisma.webhookSubscription.update({ where: { id }, data: { secret } });
-    return { id, secret };
+    const previousSecretUntil = new Date(Date.now() + rotationWindowMs());
+    await this.prisma.webhookSubscription.update({
+      where: { id },
+      data: { secret, previousSecret: sub.secret, previousSecretUntil },
+    });
+    return { id, secret, previousSecretValidUntil: previousSecretUntil.toISOString() };
   }
 
   async update(
@@ -119,7 +135,7 @@ export class WebhooksService {
         description: body.description,
       },
     });
-    return { ...row, secret: maskSecret(row.secret) };
+    return toPublic(row);
   }
 
   async remove(tenantId: string, id: string) {
@@ -191,6 +207,16 @@ export class WebhooksService {
       const body = JSON.stringify(row.payload);
       const timestamp = String(Date.now());
       const signature = signPayload(row.subscription.secret, timestamp, body);
+      const sub = row.subscription;
+      const prevActive =
+        !!sub.previousSecret && !!sub.previousSecretUntil && sub.previousSecretUntil.getTime() > Date.now();
+      if (sub.previousSecret && !prevActive) {
+        // Ventana vencida: limpieza oportunista (best-effort).
+        await this.prisma.webhookSubscription
+          .update({ where: { id: sub.id }, data: { previousSecret: null, previousSecretUntil: null } })
+          .catch(() => undefined);
+      }
+      const prevSignature = prevActive ? signPayload(sub.previousSecret!, timestamp, body) : undefined;
       let responseStatus: number | undefined;
       try {
         // SSRF: se revalida en cada despacho (el DNS pudo cambiar) y NO se
@@ -206,6 +232,7 @@ export class WebhooksService {
             'x-prestige-delivery': row.id,
             'x-prestige-timestamp': timestamp,
             'x-prestige-signature': `sha256=${signature}`,
+            ...(prevSignature ? { 'x-prestige-signature-previous': `sha256=${prevSignature}` } : {}),
           },
           body,
           signal: AbortSignal.timeout(10_000),

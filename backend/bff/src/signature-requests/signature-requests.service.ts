@@ -463,23 +463,30 @@ export class SignatureRequestsService {
     const userAgentHash = userAgent
       ? createHash('sha256').update(userAgent).digest('hex').slice(0, 32)
       : null;
-    return this.prisma.consentAcceptance.upsert({
-      where: {
-        signatureRequestId_signerId_textVersion: {
-          signatureRequestId: id,
-          signerId,
-          textVersion: CONSENT_VERSION,
-        },
-      },
-      create: {
+    // Idempotente: si ya aceptó la versión vigente se devuelve el registro
+    // existente SIN reescribirlo (la prueba original de IP/UA/fecha no se pisa).
+    // La unicidad [signatureRequestId, signerId, textVersion] del modelo cubre
+    // la carrera de doble clic: el perdedor captura P2002 y relee el ganador.
+    const key = {
+      signatureRequestId_signerId_textVersion: {
         signatureRequestId: id,
         signerId,
         textVersion: CONSENT_VERSION,
-        ipHash,
-        userAgentHash,
       },
-      update: { ipHash, userAgentHash, acceptedAt: new Date() },
-    });
+    };
+    const existing = await this.prisma.consentAcceptance.findUnique({ where: key });
+    if (existing) return existing;
+    try {
+      return await this.prisma.consentAcceptance.create({
+        data: { signatureRequestId: id, signerId, textVersion: CONSENT_VERSION, ipHash, userAgentHash },
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2002') {
+        const winner = await this.prisma.consentAcceptance.findUnique({ where: key });
+        if (winner) return winner;
+      }
+      throw e;
+    }
   }
 
   /**
@@ -1080,7 +1087,7 @@ export class SignatureRequestsService {
    * PENDIENTE/EN_PROCESO (nunca tras firmar) y, en orden SECUENCIAL, cuando ya
    * le toca el turno. El cambio de estado es atómico.
    */
-  async reject(id: string, body: { signerId: string; reason?: string }, tenantId: string) {
+  async reject(id: string, body: { signerId: string; reason?: string }, tenantId?: string) {
     const request = await this.getOrThrow(id, tenantId);
     if (CLOSED_REQUEST.includes(request.status)) return request;
 

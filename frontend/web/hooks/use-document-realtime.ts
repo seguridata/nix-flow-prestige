@@ -85,7 +85,6 @@ export function useDocumentRealtime(documentId: string | undefined) {
       setIsConnected(false);
       setPresentActors([]);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, signerId]);
 
   return { presentActors, isConnected };

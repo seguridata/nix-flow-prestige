@@ -6,15 +6,29 @@ import { toast } from "sonner";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import {
   acceptPublicConsent,
   beginPasskey,
   finishPasskey,
+  PublicLinkError,
+  rejectPublicLink,
   resolvePublicLink,
   signPublicLink,
   type PublicLinkContext,
 } from "@/services/public-sign-service";
+
+/** Mensajes en español por código HTTP del portal público. */
+function publicErrorMessage(e: Error): string {
+  const status = e instanceof PublicLinkError ? e.status : 0;
+  if (status === 410) return "Este enlace ya se utilizó o expiró. Solicita uno nuevo al remitente.";
+  if (status === 409) return "Ya firmaste esta solicitud, por lo que no puede rechazarse.";
+  if (status === 502 || status === 503 || status === 504) {
+    return "Servicio no disponible por el momento. Intenta de nuevo en unos minutos.";
+  }
+  return e.message || "No se pudo completar la operación.";
+}
 
 type Method = "DIGITAL" | "AUTOGRAFA" | "ACCEPT" | "PASSKEY";
 
@@ -25,6 +39,9 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
   const [stroke, setStroke] = useState<Blob | null>(null);
   const [assertionId, setAssertionId] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [rejected, setRejected] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [reason, setReason] = useState("");
 
   const link = useQuery({
     queryKey: ["public-link", token],
@@ -60,7 +77,16 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
       setDone(true);
       toast.success("Firma aplicada.");
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(publicErrorMessage(e)),
+  });
+
+  const reject = useMutation({
+    mutationFn: () => rejectPublicLink(token, reason),
+    onSuccess: () => {
+      setRejectOpen(false);
+      setRejected(true);
+    },
+    onError: (e: Error) => toast.error(publicErrorMessage(e)),
   });
 
   const needsPasskey = Boolean(link.data?.requirePasskey) || method === "PASSKEY";
@@ -81,6 +107,14 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
           <p className="mt-2 text-sm text-muted-foreground">{(link.error as Error).message}</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Solicita al remitente que te reenvíe un enlace nuevo.
+          </p>
+        </Card>
+      ) : rejected || link.data?.myStatus === "RECHAZADO" ? (
+        <Card className="p-6" role="status">
+          <h1 className="text-lg font-semibold">Solicitud rechazada</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Rechazaste firmar este documento. Se notificó al remitente y este enlace ya no puede
+            utilizarse. Puedes cerrar esta ventana.
           </p>
         </Card>
       ) : done || link.data?.myStatus === "FIRMADO" ? (
@@ -111,8 +145,38 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
           }
           onSubmit={() => sign.mutate()}
           pending={sign.isPending}
+          onReject={() => setRejectOpen(true)}
         />
       )}
+      <Dialog open={rejectOpen} onOpenChange={(o) => !reject.isPending && setRejectOpen(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Rechazar este documento?</DialogTitle>
+            <DialogDescription>
+              Esta acción es definitiva: se notificará al remitente y el enlace dejará de funcionar.
+            </DialogDescription>
+          </DialogHeader>
+          <label htmlFor="reject-reason" className="text-sm font-medium">
+            Motivo (opcional)
+          </label>
+          <textarea
+            id="reject-reason"
+            className="min-h-24 w-full rounded-md border border-border bg-background p-2 text-sm"
+            maxLength={500}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <p className="text-right text-xs text-muted-foreground">{reason.length}/500</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={reject.isPending} onClick={() => setRejectOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" disabled={reject.isPending} onClick={() => reject.mutate()}>
+              {reject.isPending ? "Rechazando…" : "Rechazar documento"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
@@ -131,6 +195,7 @@ function FirmarForm({
   canSubmit,
   onSubmit,
   pending,
+  onReject,
 }: {
   ctx: PublicLinkContext;
   consent: boolean;
@@ -145,6 +210,7 @@ function FirmarForm({
   canSubmit: boolean;
   onSubmit: () => void;
   pending: boolean;
+  onReject: () => void;
 }) {
   const labels: Record<Method, string> = {
     DIGITAL: "Firma digital (PAdES)",
@@ -225,6 +291,9 @@ function FirmarForm({
 
       <Button className="w-full" disabled={!canSubmit} onClick={onSubmit}>
         {pending ? "Firmando…" : "Firmar documento"}
+      </Button>
+      <Button type="button" variant="outline" className="w-full" disabled={pending} onClick={onReject}>
+        Rechazar
       </Button>
     </Card>
   );

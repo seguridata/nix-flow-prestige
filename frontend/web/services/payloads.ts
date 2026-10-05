@@ -74,3 +74,12 @@ export function buildSignPayload(body: {
 export function buildConsentPayload() {
   return {};
 }
+
+/**
+ * DTO: backend/bff/src/signature-requests/dto.ts (PublicRejectDto: reason, máx 500).
+ * El firmante sale del enlace; nunca se manda signerId.
+ */
+export function buildPublicRejectPayload(reason?: string) {
+  const r = reason?.trim().slice(0, 500);
+  return r ? { reason: r } : {};
+}

@@ -1,5 +1,5 @@
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
-import { buildConsentPayload, buildSignPayload } from "@/services/payloads";
+import { buildConsentPayload, buildPublicRejectPayload, buildSignPayload } from "@/services/payloads";
 
 const BASE = "/api/public-sign";
 
@@ -19,10 +19,28 @@ export interface PublicLinkContext {
   requirePasskey: boolean;
 }
 
+/** Error HTTP del portal público; conserva el status para mensajes específicos. */
+export class PublicLinkError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "PublicLinkError";
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
   const text = await res.text();
-  const json = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error((json as { message?: string }).message ?? `Error ${res.status}`);
+  let json: unknown = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = {};
+  }
+  if (!res.ok) {
+    throw new PublicLinkError((json as { message?: string }).message ?? `Error ${res.status}`, res.status);
+  }
   return json as T;
 }
 
@@ -81,4 +99,13 @@ export function finishPasskey(token: string, assertionId: string, response: unkn
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ assertionId, response }),
   }).then(parse<{ ok: true }>);
+}
+
+/** Rechaza la solicitud desde el portal; el firmante lo deriva el BFF del enlace. */
+export function rejectPublicLink(token: string, reason?: string) {
+  return fetch(`${BASE}/${encodeURIComponent(token)}/reject`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(buildPublicRejectPayload(reason)),
+  }).then(parse<{ status: string }>);
 }

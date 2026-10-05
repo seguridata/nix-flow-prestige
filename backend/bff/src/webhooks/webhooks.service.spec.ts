@@ -30,10 +30,17 @@ interface Delivery {
   responseStatus: number | null;
   nextAttemptAt: Date;
   deliveredAt: Date | null;
-  subscription: { id: string; url: string; secret: string; tenantId: string };
+  subscription: {
+    id: string;
+    url: string;
+    secret: string;
+    tenantId: string;
+    previousSecret: string | null;
+    previousSecretUntil: Date | null;
+  };
 }
 
-function fakePrisma(rows: Partial<Delivery>[]) {
+function fakePrisma(rows: Partial<Delivery>[], sub: Partial<Delivery['subscription']> = {}) {
   const store = new Map<string, Delivery>(
     rows.map((r, i) => {
       const id = r.id ?? `d${i}`;
@@ -57,6 +64,9 @@ function fakePrisma(rows: Partial<Delivery>[]) {
             url: 'https://example.test/hook',
             secret: 'shh',
             tenantId: 'seguridata',
+            previousSecret: null,
+            previousSecretUntil: null,
+            ...sub,
           },
         },
       ];
@@ -75,6 +85,11 @@ function fakePrisma(rows: Partial<Delivery>[]) {
           }
         }
         return d;
+      },
+    },
+    webhookSubscription: {
+      update: async ({ data }: { data: Record<string, unknown> }) => {
+        for (const d of store.values()) Object.assign(d.subscription, data);
       },
     },
   } as unknown as PrismaService;
@@ -120,5 +135,94 @@ describe('WebhooksService.dispatchDue', () => {
     expect(store.get('d1')?.status).toBe('DLQ');
     expect(store.get('d1')?.attempts).toBe(8);
     expect(store.get('d1')?.lastError).toContain('HTTP 500');
+  });
+});
+
+describe('rotación de secreto de webhook', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const capture = () => {
+    const seen = { headers: {} as Record<string, string>, body: '' };
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      seen.headers = Object.fromEntries(new Headers(init.headers).entries());
+      seen.body = String(init.body);
+      return new Response('ok', { status: 200 });
+    });
+    return seen;
+  };
+
+  it('rotateSecret guarda el anterior con ventana y devuelve el nuevo una vez', async () => {
+    const update = vi.fn(async (_a: { data: Record<string, unknown> }) => ({}));
+    const prisma = {
+      webhookSubscription: {
+        findUnique: async () => ({ id: 's1', tenantId: 't1', secret: 'old-secret' }),
+        update,
+      },
+    } as unknown as PrismaService;
+    const before = Date.now();
+    const res = await new WebhooksService(prisma).rotateSecret('t1', 's1');
+    const arg = update.mock.calls[0][0].data;
+    expect(arg.previousSecret).toBe('old-secret');
+    expect(arg.secret).toBe(res.secret);
+    expect(res.secret).not.toBe('old-secret');
+    const until = (arg.previousSecretUntil as Date).getTime();
+    expect(until).toBeGreaterThanOrEqual(before + 24 * 3_600_000 - 1000);
+  });
+
+  it('dentro de la ventana la entrega lleva ambas firmas', async () => {
+    const { prisma } = fakePrisma([{ id: 'd1' }], {
+      secret: 'new',
+      previousSecret: 'old',
+      previousSecretUntil: new Date(Date.now() + 60_000),
+    });
+    const seen = capture();
+    await new WebhooksService(prisma, async () => ['93.184.216.34']).dispatchDue();
+    const ts = seen.headers['x-prestige-timestamp'];
+    expect(seen.headers['x-prestige-signature']).toBe(`sha256=${signPayload('new', ts, seen.body)}`);
+    expect(seen.headers['x-prestige-signature-previous']).toBe(`sha256=${signPayload('old', ts, seen.body)}`);
+  });
+
+  it('fuera de la ventana solo firma el actual y limpia el anterior', async () => {
+    const { prisma, store } = fakePrisma([{ id: 'd1' }], {
+      secret: 'new',
+      previousSecret: 'old',
+      previousSecretUntil: new Date(Date.now() - 60_000),
+    });
+    const seen = capture();
+    await new WebhooksService(prisma, async () => ['93.184.216.34']).dispatchDue();
+    expect(seen.headers['x-prestige-signature']).toBeDefined();
+    expect(seen.headers['x-prestige-signature-previous']).toBeUndefined();
+    expect(store.get('d1')?.subscription.previousSecret).toBeNull();
+  });
+
+  it('list y update no filtran secretos (ni el anterior)', async () => {
+    const row = {
+      id: 's1',
+      tenantId: 't1',
+      url: 'https://example.test/h',
+      secret: 'current-secret-1234',
+      previousSecret: 'old-secret-9999',
+      previousSecretUntil: new Date(Date.now() + 60_000),
+      events: ['*'],
+      active: true,
+      description: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const prisma = {
+      webhookSubscription: {
+        findMany: async () => [row],
+        findUnique: async () => row,
+        update: async () => row,
+      },
+    } as unknown as PrismaService;
+    const svc = new WebhooksService(prisma, async () => ['93.184.216.34']);
+    const listed = JSON.stringify(await svc.list('t1'));
+    const updated = JSON.stringify(await svc.update('t1', 's1', { active: true }));
+    for (const out of [listed, updated]) {
+      expect(out).not.toContain('current-secret-1234');
+      expect(out).not.toContain('old-secret-9999');
+      expect(out).not.toContain('previousSecret');
+    }
   });
 });

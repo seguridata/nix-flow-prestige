@@ -9,10 +9,8 @@ import { KEY_CUSTODIAN, type KeyCustodian } from './pki/key-custodian';
 import { PdfStampService } from './pdf-stamp.service';
 import type { SignCommand, SignResult, SignerAdapter, VerifyResult } from './signer-adapter';
 
-/** Firmas ya incrustadas: ByteRange con enteros (el placeholder lleva asteriscos). */
-export function countSignatures(pdf: Buffer): number {
-  return (pdf.toString('latin1').match(/\/ByteRange\s*\[\s*\d+\s+\d+\s+\d+\s+\d+\s*\]/g) ?? []).length;
-}
+import { countSignatures } from './pdf-signatures';
+export { countSignatures };
 
 /**
  * DIGITAL — firma PAdES real (M09). Emite/usa un certificado X.509 del

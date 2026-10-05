@@ -588,6 +588,33 @@ describe('SignatureRequestsService — aislamiento por tenant (A/B)', () => {
     const { service } = makeService(seed());
     await expect(service.recordConsent(REQUEST_ID, { signerId: 'intruso' }, 'tenant-a')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('recordConsent es idempotente: dos llamadas => un solo registro (y el perdedor de la carrera P2002 recibe el existente)', async () => {
+    const { service } = makeService(seed());
+    const rows: Array<Record<string, unknown>> = [];
+    const prisma = (service as unknown as { prisma: { consentAcceptance: unknown } }).prisma;
+    prisma.consentAcceptance = {
+      findUnique: async () => rows[0] ?? null,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        rows.push({ id: 'c1', ...data });
+        return rows[rows.length - 1];
+      },
+    };
+    const a = await service.recordConsent(REQUEST_ID, { signerId: 'primero', ip: '1.1.1.1' }, 'tenant-a');
+    const b = await service.recordConsent(REQUEST_ID, { signerId: 'primero', ip: '2.2.2.2' }, 'tenant-a');
+    expect(rows).toHaveLength(1);
+    expect(b).toBe(a);
+
+    // Carrera: findUnique no ve nada, create choca con la unicidad, se relee el ganador.
+    let reads = 0;
+    prisma.consentAcceptance = {
+      findUnique: async () => (reads++ === 0 ? null : { id: 'ganador' }),
+      create: async () => {
+        throw Object.assign(new Error('unique'), { code: 'P2002' });
+      },
+    };
+    await expect(service.recordConsent(REQUEST_ID, { signerId: 'primero' }, 'tenant-a')).resolves.toEqual({ id: 'ganador' });
+  });
 });
 
 describe('SignatureRequestsService.reject', () => {
