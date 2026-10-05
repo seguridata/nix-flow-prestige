@@ -7,7 +7,7 @@
 **/.env
 **/.env.*
 !**/.env.example
-**/pki
+backend/bff/pki
 **/*.tsbuildinfo
 **/*.spec.ts
 .git

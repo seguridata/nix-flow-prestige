@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -n bff,worker -c cyan,magenta \"nest start --watch\" \"bun run worker:dev\"",
     "build": "nest build",
+    "check:di": "node scripts/check-di-metadata.cjs",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "worker:dev": "tsx watch src/temporal/worker.ts",

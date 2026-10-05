@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -52,13 +52,18 @@ export function verifySignature(
   return timingSafeEqual(Buffer.from(got), Buffer.from(expected));
 }
 
+/** Token DI opcional para sustituir el resolvedor DNS (tests / entornos con DNS propio). */
+export const WEBHOOK_HOST_RESOLVER = Symbol('WEBHOOK_HOST_RESOLVER');
+
 @Injectable()
 export class WebhooksService {
   private readonly log = new Logger(WebhooksService.name);
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly resolveHost: HostResolver = defaultResolver,
+    // Nest no puede inyectar un tipo función: sin el token explícito + @Optional() la
+    // reflexión lo ve como `Function` y el BFF no arranca. Sin provider → undefined → default.
+    @Optional() @Inject(WEBHOOK_HOST_RESOLVER) private readonly resolveHost: HostResolver = defaultResolver,
   ) {}
 
   private async assertUrl(url: string) {
