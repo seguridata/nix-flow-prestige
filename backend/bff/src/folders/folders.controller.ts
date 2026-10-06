@@ -10,6 +10,13 @@ class ContentsQueryDto {
   folderId?: string;
 }
 
+class SearchCasesQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+}
+
 class CreateFolderDto {
   @IsString()
   @MaxLength(120)
@@ -43,6 +50,11 @@ export class FoldersController {
   @Get('contents')
   contents(@Query() q: ContentsQueryDto, @CurrentUser() user: AuthenticatedUser): Promise<DriveContents> {
     return this.folders.contents(q.folderId ?? null, actorOf(user));
+  }
+
+  @Get('cases')
+  cases(@Query() q: SearchCasesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.folders.searchCases(q.q, actorOf(user));
   }
 
   @Post('folders')

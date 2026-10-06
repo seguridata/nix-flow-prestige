@@ -95,6 +95,30 @@ export class FoldersService {
     };
   }
 
+  /** Expedientes del usuario (no los documentos sueltos) para el selector "usar uno existente". */
+  async searchCases(q: string | undefined, actor: DriveActor) {
+    const term = q?.trim();
+    const rows = await this.prisma.case.findMany({
+      where: {
+        tenantId: actor.tenantId,
+        loose: false,
+        OR: [{ ownerId: actor.ownerId }, { ownerId: null }],
+        ...(term ? { title: { contains: term, mode: 'insensitive' } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        createdAt: true,
+        folder: { select: { name: true } },
+        _count: { select: { documents: true } },
+      },
+    });
+    return rows.map(({ folder, _count, ...c }) => ({ ...c, folderName: folder?.name ?? null, documentCount: _count.documents }));
+  }
+
   private async assertUniqueName(name: string, parentId: string | null, actor: DriveActor, exceptId?: string) {
     const clash = await this.prisma.folder.findFirst({
       where: {

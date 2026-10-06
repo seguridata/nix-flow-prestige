@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import {
   FilePlus2,
   Files,
+  FolderOpen,
   GitBranch,
   Inbox,
   LayoutDashboard,
@@ -34,6 +35,7 @@ const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/inbox", label: "Bandeja", icon: Inbox },
   { href: "/sent", label: "Enviados", icon: Send },
+  { href: "/documentos" as Route, label: "Mis documentos", icon: FolderOpen },
   { href: "/new", label: "Enviar", icon: FilePlus2, roles: ["sender", "admin"] },
   { href: "/plantillas", label: "Plantillas", icon: Files, roles: ["sender", "admin"] },
   { href: "/onboarding", label: "Onboarding", icon: UserPlus, roles: ["rh", "admin"] },

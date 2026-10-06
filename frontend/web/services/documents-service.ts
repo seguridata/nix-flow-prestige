@@ -21,3 +21,8 @@ export function createDocument(params: { caseId: string; file: File; filename?: 
   if (params.filename) form.append("filename", params.filename);
   return apiClient.post<DocumentRecord>("/documents", form);
 }
+
+/** Documentos de un expediente (sin paginar: un expediente tiene pocos). */
+export function fetchCaseDocuments(caseId: string) {
+  return apiClient.get<DocumentRecord[]>(`/documents?caseId=${encodeURIComponent(caseId)}`);
+}
