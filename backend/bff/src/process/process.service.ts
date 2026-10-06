@@ -1,9 +1,11 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { RedisService } from '../redis/redis.service';
 import { evaluateDmn } from './dmn-engine';
+import { flowToBpmn, validateFlow } from '../flow/flow';
+import type { Flow } from '../flow/flow.types';
 import {
   CONTRATO_BPMN,
   DEFAULT_DECISION_RULES,
@@ -80,6 +82,101 @@ export class ProcessService implements OnModuleInit {
     return this.redis.withCache('process:list', 60, () =>
       this.prisma.processDefinition.findMany({ orderBy, ...prismaPage(args) }),
     );
+  }
+
+  /** Solo las versiones publicadas (lo que ven los remitentes al crear un sobre). */
+  listPublished() {
+    return this.prisma.processDefinition.findMany({
+      where: { published: true },
+      orderBy: [{ key: 'asc' }, { version: 'desc' }],
+    });
+  }
+
+  private static slugify(name: string): string {
+    const slug = name
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60);
+    return slug || 'flujo';
+  }
+
+  private assertFlow(flow: unknown): Flow {
+    const errors = validateFlow(flow);
+    if (errors.length) throw new BadRequestException({ message: 'El flujo no es válido', errors });
+    return flow as Flow;
+  }
+
+  /** Crea un flujo nuevo del admin como borrador (versión 1, sin publicar). */
+  async createFromFlow(body: { name: string; description?: string; flow: unknown }) {
+    const flow = this.assertFlow(body.flow);
+    const base = ProcessService.slugify(body.name);
+    let key = base;
+    for (let n = 2; await this.prisma.processDefinition.findFirst({ where: { key }, select: { id: true } }); n++) {
+      key = `${base}-${n}`;
+    }
+    const created = await this.prisma.processDefinition.create({
+      data: {
+        key,
+        name: body.name.trim(),
+        description: body.description?.trim() || null,
+        version: 1,
+        bpmnXml: flowToBpmn(flow, { key, name: body.name.trim() }),
+        flow: flow as unknown as Prisma.InputJsonValue,
+        published: false,
+      },
+    });
+    await this.invalidateProcessCache(key);
+    return created;
+  }
+
+  /** Nueva versión borrador del flujo (el BPMN se regenera desde el flujo). */
+  async saveFlow(key: string, body: { flow: unknown; name?: string; description?: string }) {
+    const flow = this.assertFlow(body.flow);
+    const latest = await this.prisma.processDefinition.findFirst({ where: { key }, orderBy: { version: 'desc' } });
+    if (!latest) throw new NotFoundException(`Proceso ${key} no encontrado`);
+    const name = body.name?.trim() || latest.name;
+    const created = await this.prisma.processDefinition.create({
+      data: {
+        key,
+        name,
+        description: body.description !== undefined ? body.description.trim() || null : latest.description,
+        version: latest.version + 1,
+        bpmnXml: flowToBpmn(flow, { key, name }),
+        dmnXml: latest.dmnXml,
+        decisionRules: latest.decisionRules === null ? undefined : latest.decisionRules,
+        flow: flow as unknown as Prisma.InputJsonValue,
+        published: false,
+      },
+    });
+    await this.invalidateProcessCache(key);
+    return created;
+  }
+
+  /** Publica una versión; las demás de la misma clave quedan sin publicar (una sola publicada por clave). */
+  async publish(key: string, version: number) {
+    const target = await this.prisma.processDefinition.findFirst({ where: { key, version } });
+    if (!target) throw new NotFoundException(`Versión ${version} de ${key} no encontrada`);
+    if (target.flow) this.assertFlow(target.flow);
+    const [, published] = await this.prisma.$transaction([
+      this.prisma.processDefinition.updateMany({ where: { key, version: { not: version } }, data: { published: false } }),
+      this.prisma.processDefinition.update({ where: { id: target.id }, data: { published: true, publishedAt: new Date() } }),
+    ]);
+    await this.invalidateProcessCache(key);
+    return published;
+  }
+
+  async unpublish(key: string, version: number) {
+    const target = await this.prisma.processDefinition.findFirst({ where: { key, version } });
+    if (!target) throw new NotFoundException(`Versión ${version} de ${key} no encontrada`);
+    const updated = await this.prisma.processDefinition.update({
+      where: { id: target.id },
+      data: { published: false, publishedAt: null },
+    });
+    await this.invalidateProcessCache(key);
+    return updated;
   }
 
   async getLatest(key: string) {

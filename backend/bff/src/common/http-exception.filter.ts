@@ -15,6 +15,8 @@ interface ErrorBody {
   message: string | string[];
   path: string;
   at: string;
+  /** Detalle de validación (solo 4xx): cada elemento es una frase legible para el usuario. */
+  errors?: string[];
 }
 
 /**
@@ -47,8 +49,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message,
       path: req.originalUrl,
       at: new Date().toISOString(),
+      ...(status < 500 ? this.validationErrors(exception) : {}),
     };
     res.status(status).json(body);
+  }
+
+  /** Pasa tal cual la lista `errors` (de strings) que algunos servicios adjuntan a un 4xx. */
+  private validationErrors(exception: unknown): { errors?: string[] } {
+    if (!(exception instanceof HttpException)) return {};
+    const payload = exception.getResponse();
+    const errors = typeof payload === 'object' && payload !== null ? (payload as { errors?: unknown }).errors : undefined;
+    return Array.isArray(errors) && errors.every((e) => typeof e === 'string') && errors.length > 0
+      ? { errors: errors as string[] }
+      : {};
   }
 
   private resolve(exception: unknown): {
