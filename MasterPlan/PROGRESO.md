@@ -1,9 +1,10 @@
 # PROGRESO — Homologación P1 y lo que vino después
 
 > Documento vivo. La foto de los sprints P1 (abajo) no se reescribe: es el cierre del 2026-09-26.
-> **Última revisión: 2026-10-05**, contra `fix/p1-hardening`.
+> **Última revisión: 2026-10-05**, contra `fix/p1-hardening` y `feat/p2-pkcs11`.
 > El seguimiento del hardening está en `663d5f5`. La UI de plantillas está en `4981fd2`.
-> El paquete versionado de P1 es `3c98372`. `develop` lo tenía como HEAD y toma esta rama por fast-forward.
+> El paquete versionado de P1 es `3c98372`. `develop` y `fix/p1-hardening` están en `1e22320`.
+> El corte PKCS#11 está en `feat/p2-pkcs11`. Este sandbox no tiene módulo.
 > **DoD P1: 11/11**, cerrado en `27719e1`. Esta revisión no re-ejecutó la suite; el estado sale de los commits, del código y del sandbox local.
 
 ## Cómo leer esto
@@ -202,9 +203,9 @@ Se aplicó `backend/infra/README-despliegue-tenants.md` al compose `prestige-san
 ## Lo que sigue fuera
 
 - **Vendor IdV de redirect** y la tabla `IdvSession`. No hay contrato, así que no se construye. El gate `kycPolicy` no se toca: sigue consumiendo el alta de onboarding.
-- **HSM/KMS.** `SoftwareKeyCustodian` es el default. `Pkcs11KeyCustodian.getSigningMaterial` responde que el servicio no está disponible. Ruta: `P2-KMS.md`.
-- **Constancia NOM-151** de un PSC acreditado. Hay sello RFC 3161 (`TSA_URL`) y los campos `timestampProvider` / `timestampTokenHash`. `trustedChain` queda en falso.
-- **OCSP/CRL y LTV** para que Acrobat valide sin ancla manual.
+- **HSM/KMS.** `SoftwareKeyCustodian` sigue siendo el default de este sandbox: no hay módulo PKCS#11. En `feat/p2-pkcs11`, `KEY_CUSTODIAN=pkcs11` hace que `Pkcs11KeyCustodian` firme con `CKM_RSA_PKCS` dentro del token (`PKCS11_MODULE`, `PKCS11_PIN`, `PKCS11_KEY_LABEL`, `PKCS11_SLOT`). Sin esos datos, o sin el paquete `graphene-pk11`, el servicio no está disponible y no cae a software. La llave privada no entra al proceso. Ruta: `P2-KMS.md`.
+- **Constancia NOM-151** de un PSC acreditado. Hay sello RFC 3161 (`TSA_URL`) y los campos `timestampProvider` / `timestampTokenHash`. No hay contrato ni API, así que no se construye un cliente. `trustedChain` queda en falso.
+- **OCSP/CRL y LTV** para que Acrobat valide sin ancla manual. La CA interna no publica AIA ni CRL DP. No se incrusta una respuesta armada a mano.
 - **`templateId` persistido** en la solicitud. Hoy solo aplica defaults al crear. La UI no cambia eso.
 - **RLS de Postgres** y llave o bucket por tenant. El aislamiento actual es de aplicación, más el `tenantId` de fila.
 - **Filas que el backfill deja en NULL a propósito.** Sin pista única no se inventa un slug. Otro entorno con datos corre la misma guía.
@@ -213,4 +214,4 @@ Object Lock GOVERNANCE a 30 días ya está en el init de MinIO del sandbox. No e
 
 ## Qué sigue
 
-1. HSM por `Pkcs11KeyCustodian` cuando haya módulo y certificado de una CA que Acrobat reconozca. OCSP/CRL y la constancia NOM-151 van en ese mismo plan (`P2-KMS.md`), no en este cierre.
+1. Cargar un módulo PKCS#11 real y un certificado que Acrobat reconozca. El custodio ya firma dentro del token cuando esa configuración existe. OCSP/CRL se incrusta cuando ese certificado traiga AIA o CRL DP. La constancia NOM-151 espera contrato de PSC (`P2-KMS.md`).

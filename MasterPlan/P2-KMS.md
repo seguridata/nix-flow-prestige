@@ -1,29 +1,30 @@
-# P2 — Firma digital real en KMS/HSM (una página)
+# P2 — Custodia PKCS#11 y constancia (una página)
 
-> Fuera de alcance del paquete P1, y sigue fuera del hardening de `fix/p1-hardening` (2026-10-05). P1 está cerrado. La regla de oro vigente está en `00-FASES.md`: el canónico no se muta y `DIGITAL` ya es PAdES/CAdES con CA propia. P2 es sustituir esa CA de software por un HSM real y cerrar la constancia. No es construir PAdES desde cero.
+> Fuera del paquete P1 y del hardening ya integrado en `develop` (`1e22320`). El corte de custodia está en `feat/p2-pkcs11`. P1 está cerrado. El canónico no se muta y `DIGITAL` ya es PAdES/CAdES. P2 no está cerrado: este sandbox no tiene módulo PKCS#11, ni certificado de una CA que Acrobat reconozca, ni contrato de PSC.
 
-## Qué cambia respecto a hoy
+## Qué ya hace el código
 
-| Hoy (CA de software) | P2 (KMS/HSM) |
+| Pieza | Estado en `feat/p2-pkcs11` |
 |---|---|
-| `SoftwareKeyCustodian` genera y guarda la clave privada en disco (`PKI_DIR`), cifrada con `PKI_PASSPHRASE` | La clave privada nunca sale del HSM/KMS; solo se invoca una operación de firma |
-| CA raíz + intermedia propias del proyecto | Certificado emitido por una CA que Adobe/Acrobat reconozca (AATL) o por la PSC de SeguriData |
-| `Pkcs11KeyCustodian` existe como interfaz pero lanza "servicio no disponible" | `Pkcs11KeyCustodian` se conecta a un módulo PKCS#11 real (slot + PIN) |
+| `SoftwareKeyCustodian` | Sigue siendo el default (`KEY_CUSTODIAN=software`). Genera el PKCS#12 en `PKI_DIR`. |
+| `Pkcs11KeyCustodian` | Con `KEY_CUSTODIAN=pkcs11` abre el módulo (`PKCS11_MODULE`, `PKCS11_PIN`, `PKCS11_KEY_LABEL`; `PKCS11_SLOT` opcional, default 0) por `graphene-pk11`. Firma con `CKM_RSA_PKCS` sobre el DigestInfo ya armado. No lee `CKA_VALUE` de la llave privada y no devuelve PKCS#12. |
+| Falla cerrada | Falta el módulo, el PIN, la etiqueta, el slot, el paquete o el certificado del token: `ServiceUnavailableException`. No cae al custodio de software. El PIN no se escribe en el error. |
+| Algoritmo | Sigue RSA (SHA-256 con PKCS#1 v1.5). El camino de software no pasó a ECDSA. |
+| Este sandbox | `KEY_CUSTODIAN` sigue en software. No hay módulo, slot, PIN ni certificado AATL/PSC. `graphene-pk11` no está en `package.json`: se carga solo cuando se elige pkcs11. |
 
-## Qué NO cambia
+## Qué no se movió
 
-- El contrato `SignerAdapter`/`KeyCustodian` ya está detrás de interfaz (`backend/bff/src/signing/pki/key-custodian.ts`) — sustituir la implementación no debería tocar `SigningRouter`, `DigitalSignerAdapter` ni el pipeline de `signature-requests.service.ts`.
-- El formato de firma sigue siendo PAdES-B / CAdES-detached (`@signpdf`), ya validado con `openssl verify` y el verificador offline propio.
-- El sello de tiempo RFC 3161 ya es real (Fase B); P2 solo necesita decidir si la TSA usada es de confianza pública (`trustedChain: true`) — hoy es `false` porque la CA es propia.
+- `SigningRouter` y `signature-requests.service.ts` quedan iguales. `DigitalSignerAdapter` elige el firmador: si el material trae `signRsaPkcs1`, arma el PKCS#7 con `TokenBackedSigner`; si trae PKCS#12, sigue `P12Signer`.
+- El formato sigue siendo PAdES-B / CAdES-detached. `TokenBackedSigner` produce los mismos bytes que `P12Signer` para el mismo contenido, el mismo certificado y el mismo `Date`.
+- `trustedChain` sigue en falso. El sello RFC 3161 sigue apuntando a la TSA de `TSA_URL`.
 
-## Trabajo concreto de P2
+## Lo que este corte deja abierto
 
-1. **Custodio HSM real**: implementar `Pkcs11KeyCustodian` contra un HSM/KMS (AWS KMS, Azure Key Vault, o PKCS#11 físico). Algoritmo `ECDSA_P256` (o el que el HSM elegido soporte) en vez de RSA de software.
-2. **Cadena de confianza pública**: certificado del firmante encadenando a una raíz en el trust store de Adobe (AATL) o a la PSC acreditada de SeguriData — no la CA interna del taller.
-3. **OCSP/CRL**: incrustar material de validación de largo plazo (LTV) en el PDF para que Acrobat valide sin conexión ni ancla manual.
-4. **Constancia NOM-151**: contratar y conectar un prestador de servicios de certificación (PSC) que emita la constancia real; el manifiesto ya tiene los campos `timestampProvider`/`timestampTokenHash` listos para recibirla.
-5. **Verificar el pack**: el verificador offline (`verifier/verify.mjs`) y `EvidenceService.verify()` deben aceptar la nueva cadena de confianza sin cambiar su lógica de comparación de hashes — solo la validación de la cadena X.509 cambia de "propia" a "pública".
+1. **Cadena pública.** Hace falta un certificado que encadene a una raíz del trust store de Adobe (AATL) o a la PSC. Este sandbox no lo tiene.
+2. **OCSP/CRL.** La CA interna no trae AIA ni punto de distribución de CRL. node-forge no agrega una CRL al PKCS#7. Un DSS sin respondedor real no se incrusta. Cuando el certificado traiga URL, el corte siguiente la lee y la incrusta como actualización incremental, sin reescribir los bytes de las firmas previas.
+3. **Constancia NOM-151.** No hay contrato ni API de PSC. No se construye un cliente. `timestampProvider` y `timestampTokenHash` ya reciben el token RFC 3161.
+4. **Verificador.** `verifier/verify.mjs` y `EvidenceService.verify()` siguen comparando el hash del canónico. La validación de una cadena X.509 pública espera a ese certificado. `trustedChain` no se pone en verdadero.
 
-## Riesgo de no hacerlo en orden
+## Orden
 
-P1 ya cerró freeze y tenant. Firmar con HSM hereda esa base: el canónico no se reescribe y la petición lleva el slug del guard. P2 no se mete en el mismo PR que el hardening de `fix/p1-hardening`.
+Firmar con el token hereda el freeze y el tenant: el canónico no se reescribe y la petición lleva el slug que deja `TenantContextGuard`. Este corte no entra en los commits del hardening. El default del sandbox no se cambia a `pkcs11`.

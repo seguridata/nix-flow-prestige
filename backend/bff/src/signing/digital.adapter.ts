@@ -1,16 +1,34 @@
 import { createHash } from 'node:crypto';
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, HttpException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
 import { SignPdf } from '@signpdf/signpdf';
 import { P12Signer } from '@signpdf/signer-p12';
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
-import { SUBFILTER_ETSI_CADES_DETACHED, extractSignature } from '@signpdf/utils';
-import { KEY_CUSTODIAN, type KeyCustodian } from './pki/key-custodian';
+import { SUBFILTER_ETSI_CADES_DETACHED, extractSignature, type Signer } from '@signpdf/utils';
+import forge from 'node-forge';
+import { KEY_CUSTODIAN, type KeyCustodian, type SigningMaterial } from './pki/key-custodian';
+import { TokenBackedSigner } from './pki/token-backed-signer';
 import { PdfStampService } from './pdf-stamp.service';
 import type { SignCommand, SignResult, SignerAdapter, VerifyResult } from './signer-adapter';
 
 import { countSignatures } from './pdf-signatures';
 export { countSignatures };
+
+function signerFor(material: SigningMaterial): Signer {
+  if (material.signRsaPkcs1) {
+    const leaf = forge.pki.certificateFromPem(material.certificatePem);
+    const extra = (material.chainPem ?? []).map((pem) => forge.pki.certificateFromPem(pem));
+    return new TokenBackedSigner({
+      certificates: [leaf, ...extra],
+      leaf,
+      signRsaPkcs1: material.signRsaPkcs1,
+    });
+  }
+  if (!material.p12 || material.passphrase == null) {
+    throw new ServiceUnavailableException('El custodio no entregó material de firma.');
+  }
+  return new P12Signer(material.p12, { passphrase: material.passphrase });
+}
 
 /**
  * DIGITAL — firma PAdES real (M09). Emite/usa un certificado X.509 del
@@ -34,7 +52,7 @@ export class DigitalSignerAdapter implements SignerAdapter {
       reason:
         this.custodian.kind === 'software'
           ? 'PAdES real con CA interna del proyecto (software). Conmutar a HSM con KEY_CUSTODIAN=pkcs11.'
-          : 'PAdES real contra HSM PKCS#11.',
+          : 'PAdES real. La RSA se calcula dentro del token PKCS#11; este proceso no recibe la llave privada.',
     };
   }
 
@@ -70,7 +88,7 @@ export class DigitalSignerAdapter implements SignerAdapter {
       await (await PDFDocument.load(canvas)).save({ useObjectStreams: false }),
     );
 
-    // 2. Placeholder PAdES + 3. firma PKCS#7 con el P12 del custodio.
+    // 2. Placeholder PAdES + 3. PKCS#7. Software usa el P12; PKCS#11 firma en el token.
     const withPlaceholder = plainAddPlaceholder({
       pdfBuffer: normalized,
       reason: 'Firma electrónica — Prestige (SeguriData)',
@@ -82,7 +100,7 @@ export class DigitalSignerAdapter implements SignerAdapter {
       signatureLength: 16384,
       appName: 'Prestige',
     });
-    const signer = new P12Signer(material.p12, { passphrase: material.passphrase });
+    const signer = signerFor(material);
     const signedPdf = await new SignPdf().sign(withPlaceholder, signer, at);
     return this.result(command, material, signedPdf);
   }
@@ -112,9 +130,10 @@ export class DigitalSignerAdapter implements SignerAdapter {
         signatureLength: 16384,
         appName: 'Prestige',
       });
-      const signer = new P12Signer(material.p12, { passphrase: material.passphrase });
+      const signer = signerFor(material);
       signedPdf = await new SignPdf().sign(withPlaceholder, signer, at);
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new ConflictException({
         error: 'INCREMENTAL_SIGN_UNSUPPORTED',
         message: `No se pudo añadir otra firma digital sin invalidar las anteriores: ${(error as Error).message}`,

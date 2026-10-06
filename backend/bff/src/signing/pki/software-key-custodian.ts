@@ -90,16 +90,3 @@ function describeCert(cert: forge.pki.Certificate) {
     notAfter: cert.validity.notAfter.toISOString(),
   };
 }
-
-/** Placeholder real del custodio PKCS#11 (HSM de SeguriData). */
-@Injectable()
-export class Pkcs11KeyCustodian implements KeyCustodian {
-  readonly kind = 'pkcs11' as const;
-
-  async getSigningMaterial(_signerId: string, _displayName?: string): Promise<SigningMaterial> {
-    throw new ServiceUnavailableException(
-      'KEY_CUSTODIAN=pkcs11 pero falta la integración con el HSM. Configura PKCS11_MODULE / PKCS11_SLOT / PKCS11_PIN ' +
-        'y conecta graphene-pk11, o usa KEY_CUSTODIAN=software.',
-    );
-  }
-}

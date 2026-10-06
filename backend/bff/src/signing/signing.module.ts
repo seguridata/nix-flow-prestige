@@ -8,7 +8,8 @@ import { SigningRouter } from './signing.router';
 import { PdfStampService } from './pdf-stamp.service';
 import { SignaturePolicyService } from './signature-policy';
 import { KEY_CUSTODIAN } from './pki/key-custodian';
-import { Pkcs11KeyCustodian, SoftwareKeyCustodian } from './pki/software-key-custodian';
+import { Pkcs11KeyCustodian } from './pki/pkcs11-key-custodian';
+import { SoftwareKeyCustodian } from './pki/software-key-custodian';
 import { WebauthnModule } from '../webauthn/webauthn.module';
 
 const keyCustodianProvider = {
