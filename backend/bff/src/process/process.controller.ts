@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { PageQueryDto } from '../common/pagination';
-import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -16,6 +16,35 @@ class SaveProcessDto {
 
   @IsOptional() @IsString() @MaxLength(200)
   name?: string;
+}
+
+class ListProcessQueryDto extends PageQueryDto {
+  /** `true` → solo las versiones publicadas (lo que ve quien crea un sobre). */
+  @IsOptional() @IsIn(['true', 'false'])
+  published?: string;
+}
+
+class CreateFlowDto {
+  @IsString() @MinLength(3) @MaxLength(120)
+  name!: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  description?: string;
+
+  /** Se valida con `validateFlow` (errores en español). */
+  @IsObject()
+  flow!: Record<string, unknown>;
+}
+
+class SaveFlowDto {
+  @IsOptional() @IsString() @MinLength(3) @MaxLength(120)
+  name?: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  description?: string;
+
+  @IsObject()
+  flow!: Record<string, unknown>;
 }
 
 class DecideDto {
@@ -45,8 +74,33 @@ export class ProcessController {
 
   // Catálogo de plataforma (no por tenant): lectura abierta, escritura solo admin.
   @Get('process-definitions')
-  list(@Query() page: PageQueryDto) {
-    return this.process.list(page);
+  list(@Query() query: ListProcessQueryDto) {
+    if (query.published === 'true') return this.process.listPublished();
+    return this.process.list(query);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions')
+  create(@Body() body: CreateFlowDto) {
+    return this.process.createFromFlow(body);
+  }
+
+  @Roles('admin')
+  @Put('process-definitions/:key/flow')
+  saveFlow(@Param('key') key: string, @Body() body: SaveFlowDto) {
+    return this.process.saveFlow(key, body);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions/:key/versions/:version/publish')
+  publish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number) {
+    return this.process.publish(key, version);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions/:key/versions/:version/unpublish')
+  unpublish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number) {
+    return this.process.unpublish(key, version);
   }
 
   @Get('process-definitions/:key')

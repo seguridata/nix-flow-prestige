@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveAllowedMethods } from "@/libs/allowed-methods";
+import { resolveAllowedMethods, splitMethods } from "@/libs/allowed-methods";
 
 describe("resolveAllowedMethods", () => {
   it("sin allowedMethodsNow conserva todos los métodos (compatibilidad)", () => {
@@ -19,5 +19,21 @@ describe("resolveAllowedMethods", () => {
 
   it("si coinciden no hay aviso", () => {
     expect(resolveAllowedMethods(["DIGITAL"], ["DIGITAL"]).hiddenSome).toBe(false);
+  });
+});
+
+describe("splitMethods", () => {
+  it("sin allowedMethodsNow todo es usable", () => {
+    expect(splitMethods(["DIGITAL", "AUTOGRAFA"], undefined)).toEqual({
+      usable: ["DIGITAL", "AUTOGRAFA"],
+      unavailable: [],
+    });
+  });
+
+  it("separa los métodos que ya no aplican para poder explicarlos", () => {
+    expect(splitMethods(["ACCEPT", "PASSKEY", "AUTOGRAFA"], ["ACCEPT", "PASSKEY"])).toEqual({
+      usable: ["ACCEPT", "PASSKEY"],
+      unavailable: ["AUTOGRAFA"],
+    });
   });
 });

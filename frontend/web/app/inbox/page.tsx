@@ -1,39 +1,99 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
-import { FileText, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { StatusBadge } from "@/components/documents/status-badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { EvidencePanel } from "@/components/inbox/evidence-panel";
+import { SignerRail } from "@/components/inbox/signer-rail";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { groupEnvelopes, statusSentence, type EnvelopeRow } from "@/libs/envelope-status";
+import { cn } from "@/libs/utils";
+import { fetchInbox, fetchSent } from "@/services/inbox-service";
 import { useSession } from "@/store/session-store";
-import { fetchInbox } from "@/services/inbox-service";
 
-function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+function EnvelopeItem({
+  row,
+  selected,
+  onSelect,
+}: {
+  row: EnvelopeRow;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li>
+      <div
+        className={cn(
+          "rounded-lg border bg-background p-4 transition-colors duration-150",
+          selected ? "border-foreground bg-muted/60" : "border-border hover:bg-muted/40",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={onSelect}
+            aria-current={selected ? "true" : undefined}
+            className="min-w-0 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <span className="block truncate text-base font-semibold">{row.caseTitle || row.documentTitle}</span>
+            <span className="mt-0.5 block text-sm text-muted-foreground">{statusSentence(row)}</span>
+          </button>
+          {row.actionable ? (
+            <Button asChild size="sm" className="shrink-0">
+              <Link href={`/documents/${row.documentId}/firmar`}>Revisar y firmar</Link>
+            </Button>
+          ) : null}
+        </div>
+        {row.signers && row.signers.length > 0 ? (
+          <div className="mt-4">
+            <SignerRail signers={row.signers} currentSignerId={row.currentSignerId} />
+          </div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function CompactItem({ row, selected, onSelect }: { row: EnvelopeRow; selected: boolean; onSelect: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={selected ? "true" : undefined}
+        className={cn(
+          "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          selected ? "border-foreground bg-muted/60" : "border-border bg-background hover:bg-muted/40",
+        )}
+      >
+        <span className="min-w-0 truncate text-sm font-medium">{row.caseTitle || row.documentTitle}</span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{statusSentence(row)}</span>
+      </button>
+    </li>
+  );
 }
 
 export default function InboxPage() {
   const { signerId, name } = useSession();
-  const { data: items, isLoading } = useQuery({
-    queryKey: ["inbox", signerId],
-    queryFn: () => fetchInbox(signerId),
-  });
-  // "Pendiente de tu firma" = te toca YA (en secuencial, no cuentes los que
-  // esperan turno).
-  const pendingCount =
-    items?.filter((item) => item.myStatus === "PENDIENTE" && item.myTurn !== false).length ?? 0;
+  const inbox = useQuery({ queryKey: ["inbox", signerId], queryFn: () => fetchInbox(signerId) });
+  const sent = useQuery({ queryKey: ["sent", signerId], queryFn: () => fetchSent(signerId) });
+  const [pickedId, setPickedId] = useState<string | null>(null);
+
+  const groups = useMemo(() => groupEnvelopes(inbox.data, sent.data), [inbox.data, sent.data]);
+  const all = useMemo(
+    () => [...groups.action, ...groups.inProgress, ...groups.closed],
+    [groups],
+  );
+  // El seleccionado es el que el usuario eligió, o el primero que requiere acción.
+  const selected = all.find((r) => r.signatureRequestId === pickedId) ?? all[0] ?? null;
+  const isLoading = inbox.isLoading || sent.isLoading;
   const firstName = name.split(" ")[0];
+
+  const select = (r: EnvelopeRow) => () => setPickedId(r.signatureRequestId);
 
   return (
     <AppShell
@@ -46,111 +106,112 @@ export default function InboxPage() {
         </Button>
       }
     >
-      <div className="mx-auto max-w-5xl">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: [0.215, 0.61, 0.355, 1] }}
-          className="mb-10"
-        >
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Bandeja de firma</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Hola, {firstName}.{" "}
-            {pendingCount > 0 ? (
-              <>
-                Tienes <span className="text-primary">{pendingCount}</span> por firmar.
-              </>
-            ) : (
-              "Nada pendiente."
-            )}
-          </h1>
-        </motion.div>
+      <div className="mx-auto max-w-6xl">
+        <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+          {groups.action.length > 0
+            ? `${firstName}, ${groups.action.length === 1 ? "tienes 1 sobre que requiere" : `tienes ${groups.action.length} sobres que requieren`} tu acción`
+            : `${firstName}, no hay nada que requiera tu acción`}
+        </h1>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            {[0, 1].map((i) => (
-              <div key={i} className="h-48 animate-pulse rounded-lg border border-border bg-muted/60" />
+          <div className="mt-8 grid gap-4" aria-busy="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-28 animate-pulse rounded-lg border border-border bg-muted/60" />
             ))}
           </div>
-        ) : items && items.length > 0 ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            {items.map((item, index) => {
-              const waitingTurn = item.myStatus === "PENDIENTE" && item.myTurn === false;
-              const actionable = item.myStatus === "PENDIENTE" && !waitingTurn;
-              return (
-              <motion.div
-                key={item.signatureRequestId}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: index * 0.05, ease: [0.215, 0.61, 0.355, 1] }}
-              >
-                <Card className="glass h-full p-6 transition-transform duration-150 hover:-translate-y-0.5">
-                  <div className="flex items-start justify-between">
-                    <div className="flex size-11 items-center justify-center rounded-md bg-muted">
-                      <FileText className="size-5" strokeWidth={1.75} />
-                    </div>
-                    {waitingTurn ? (
-                      <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                        En espera de turno
-                      </span>
-                    ) : (
-                      <StatusBadge status={item.myStatus} />
-                    )}
-                  </div>
-                  <h2 className="mt-5 text-lg font-semibold">{item.caseTitle || item.documentTitle}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{item.documentTitle}</p>
-                  <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Avatar className="size-6">
-                      <AvatarFallback className="text-[10px]">{initialsOf(item.requestedByName)}</AvatarFallback>
-                    </Avatar>
-                    {item.requestedByName}
-                  </div>
-                  <div className="mt-6 flex gap-2">
-                    <Button asChild className="flex-1">
-                      <Link
-                        href={
-                          actionable
-                            ? `/documents/${item.documentId}/firmar`
-                            : `/documents/${item.documentId}`
-                        }
-                      >
-                        {actionable ? "Revisar y firmar" : "Ver expediente"}
-                      </Link>
-                    </Button>
-                    <Sheet>
-                      <SheetTrigger className="inline-flex h-11 items-center rounded-md border border-border px-3 text-sm hover:bg-muted">
-                        Vista
-                      </SheetTrigger>
-                      <SheetContent title={item.documentTitle} className="p-6">
-                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Inspección</p>
-                        <h2 className="mt-2 text-xl font-semibold">{item.caseTitle || item.documentTitle}</h2>
-                        <p className="mt-2 text-sm text-muted-foreground">{item.documentTitle}</p>
-                        <p className="mt-4 text-sm">De {item.requestedByName}</p>
-                        <p className="text-xs text-muted-foreground">Estado {item.myStatus}</p>
-                        <Button asChild className="mt-6 w-full">
-                          <Link href={`/documents/${item.documentId}`}>Abrir expediente</Link>
-                        </Button>
-                      </SheetContent>
-                    </Sheet>
-                  </div>
-                </Card>
-              </motion.div>
-              );
-            })}
-          </div>
-        ) : (
-          <Card className="glass overflow-hidden p-0">
+        ) : inbox.isError || sent.isError ? (
+          <Card className="mt-8 p-6">
+            <p className="font-medium">No pudimos cargar tus sobres.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Revisa tu conexión e inténtalo de nuevo.</p>
+            <Button
+              className="mt-4"
+              variant="secondary"
+              onClick={() => {
+                void inbox.refetch();
+                void sent.refetch();
+              }}
+            >
+              Reintentar
+            </Button>
+          </Card>
+        ) : all.length === 0 ? (
+          <Card className="mt-8 overflow-hidden p-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/empty-inbox.jpg" alt="" className="h-48 w-full object-cover" />
             <div className="px-6 py-8 text-center">
-              <p className="text-base font-medium">No hay documentos por firmar</p>
+              <p className="text-base font-medium">Todavía no hay sobres</p>
               <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-                Cuando alguien te envíe un contrato para firmar, aparecerá aquí.
+                Envía un documento a firma o espera a que alguien te envíe uno; aparecerá aquí con su estado y su evidencia.
               </p>
               <Button asChild className="mt-4">
                 <Link href="/new">Enviar un documento a firma</Link>
               </Button>
             </div>
           </Card>
+        ) : (
+          <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <div className="space-y-8">
+              {groups.action.length > 0 ? (
+                <section aria-labelledby="g-action">
+                  <h2 id="g-action" className="mb-3 text-sm font-semibold">
+                    Requieren tu acción
+                  </h2>
+                  <ul className="space-y-3">
+                    {groups.action.map((r) => (
+                      <EnvelopeItem
+                        key={r.signatureRequestId}
+                        row={r}
+                        selected={selected?.signatureRequestId === r.signatureRequestId}
+                        onSelect={select(r)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {groups.inProgress.length > 0 ? (
+                <section aria-labelledby="g-progress">
+                  <h2 id="g-progress" className="mb-3 text-sm font-semibold">
+                    En curso ({groups.inProgress.length})
+                  </h2>
+                  <ul className="space-y-3">
+                    {groups.inProgress.map((r) => (
+                      <EnvelopeItem
+                        key={r.signatureRequestId}
+                        row={r}
+                        selected={selected?.signatureRequestId === r.signatureRequestId}
+                        onSelect={select(r)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {groups.closed.length > 0 ? (
+                <section aria-labelledby="g-closed">
+                  <h2 id="g-closed" className="mb-3 text-sm font-semibold">
+                    Cerrados ({groups.closed.length})
+                  </h2>
+                  <ul className="space-y-2">
+                    {groups.closed.map((r) => (
+                      <CompactItem
+                        key={r.signatureRequestId}
+                        row={r}
+                        selected={selected?.signatureRequestId === r.signatureRequestId}
+                        onSelect={select(r)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </div>
+
+            {selected ? (
+              <aside className="rounded-lg bg-muted/60 p-5 lg:sticky lg:top-6 lg:self-start">
+                <EvidencePanel key={selected.signatureRequestId} row={selected} />
+              </aside>
+            ) : null}
+          </div>
         )}
       </div>
     </AppShell>

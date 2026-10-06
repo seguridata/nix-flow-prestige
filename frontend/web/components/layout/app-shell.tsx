@@ -7,6 +7,8 @@ import { motion } from "motion/react";
 import {
   FilePlus2,
   Files,
+  FileText,
+  FolderOpen,
   GitBranch,
   Inbox,
   LayoutDashboard,
@@ -17,6 +19,7 @@ import {
   Send,
   Server,
   UserPlus,
+  Workflow,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/layout/notifications-bell";
 import { ProductTourButton } from "@/components/tour/product-tour";
@@ -34,11 +37,14 @@ const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/inbox", label: "Bandeja", icon: Inbox },
   { href: "/sent", label: "Enviados", icon: Send },
+  { href: "/documentos" as Route, label: "Mis documentos", icon: FolderOpen },
   { href: "/new", label: "Enviar", icon: FilePlus2, roles: ["sender", "admin"] },
+  { href: "/formatos" as Route, label: "Formatos", icon: FileText },
   { href: "/plantillas", label: "Plantillas", icon: Files, roles: ["sender", "admin"] },
   { href: "/onboarding", label: "Onboarding", icon: UserPlus, roles: ["rh", "admin"] },
   { href: "/tasks", label: "Tareas", icon: ListChecks },
   { href: "/process", label: "Proceso", icon: GitBranch, roles: ["sender", "admin"] },
+  { href: "/flujos" as Route, label: "Flujos", icon: Workflow, roles: ["admin"] },
   { href: "/operations", label: "Operación", icon: Server, roles: ["sender", "rh", "admin"] },
 ];
 

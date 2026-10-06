@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import "./bpmn-styles";
 
-export function BpmnViewer({ xml }: { xml: string }) {
+export function BpmnViewer({ xml, className }: { xml: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,5 +26,5 @@ export function BpmnViewer({ xml }: { xml: string }) {
     };
   }, [xml]);
 
-  return <div ref={ref} className="h-[68vh] w-full overflow-hidden rounded-md bg-white" />;
+  return <div ref={ref} className={className ?? "h-[68vh] w-full overflow-hidden rounded-md bg-white"} />;
 }

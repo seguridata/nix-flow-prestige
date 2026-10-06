@@ -13,3 +13,18 @@ export function resolveAllowedMethods<T extends string>(
   const visible = methods.filter((m) => allowedNow.includes(m));
   return { methods: visible, hiddenSome: visible.length < methods.length };
 }
+
+/**
+ * Separa los métodos que el firmante puede usar de los que el sobre permite pero ya no aplican,
+ * para poder explicarlos en lugar de esconderlos sin decir nada.
+ */
+export function splitMethods<T extends string>(
+  methods: readonly T[],
+  allowedNow?: readonly T[] | null,
+): { usable: T[]; unavailable: T[] } {
+  if (!allowedNow) return { usable: [...methods], unavailable: [] };
+  return {
+    usable: methods.filter((m) => allowedNow.includes(m)),
+    unavailable: methods.filter((m) => !allowedNow.includes(m)),
+  };
+}

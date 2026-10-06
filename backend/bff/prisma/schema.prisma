@@ -19,10 +19,33 @@ model Case {
   title     String
   status    CaseStatus @default(ABIERTO)
   createdAt DateTime   @default(now())
+  /// Vista Drive: dueño (actorId) y carpeta. `ownerId` nulo = anterior a las carpetas (visible en la raíz del tenant).
+  ownerId   String?
+  folderId  String?
+  /// Expediente implícito de un documento suelto: la UI lo muestra como documento, no como expediente.
+  loose     Boolean    @default(false)
 
   documents Document[]
+  folder    Folder?    @relation(fields: [folderId], references: [id])
 
   @@index([tenantId])
+  @@index([tenantId, ownerId, folderId])
+}
+
+/// Carpeta personal (sin compartir) de la vista "Mis documentos". Anidable.
+model Folder {
+  id        String   @id @default(uuid())
+  tenantId  String
+  ownerId   String
+  parentId  String?
+  name      String
+  createdAt DateTime @default(now())
+
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Folder[] @relation("FolderTree")
+  cases    Case[]
+
+  @@index([tenantId, ownerId, parentId])
 }
 
 model Document {
@@ -517,6 +540,9 @@ model ProcessDefinition {
   dmnXml      String?  @db.Text
   decisionRules Json?
   published   Boolean  @default(true)
+  /// Flujo ejecutable (subconjunto de BPMN) del que se generó `bpmnXml`; nulo en las definiciones sembradas.
+  flow        Json?
+  publishedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -719,4 +745,36 @@ model OnboardingCase {
 
   @@index([tenantId, status])
   @@index([email])
+}
+
+/// Formato reutilizable: un PDF base con campos que el usuario llena y el flujo de firma precargado.
+model DocumentTemplate {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  category      String?
+  objectKey     String
+  enc           Json
+  hash          String
+  sizeBytes     Int
+  pageCount     Int
+  /// [{key,label,type,required,options?,page,x,y,w,h,fontSize?,align?,prefill?}] (x,y,w,h = fracciones 0..1 desde arriba-izquierda)
+  fields        Json     @default("[]")
+  /// [{stepId,page,x,y,w,h}] cajas de firma por paso del flujo
+  signatureBoxes Json    @default("[]")
+  /// Snapshot del Flow (variables + pasos + condiciones).
+  flow          Json
+  flowKey       String?
+  flowVersion   Int?
+  methods       SignatureMethod[]
+  kycPolicy     KycPolicy @default(NONE)
+  requirePasskey Boolean @default(false)
+  published     Boolean  @default(false)
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, published])
 }

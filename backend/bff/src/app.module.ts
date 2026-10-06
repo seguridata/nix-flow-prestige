@@ -10,6 +10,8 @@ import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { CasesModule } from './cases/cases.module';
+import { FoldersModule } from './folders/folders.module';
+import { DocumentTemplatesModule } from './document-templates/document-templates.module';
 import { DocumentsModule } from './documents/documents.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { SignatureRequestsModule } from './signature-requests/signature-requests.module';
@@ -55,6 +57,8 @@ import { WebauthnModule } from './webauthn/webauthn.module';
     AuthModule,
     RealtimeModule,
     CasesModule,
+    FoldersModule,
+    DocumentTemplatesModule,
     DocumentsModule,
     WorkflowModule,
     SigningModule,
