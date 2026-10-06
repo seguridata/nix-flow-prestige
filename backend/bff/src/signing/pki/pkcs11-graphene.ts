@@ -44,12 +44,12 @@ export interface GrapheneLike {
   CertificateType: { X_509: number };
 }
 
-const require = createRequire(__filename);
+const nodeRequire = createRequire(__filename);
 
 function loadGraphene(): GrapheneLike {
   try {
     const name = 'graphene-pk11';
-    return require(name) as GrapheneLike;
+    return nodeRequire(name) as GrapheneLike;
   } catch {
     throw new ServiceUnavailableException(
       'KEY_CUSTODIAN=pkcs11 pero falta el paquete graphene-pk11. No se exporta la llave: sin módulo PKCS#11 no hay firma. El custodio de este entorno sigue siendo software.',
