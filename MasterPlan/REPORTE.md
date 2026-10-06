@@ -1,8 +1,10 @@
 # Reporte de homologación — Prestige (NIX Flow) → plan de cimiento
 
+> **Auditoría histórica.** Foto del commit `d80a296` (2026-09-26). El repo ya no está en ese punto: P1 cerró y `fix/p1-hardening` endureció tenant, firma y operación. Para el estado actual leer `PROGRESO.md`. Este archivo se conserva como el diagnóstico que originó el paquete; no se reescribe para que parezca el presente.
+
 Fecha: 2026-09-26  
 Repo auditado: `https://github.com/seguridata/nix-flow-prestige` @ `d80a296`  
-Destinatario: equipo full stack que va a construir P1.
+Destinatario: equipo full stack que iba a construir P1.
 
 ---
 

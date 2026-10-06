@@ -1,8 +1,10 @@
 # SPEC P1 — Prestige homologado al plan de cimiento
 
-Versión: 2026-09-26  
+Versión del contrato: 2026-09-26. Estado de cumplimiento: 2026-10-05, en `PROGRESO.md`.  
 Repo: `seguridata/nix-flow-prestige`  
 Stack vigente: Next.js 16 (`frontend/web`) + NestJS BFF (`backend/bff`) + Prisma 6 + PostgreSQL + MinIO + Temporal + Keycloak + Redis.
+
+Este archivo es el contrato con el que se cerró P1. Donde el código se apartó a propósito, manda `PROGRESO.md`: el §9 (puerto `IdvProvider` + `IdvSession` + webhook) se sustituyó por `kycPolicy` sobre el onboarding que ya existía, y `DIGITAL` no es HMAC (§13).
 
 ## 1. Objetivo
 

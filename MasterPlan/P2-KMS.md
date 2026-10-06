@@ -1,6 +1,6 @@
 # P2 — Firma digital real en KMS/HSM (una página)
 
-> Fuera de alcance de este paquete P1. Documento puente para cuando se abra P2 — la regla de oro de `00-FASES.md` sigue aplicando: **no se abre P2 mientras el PDF original se muta o `DIGITAL` es HMAC sin flag `DEV_ONLY`.** Ninguna de las dos condiciones aplica hoy: el canónico no se muta (freeze verificado, Sprint 1) y `DIGITAL` ya es PAdES/CAdES real con CA propia (Fase B), no HMAC. La puerta está abierta; lo que sigue es sustituir la CA de software por un HSM real.
+> Fuera de alcance del paquete P1, y sigue fuera del hardening de `fix/p1-hardening` (2026-10-05). P1 está cerrado. La regla de oro vigente está en `00-FASES.md`: el canónico no se muta y `DIGITAL` ya es PAdES/CAdES con CA propia. P2 es sustituir esa CA de software por un HSM real y cerrar la constancia. No es construir PAdES desde cero.
 
 ## Qué cambia respecto a hoy
 
@@ -26,4 +26,4 @@
 
 ## Riesgo de no hacerlo en orden
 
-Firmar con HSM sobre un canónico que todavía se pudiera mutar, o sin haber cerrado tenant/freeze (P1), heredaría el mismo problema de integridad que P1 vino a resolver — solo que con una firma más cara y más difícil de revocar. Por eso P2 espera.
+P1 ya cerró freeze y tenant. Firmar con HSM hereda esa base: el canónico no se reescribe y la petición lleva el slug del guard. P2 no se mete en el mismo PR que el hardening de `fix/p1-hardening`.

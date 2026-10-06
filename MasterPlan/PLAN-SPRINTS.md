@@ -102,6 +102,8 @@ Entrega: este paquete mergeado en `docs/`.
 - [x] PDF canónico intacto — freeze verifica hash antes de aceptar; ninguna firma reescribe `objectKey`
 - [x] HMAC no se vende como firma digital — `DIGITAL` ya es PAdES/CAdES real con CA interna (Fase B), no HMAC; copy de UI corregido (`0567a5a`)
 
+P1 cerró con esa lista el 2026-09-26. Lo construido después (aislamiento de tablas hijas, rechazo público, rotación de webhooks, salud real de storage, el seguimiento `663d5f5` y la UI de plantillas `4981fd2`) está en `PROGRESO.md`, no en un sprint nuevo de este plan.
+
 ## Después (P2, otro plan)
 
 KMS/HSM → PAdES/CMS sobre `frozenHash` → vendor IdV de pago → puerto RFC 3161.

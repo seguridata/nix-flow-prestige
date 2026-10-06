@@ -1,119 +1,216 @@
-# PROGRESO — Homologación P1 (MasterPlan)
+# PROGRESO — Homologación P1 y lo que vino después
 
-> Documento vivo. Se actualiza al cerrar cada sprint, no es una foto fija.
-> Última actualización: 2026-09-26, commit `27719e1` en `develop`.
-> **DoD P1 completo: 11/11.** Ver "Qué sigue" al final para lo que queda fuera de P1.
+> Documento vivo. La foto de los sprints P1 (abajo) no se reescribe: es el cierre del 2026-09-26.
+> **Última revisión: 2026-10-05**, contra `fix/p1-hardening`.
+> El seguimiento del hardening está en `663d5f5`. La UI de plantillas está en `4981fd2`.
+> El paquete versionado de P1 es `3c98372`. `develop` lo tenía como HEAD y toma esta rama por fast-forward.
+> **DoD P1: 11/11**, cerrado en `27719e1`. Esta revisión no re-ejecutó la suite; el estado sale de los commits, del código y del sandbox local.
 
 ## Cómo leer esto
 
-- **Hecho** = código en `develop`, `tsc --noEmit` limpio, tests verdes, verificado en esta sesión.
-- **Parcial** = existe algo relacionado pero no cumple el DoD del sprint tal cual está escrito en `PLAN-SPRINTS.md`.
-- **No verificado** = no se revisó todavía en esta ronda de trabajo (no significa "falta"; significa "pendiente de auditar").
-- **Falta** = confirmado que no existe.
+- **Hecho** = está en `fix/p1-hardening` (o ya estaba en el cierre P1).
+- **Cerrado en** = el commit citado.
+- **Parcial** = existe y no cumple el texto original del sprint.
+- **Fuera** = se decidió no construirlo, o sigue sin existir.
 
-## Punto de partida (hallazgo importante)
+## Dónde está el repo hoy
 
-`MasterPlan/REPORTE.md` audita el repo en el commit `d80a296` y lo describe como P0 puro (sesión `maria`, `DIGITAL`=HMAC, sin tenants). Eso ya no es cierto: entre `d80a296` y el inicio de este trabajo (`86b5561`) hay **55 commits** de una fase previa ("Fase A/B") que ya entregó OIDC real, firma `DIGITAL` PAdES/CAdES con CA propia, sello RFC 3161, aislamiento por tenant, cadena de auditoría, de-base64 de documentos y onboarding a storage cifrado, motor DMN real, correo real con outbox/DLQ, y OpenAPI + webhooks firmados. Ver `Documentacion/07-estado-y-ruta.html` para el detalle con nombre de commit.
+P1 cerró. El endurecimiento de esa base también: aislamiento por tenant en las tablas que se habían quedado fuera, ceremonia que no invalida un PAdES, y operación de más de una instancia. El seguimiento está en `663d5f5`. Lo que queda abierto es P2 (`P2-KMS.md`), no otro sprint de P1.
 
-Consecuencia: varios ítems que `PLAN-SPRINTS.md` pide como "nuevo" ya estaban hechos. Este documento no re-ejecuta lo que ya funciona; verifica el DoD real de cada sprint contra el código y solo construye lo que falta.
+`REPORTE.md` audita el commit `d80a296` y lo describe como P0 (sesión `maria`, `DIGITAL` = HMAC, sin tenants). Eso es historia. Entre `d80a296` y `86b5561` la Fase A/B ya había entregado OIDC, PAdES/CAdES con CA propia, sello RFC 3161, tenant en documento y solicitud, auditoría encadenada, documentos y onboarding fuera de Postgres, DMN, correo con outbox y OpenAPI con webhooks firmados. El detalle con commits está en `Documentacion/07-estado-y-ruta.html`.
 
 ---
 
 ## Sprint 0 — Congelar reglas
 
-**Parcial.** El paquete vive en `MasterPlan/` (no en `docs/p1/` como sugiere el propio paquete, porque `docs/` está en `.gitignore` salvo `datos-sensibles.md`). No hay tracker de tickets externo. `ALLOW_DEV_HMAC` no aplica ya (`DIGITAL` no es HMAC, ver Sprint 6).
+**Parcial, y así se queda.** El paquete vive en `MasterPlan/` (no en `docs/p1/`: `docs/` está en `.gitignore` salvo `datos-sensibles.md`). No hay tracker externo. `ALLOW_DEV_HMAC` no aplica: `DIGITAL` es PAdES, no HMAC.
 
 ## Sprint 1 — Auth + tenants + upload + sha256 + freeze
 
 **Hecho.** Commits `5659271`, `f4d9191`.
 
-- `DocumentsService.freeze()`: rehashea contra storage antes de congelar → `409 HASH_MISMATCH` si no coincide.
+- `DocumentsService.freeze()` rehashea contra storage antes de congelar → `409 HASH_MISMATCH`.
 - `replaceContent()` sobre un documento `locked` → `409 DOCUMENT_FROZEN`.
-- `TenantContextGuard`: resuelve tenant por `X-Tenant-Id` contra `TenantMembership`.
-- Tests añadidos (no existían): `documents.service.spec.ts` — freeze idempotente, hash-mismatch, aislamiento cross-tenant (404).
-- Consentimiento LFPDPPP para INE/biometría (ya venía del árbol de trabajo, se integró en el mismo commit).
+- `TenantContextGuard` resuelve el tenant por `X-Tenant-Id` contra `TenantMembership` y deja `user.tenantId` en el **slug**.
+- Tests: `documents.service.spec.ts` (freeze idempotente, hash-mismatch, aislamiento).
+- Consentimiento LFPDPPP para INE y biometría.
 
-**Pendiente de este sprint:** ninguno conocido.
+El hardening del 2026-10-05 hizo el freeze obligatorio al crear la solicitud y el rehash en cada `sign()`. Ver más abajo.
 
 ## Sprint 2 — Envelope + magic link + pantalla + acepto + log
 
 **Hecho.** Commits `9edeb86`, `0567a5a`.
 
-- Magic link de un uso: ya existía como `OneTimeLinkService` (Fase A/B) — token de 32 bytes, solo se guarda el SHA-256, TTL, `consume()` atómico. Test ya cubría reuse/expirado → 410.
-- Consentimiento versionado + cadena `ProcessAuditEvent.prevHash`: ya existían.
-- **Lo que faltaba de verdad:** el método de firma `ACCEPT` ("Acepto", sin trazo ni certificado). Se agregó `AcceptSignerAdapter`, enum Prisma, DTO, y — hallazgo del propio trabajo — el portal externo `/firmar/[token]` no lo ofrecía aunque el backend ya lo soportaba (`0567a5a`).
+- `OneTimeLinkService`: token de 32 bytes, solo se guarda el SHA-256, TTL, `consume()` atómico. Reuso o expirado → 410.
+- Consentimiento versionado y cadena `ProcessAuditEvent.prevHash` ya existían.
+- Método `ACCEPT` (`AcceptSignerAdapter`) y el portal `/firmar/[token]` lo ofrece desde `0567a5a`.
 
-**Pendiente de este sprint:** ninguno conocido.
+El hardening añadió `POST /public/links/:token/reject` (enlace de un uso) y el botón Rechazar.
 
 ## Sprint 3 — Passkeys
 
-**Hecho.** Commit `c229038`.
+**Hecho.** Commit `c229038`, endurecido en `4726f71`.
 
 - Módulo `backend/bff/src/webauthn/` con `@simplewebauthn/server` v14.
-- Registro de passkeys para usuarios internos (Keycloak).
-- Ceremonia: challenge = `sha256(frozenHash|signatureRequestId|nonce)`, contador anti-replay, evento `PASSKEY_ASSERTED`.
-- Adaptador `PASSKEY` + gate `requirePasskey` en `sign()`.
-- Frontend: botón "Verificar con passkey" en `/firmar/[token]`.
-- 13 tests nuevos, 101/101 backend, 29/29 frontend, `tsc` limpio.
+- Registro para usuarios internos (Keycloak) y ceremonia atada a `sha256(frozenHash|signatureRequestId|nonce)`.
+- Contador anti-replay, evento `PASSKEY_ASSERTED`, adaptador `PASSKEY`, gate `requirePasskey`.
+- Portal externo: “Verificar con passkey”.
+- Hardening: la passkey queda atada al firmante, `userVerification` required, y los firmantes internos usan `POST /webauthn/authenticate/{begin,finish}`.
 
-**Pendiente de este sprint:** ninguno conocido.
+**Cerrado en `663d5f5`:** `begin` rechaza una solicitud que ya no está `PENDIENTE` o `EN_FIRMA` con `409 REQUEST_NOT_OPEN`. Hay spec de controlador y un e2e con autenticador de prueba (`passkey.e2e.spec.ts`).
 
 ## Sprint 4 — Adapter IdV
 
 **Hecho, reinterpretado.** Commit `5154f11`.
 
-Auditoría confirmó (cero coincidencias en todo el repo): `backend/bff/src/idv/`, `IdvSession`, `IdvProvider`, `EnvelopeTemplate` **no existen**. Lo que sí existe, real y funcional, bajo otros nombres:
+No existe `backend/bff/src/idv/`, ni `IdvSession`, ni `IdvProvider`, ni webhook HMAC de un vendor de redirect. Lo que sí existe:
 
-- `HeuristicIdentityVerifier` + `RenapoIdentityVerifier` (`src/identity/`) — CURP/OCR/vigencia INE; RENAPO sin `RENAPO_URL` → 503, nunca aprueba en falso.
-- `BiometricEngine` con tres implementaciones: `NoopBiometricEngine`, `RemoteBiometricEngine` (HTTP a proveedor), `LocalFaceBiometricEngine` (face-api + liveness heurístico local, sin vendor).
-- `OnboardingCase.ineFront/ineBack/selfie` ya son `Json` (claves de storage cifrado) — el "quitar base64" del SPEC ya estaba resuelto de Fase A/B.
+- `HeuristicIdentityVerifier` y `RenapoIdentityVerifier` (`src/identity/`). Sin `RENAPO_URL` el verificador responde 503 y no aprueba en falso.
+- `BiometricEngine`: `NoopBiometricEngine`, `RemoteBiometricEngine`, `LocalFaceBiometricEngine`.
+- INE y selfie de `OnboardingCase` son `Json` con clave de storage cifrado, más consentimiento biométrico.
 
-**Decisión de diseño (confirmada con el usuario):** no construir el puerto `IdvProvider.start()/getResult()` + webhook HMAC que pide `SPEC.md` §9 — ese contrato asume un vendor de redirect tipo Onfido/Metamap que hoy no existe (`PLAN-SPRINTS.md` mismo lo marca como riesgo: "vendor IdV caro, sandbox hasta tener contrato"). En su lugar:
+Decisión: no construir el puerto `IdvProvider.start()/getResult()` del `SPEC.md` §9. En su lugar, `KycPolicy` (`NONE|ONCE|EVERY_SIGN`) y `SignatureRequest.kycPolicy`. `ONCE` exige un `OnboardingCase` `HABILITADO` del firmante (por email) de los últimos 90 días. `EVERY_SIGN` exige que ese alta sea posterior a la creación del sobre. El wizard de envío (`app/new/page.tsx`) ya setea `requirePasskey` y `kycPolicy`.
 
-- `KycPolicy` (`NONE|ONCE|EVERY_SIGN`) + `SignatureRequest.kycPolicy`.
-- Gate en `sign()`: `ONCE` exige un `OnboardingCase` `HABILITADO` del firmante (por email) dentro de 90 días; `EVERY_SIGN` exige que ese alta sea posterior a la creación del envelope.
-- UI: toggle `requirePasskey` + selector de `kycPolicy` en el wizard de envío (`app/new/page.tsx`) — antes no eran seteables desde ningún lado.
+El mismo commit corrigió que `PASSKEY` faltaba en `METHODS` del DTO.
 
-**Hallazgo colateral (bug del propio Sprint 3, corregido aquí):** `PASSKEY` faltaba en `METHODS`/`allowedMethods` del DTO y la política de firma — el endpoint público habría rechazado `method: PASSKEY` con 400 antes de llegar al servicio. Los tests de Sprint 3 no lo detectaron porque llaman al servicio directo, sin pasar por la validación del DTO.
-
-**Fuera de alcance, explícito:** un vendor IdV de redirect real (`HttpIdvProvider`) y su webhook siguen sin construirse — no hay contrato con un proveedor todavía. Cuando lo haya, se agrega detrás de una interfaz nueva sin tocar el gate `kycPolicy` ya construido.
+**Fuera, y así se queda.** No hay contrato de vendor. No se construye `src/idv/`, `IdvSession`, `IdvProvider` ni `HttpIdvProvider`, y no hay webhook de redirect. El gate `kycPolicy` no se toca.
 
 ## Sprint 5 — Plantillas + evidence zip
 
-**Hecho.** Commit `b23834d`.
+**Hecho en backend.** Commit `b23834d`.
 
-- Evidence zip: ya existía (Fase B) un dossier ZIP más completo que el `pack/` mínimo del SPEC — manifiesto firmado Ed25519, PDF congelado + copia firmada, sello RFC 3161, certificados de la CA, verificador offline embebido. Faltaban `events.jsonl` (bitácora `ProcessAuditEvent` con `prevHash`/`hash`) y `pack.sha256` (sha256 de cada archivo, verificable con `sha256sum -c`) — agregados.
-- `consents.json`/`idv.json`/`signatures.json` del SPEC **no se separaron como archivos propios**: esos datos ya viven consolidados dentro de `manifiesto.json` (`consentRecords`, `signatures`, `chainOfCustody`). Decisión: no fragmentar una fuente de verdad ya coherente solo para calzar nombres de archivo del SPEC.
-- `EnvelopeTemplate` (Prisma): `order`/`kycPolicy`/`allowedMethods`/`requirePasskey`/`slaHours` reutilizables por tenant. `POST /signature-requests` acepta `templateId` (defaults + override explícito). `GET/POST /signature-requests/templates`.
+- El dossier ZIP (Fase B) incluye manifiesto firmado Ed25519, PDF congelado, copia firmada, sello RFC 3161, certificados de la CA y verificador offline. Este sprint añadió `events.jsonl` y `pack.sha256`.
+- `consents.json`, `idv.json` y `signatures.json` no son archivos aparte: viven dentro de `manifiesto.json`.
+- `EnvelopeTemplate`: `order`, `kycPolicy`, `allowedMethods`, `requirePasskey`, `slaHours`. `POST /signature-requests` acepta `templateId` y aplica defaults. `GET/POST /signature-requests/templates`.
 
-**Pendiente de este sprint:** UI para gestionar plantillas (crear/editar/elegir al enviar) — hoy solo backend + tests; el wizard de envío sigue mandando campos explícitos.
+El `templateId` **no se guarda** en `SignatureRequest`: se resuelve al crear y se descarta.
+
+**Cerrado en `4981fd2`.** El wizard de envío elige una plantilla y manda además los campos visibles: lo que se ve en pantalla gana. `/plantillas` lista y crea. El nombre es único por tenant; un duplicado muestra el 409 del BFF (`Ya existe un registro con esos datos únicos`). No hay edición ni borrado: cambiar una plantilla es crear otra con otro nombre.
 
 ## Sprint 6 — Ajuste duro + puerta a P2
 
 **Hecho, reinterpretado.** Commit `27719e1`.
 
-- El supuesto original de este sprint (`DigitalSignerAdapter` sigue siendo HMAC, hay que ocultarlo tras `ALLOW_DEV_HMAC`) ya no aplicaba: `DIGITAL` es PAdES/CAdES real con CA propia desde Fase B, no HMAC.
-- `/public/links/*` gana un `@Throttle` propio de 20/min (antes solo el límite global de 120/min aplicaba a esta superficie no autenticada).
-- `contentBase64`: confirmado con grep sobre todo el repo — cero coincidencias. No es que se dejó de escribir; ya no existe el campo en ningún lado.
-- `MasterPlan/P2-KMS.md`: una página con la ruta a HSM/KMS real (qué cambia, qué no cambia, orden de trabajo).
+- `DIGITAL` ya era PAdES/CAdES. No hubo flag `ALLOW_DEV_HMAC`.
+- `/public/links/*` tiene `@Throttle` de 20/min, encima del límite global de 120/min.
+- `contentBase64`: cero coincidencias en el repo.
+- `MasterPlan/P2-KMS.md` describe el paso a HSM.
 
 ---
 
-## DoD P1 (checklist maestro)
+## DoD P1
 
-Ver `PLAN-SPRINTS.md` sección "DoD P1" para el checklist con evidencia de commit por ítem. **11 de 11 confirmados.** Commits del ciclo completo: `5659271` → `f4d9191` → `9edeb86` → `0567a5a` → `c229038` → `5154f11` → `b23834d` → `27719e1`.
+**11 de 11.** Checklist con evidencia en `PLAN-SPRINTS.md`. Commits del ciclo: `5659271` → `f4d9191` → `9edeb86` → `0567a5a` → `c229038` → `5154f11` → `b23834d` → `27719e1`. El paquete se versionó después, en `3c98372`.
 
-## Lo que quedó explícitamente fuera de P1 (no es deuda oculta, es alcance)
+---
 
-- **Vendor IdV de redirect real** (`HttpIdvProvider` estilo Onfido/Metamap + webhook HMAC): sin contrato, sin URL, no se construyó. El gate `kycPolicy` ya está listo para consumir un resultado de identidad más fuerte el día que exista ese vendor.
-- **HSM/KMS real**: ver `MasterPlan/P2-KMS.md`. `DigitalSignerAdapter` sigue en CA de software (Fase B), no HMAC pero tampoco HSM.
-- **NOM-151 real**: el manifiesto tiene los campos (`timestampProvider`, `timestampTokenHash`) pero no hay constancia de un PSC acreditado.
-- **UI de gestión de `EnvelopeTemplate`**: el backend y los tests existen; no hay pantalla para crear/editar/elegir plantilla al enviar.
-- **RLS de Postgres, aislamiento físico por tenant**: `Documentacion/07-estado-y-ruta.html` "Fase 2" en adelante — es la siguiente fase del roadmap más amplio, no de este MasterPlan.
+## Hardening — en `fix/p1-hardening` (`4726f71` … `fe45256`, seguimiento `663d5f5`)
 
-## Qué sigue (sugerido, fuera de este paquete)
+Auditoría del 2026-10-05. Siete commits encima del paquete, más el seguimiento `663d5f5`. Resumen de lo que el código hace ahora.
 
-1. Decidir vendor IdV real cuando haya presupuesto/contrato; conectar detrás de una interfaz nueva sin tocar el gate `kycPolicy`.
-2. HSM/KMS por el puerto `Pkcs11KeyCustodian` ya existente (ver `P2-KMS.md`).
-3. UI de `EnvelopeTemplate` si el flujo de "plantillas reutilizables" resulta valioso en uso real.
-4. Retomar `Documentacion/07-estado-y-ruta.html` Fase 2 en adelante (RLS, llave/bucket por tenant, Keycloak producción) — trabajo de plataforma, no de este MasterPlan.
+### Aislamiento
+
+Migración `20261005100000_p1_tenant_scoping`: `tenantId` nullable en `ProcessAuditEvent`, `NotificationOutbox`, `HumanTask`, `DocumentComment`, `UserNotification`, `ProcessWatcher`, `WorkflowRun` y `SignatureField`, con backfill desde el padre cuando hay padre.
+
+Filtran por tenant: `/operations`, auditoría, signature-fields, cancelar/delegar/consentir/rechazar, workflow y tareas, colaboración, outbox, control-plane (`platform_admin`) y el WebSocket.
+
+`TenantContextGuard` falla cerrado. Token sin claim `tenant` → 401. Con membresía, el guard acepta slug, id del `Tenant` o el uuid de la membresía, y **normaliza `user.tenantId` al slug**. `TenantMembership.tenantId` es la FK (uuid); el resto de tablas calientes guardan el slug (`seguridata` en el demo). Un directorio vacío ya no abre el sandbox, salvo `ALLOW_UNMAPPED_TENANT=true` fuera de producción.
+
+`NotificationOutbox` y `UserNotification` pueden seguir en `NULL` si no hay una pista única: la migración no tenía padre directo. El script que los rellena es `bun run backfill:tenant-ids` (`663d5f5`). En el sandbox local ya corrió; el resultado está más abajo.
+
+La auditoría ya no mete CURP ni clave de elector en el payload. `verify` acotado ya no devuelve `headSeq`/`headHash` de la cadena global (`baea9aa`). Trigger de inmutabilidad en `ProcessAuditEvent` (`20261005110000_p1_audit_immutability`).
+
+Guía de un entorno que ya tiene datos: `backend/infra/README-despliegue-tenants.md` (`663d5f5`). Cubre el realm (el import de Keycloak no pisa un volumen existente), el rol `platform_admin`, el claim `tenant` y `bootstrap:tenant`.
+
+### Firma e integridad
+
+- Freeze obligatorio al crear la solicitud. `sign()` rehashea el canónico, toma `FOR UPDATE` sobre `Document`, calcula `allSigned` dentro de la transacción, valida `expiresAt` y no devuelve el PDF.
+- PAdES en serie por actualización incremental. Si no se puede garantizar, 409.
+- Autógrafa o estampado visual sobre un PDF que ya tiene PAdES: `409 VISUAL_STAMP_AFTER_SIGNATURE_UNSUPPORTED` (`a0ef110`). El error de estampado ya no se traga. Detector: `signing/pdf-signatures.ts`.
+- Evidencia: `checks.documentHash` compara solo el canónico. `checks.presentedHash` es el check de la copia de ceremonia (`baea9aa`). Un PDF `DIGITAL`/`AUTOGRAFA` con `valid: true` ya no sale con `documentHash: false`.
+- Biometría: sesión obligatoria, `encodeURIComponent`, timeout y validación de la respuesta.
+- Nombres de archivo con acentos: multer ya no los guarda como latin1 mal decodificado (`baea9aa`).
+
+### Portal externo, webhooks, multi-instancia
+
+- `POST /public/links/:token/reject` y botón Rechazar con confirmación. `recordConsent` es idempotente ante doble clic (`a0ef110`).
+- Webhooks: dos secretos durante la rotación (`previousSecret` / `previousSecretUntil`, cabecera `x-prestige-signature-previous`). Migración `20261005120000_webhook_secret_rotation`. Defensa SSRF, secreto enmascarado, solo suscripciones activas.
+- Outbox: `FOR UPDATE SKIP LOCKED`. El enlace de firma va cifrado, fuera del body.
+- Advisory lock en los dispatchers de correo, webhooks y reconciliador. Seeds idempotentes.
+- Throttler en Redis. `WorkerGuard` firma método + path + body. Scripts `start:prod` y worker.
+- `WorkflowExecutionAlreadyStartedError` es idempotente: un segundo start ya no degrada el run a `LOCAL` (`baea9aa`).
+- `GET /operations/health` hace `HeadBucket` (tope 2 s) y revisa Postgres; el body solo trae booleanos (`792e423`).
+- Clientes ioredis con handler `error`. Si Redis no responde, el BFF no muere y el adaptador de Socket.IO no se instala (`baea9aa`).
+- `assertRuntimeSecrets` completo en producción.
+
+### Arranque y CI
+
+- `WebhooksService` inyecta `resolveHost` con `@Optional() @Inject(WEBHOOK_HOST_RESOLVER)`. Sin eso Nest no arrancaba (`5aeaac6`).
+- `bun run check:di` corre en CI después del build (`2844c76`). Los tests de vitest no emiten `design:paramtypes` y no ven este fallo.
+- Dockerfile multi-stage, no-root, entrypoint con `migrate deploy`, servicios `bff` y `worker` en el profile `app`. `Dockerfile.dockerignore` ya no excluye `src/signing/pki`.
+- Frontend: ESLint 9 en flat config, 0 errores (`792e423`).
+- `minio/mc` fijado a `rancher/mirrored-minio-mc` (el tag anterior no existía). El bucket `prestige-docs` se crea con Object Lock y retención GOVERNANCE 30 días.
+- Excepción de gitleaks afinada a dos falsos positivos de `PKI_PASSPHRASE`; la regla sigue activa (`fe45256`).
+
+---
+
+## Seguimiento cerrado en `663d5f5`
+
+### Métodos usables después de un PAdES
+
+`allowed-methods.ts` (BFF y `frontend/web/libs/allowed-methods.ts`).
+
+- `AUTOGRAFA` reescribe el PDF. `DIGITAL` posterior firma en incremental. `BIOMETRICA`, `ACCEPT` y `PASSKEY` no tocan el PDF.
+- Si algún firmante ya cerró con `usedMethod = DIGITAL`, `allowedMethodsNow` quita `AUTOGRAFA`.
+- `sign()` rechaza antes el método visual: `409 METHOD_NOT_ALLOWED_AFTER_SIGNATURE`.
+- Al crear un sobre `SECUENCIAL` que mezcla `DIGITAL` y un método visual, la respuesta trae el aviso `VISUAL_AFTER_DIGITAL_ORDER`. No rechaza el alta.
+- El diálogo de firma y los dos portales (`/firmar/[token]` y la firma interna) ocultan el método que ya no aplica.
+- `GET /evidence/by-request/:id` responde 404 tanto si la solicitud es de otro tenant como si no hay evidencia. El cliente trata ese 404 como `null`.
+
+### Passkey en solicitud cerrada
+
+`POST /webauthn/authenticate/begin` no emite challenge si la solicitud del tenant ya no está abierta (`409 REQUEST_NOT_OPEN`). Una solicitud ajena o inexistente sigue el 404 de `beginForUser`, sin distinguir.
+
+### Reconciliador Temporal
+
+`WorkflowReconcilerService` corre cada minuto, con advisory lock. Un `WorkflowRun` `ACTIVO` con más de 2 minutos sin tocarse se compara con Temporal. Estados `FAILED`, `TIMED_OUT`, `TERMINATED` o `CANCELLED` marcan el run `FALLIDO`. Si la solicitud sigue `EN_FIRMA`, reintenta **una** vez (`restarted:1` en `lastError`).
+
+### Scripts de tenant
+
+- `bun run bootstrap:tenant` — upsert del `Tenant` y de la primera `TenantMembership`. Sin esto, el guard fail-closed responde 403 en una base que todavía no tiene membresías. `--dry-run` no escribe.
+- `bun run backfill:tenant-ids` — rellena `tenantId` NULL en `NotificationOutbox` y `UserNotification`. Lotes de 500, solo filas NULL, idempotente. Lo ambiguo o sin pista se queda NULL. Las membresías aportan `tenant.slug`, nunca el uuid de `TenantMembership.tenantId`.
+- `bun run backfill:audit-chain` — el script ya estaba en el repo (M11); el `package.json` ahora lo expone.
+
+### MinIO
+
+`mc retention info` sale 0 aunque no haya retención por defecto, así que no servía de guarda. El init aplica `mc retention set --default GOVERNANCE 30d` siempre. Si el bucket ya existía sin lock, el init falla y hay que recrearlo vacío con `mc mb --with-lock`. GOVERNANCE se puede levantar con bypass; COMPLIANCE no es el modo de este entorno.
+
+---
+
+## Sandbox local con datos (2026-10-05)
+
+Se aplicó `backend/infra/README-despliegue-tenants.md` al compose `prestige-sandbox`. No se vació el volumen. El init de MinIO no se volvió a correr y el bucket `prestige-docs` no se recreó.
+
+- `prisma migrate deploy` ya tenía las migraciones aplicadas, incluidas `20261005100000_p1_tenant_scoping`, `20261005110000_p1_audit_immutability` y `20261005120000_webhook_secret_rotation`.
+- Keycloak 26.0.8. El realm `prestige` ya existía, así que el import no lo pisa. Se creó el rol `platform_admin`. El mapper `tenant` del cliente `prestige-web` ya estaba. Se creó el mapper `auth_time` (`3f8ee4ef-f568-4f6c-9aa2-e10653c38bb5`) como en `prestige-realm.json`. Se añadió el atributo de perfil `tenant` y se puso `tenant=seguridata` en maria, carlos y roberto. A roberto se le sumó `platform_admin` sin quitar `signer`, `sender`, `rh` ni `admin`.
+- El password grant trae `tenant` y no trae `auth_time`: ese grant no escribe la nota `AUTH_TIME`. El flujo del navegador sí. `STEP_UP_ENFORCE` está apagado. El login del portal como roberto en `localhost:3001` fue aceptado.
+- `bootstrap:tenant` solo sobre roberto. El script reemplaza roles, así que se pasó la unión `sender,rh,admin,auditor,platform_admin` para no perder `rh` ni `auditor`. Nombre y correo no cambiaron (`Roberto Díaz`, `roberto@seguridata.mx`). maria y carlos no se reescribieron.
+- `backfill:tenant-ids`. `NotificationOutbox`: 80 NULL pasaron a 0 (59 por `dedupeKey`, 21 por `toAddress`; 0 ambiguos). `UserNotification`: 160 NULL pasaron a 12 (101 por href, 47 por membresía única; 0 ambiguos). Esas 12 se quedan NULL: href `/inbox`, que la regla no usa, o un documento que no aporta un slug único. `ProcessAuditEvent`: 31 NULL, encadenados y sin fila de solicitud, documento ni onboarding; se dejan NULL. El trigger de inmutabilidad no se desactiva. `HumanTask` y `WorkflowRun`: 0 NULL.
+
+---
+
+## Lo que sigue fuera
+
+- **Vendor IdV de redirect** y la tabla `IdvSession`. No hay contrato, así que no se construye. El gate `kycPolicy` no se toca: sigue consumiendo el alta de onboarding.
+- **HSM/KMS.** `SoftwareKeyCustodian` es el default. `Pkcs11KeyCustodian.getSigningMaterial` responde que el servicio no está disponible. Ruta: `P2-KMS.md`.
+- **Constancia NOM-151** de un PSC acreditado. Hay sello RFC 3161 (`TSA_URL`) y los campos `timestampProvider` / `timestampTokenHash`. `trustedChain` queda en falso.
+- **OCSP/CRL y LTV** para que Acrobat valide sin ancla manual.
+- **`templateId` persistido** en la solicitud. Hoy solo aplica defaults al crear. La UI no cambia eso.
+- **RLS de Postgres** y llave o bucket por tenant. El aislamiento actual es de aplicación, más el `tenantId` de fila.
+- **Filas que el backfill deja en NULL a propósito.** Sin pista única no se inventa un slug. Otro entorno con datos corre la misma guía.
+
+Object Lock GOVERNANCE a 30 días ya está en el init de MinIO del sandbox. No es el capítulo de plataforma (RLS, Merkle, white-label) que `00-FASES.md` llama P3.
+
+## Qué sigue
+
+1. HSM por `Pkcs11KeyCustodian` cuando haya módulo y certificado de una CA que Acrobat reconozca. OCSP/CRL y la constancia NOM-151 van en ese mismo plan (`P2-KMS.md`), no en este cierre.

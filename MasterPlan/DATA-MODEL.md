@@ -1,6 +1,26 @@
 # DATA-MODEL P1
 
-Cambios sobre `backend/bff/prisma/schema.prisma`.
+Cambios que este paquete pedía sobre `backend/bff/prisma/schema.prisma`. Lo de abajo de "Conservar" es el pedido original (2026-09-26). El delta es el schema real al 2026-10-05 (`fix/p1-hardening`).
+
+## Delta contra el schema real (2026-10-05)
+
+| Pedido | Qué hay |
+|---|---|
+| `Document.sha256` | La columna se llama `hash`. También `frozenAt`, `enc`, `presentedObjectKey`, `presentedHash`. |
+| `contentBase64` nullable | La columna no existe. |
+| `SignatureRequest.templateId` | No hay columna. `templateId` se resuelve al crear y no se guarda. Sí están `kycPolicy` y `requirePasskey`. |
+| `Signer.lastIdvSessionId` | No existe. |
+| `EvidenceManifest.packObjectKey` | No existe. El pack se arma en el servicio de evidencia; el manifiesto guarda hashes, token RFC 3161 y firma Ed25519. |
+| `Membership` | `TenantMembership`: `tenantId` es la FK al uuid de `Tenant`, más `roles[]`, `email`, `name`, `active`. El slug vive en `Tenant.slug`. |
+| `EnvelopeToken` | `OneTimeLink`: `tokenHash`, `expiresAt`, `usedAt`, `signerId`, `signatureRequestId`. Sin `tenantId` y sin `frozenHash`. |
+| `PasskeyCredential` | Existe, más `PasskeyAssertion` y `PasskeyRegistrationChallenge`. |
+| `EnvelopeTemplate` | Existe, por tenant, nombre único. |
+| `IdvSession` | No existe. El alta vive en `OnboardingCase` (claves de storage, OCR, scores, consentimiento). |
+| `KycPolicy` | `NONE`, `ONCE`, `EVERY_SIGN`. |
+| `SignatureMethod` | `DIGITAL`, `AUTOGRAFA`, `BIOMETRICA`, `ACCEPT`, `PASSKEY`. `DIGITAL` es PAdES real y se ofrece en la UI. |
+| `ProcessAuditEvent.tenantId` | Nullable, desde `20261005100000_p1_tenant_scoping`. La cadena ya tenía `prevHash` desde M11. |
+
+El mismo hardening añadió `tenantId` nullable en `NotificationOutbox`, `HumanTask`, `DocumentComment`, `UserNotification`, `ProcessWatcher`, `WorkflowRun` y `SignatureField`. `bun run backfill:tenant-ids` (`663d5f5`) rellena outbox y `UserNotification` cuando hay una pista única; lo demás se queda NULL. `WebhookSubscription` tiene `previousSecret` y `previousSecretUntil` (`20261005120000_webhook_secret_rotation`).
 
 ## Conservar
 
