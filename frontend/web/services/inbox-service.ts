@@ -18,6 +18,8 @@ export interface InboxItem {
   currentSignerId?: string;
   /** ¿Puede firmar ya el dueño de esta bandeja? (false = espera su turno) */
   myTurn?: boolean;
+  /** Vencimiento de la solicitud (ISO), o null si no tiene. */
+  expiresAt?: string | null;
 }
 
 export function fetchInbox(signerId: string) {
