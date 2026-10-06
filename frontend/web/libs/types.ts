@@ -56,6 +56,8 @@ export interface SignatureRequest {
   documentId: string;
   /** Métodos autorizados por el remitente; el firmante elige uno al firmar. */
   methods: SignatureMethod[];
+  /** Métodos usables hoy (sin los visuales si el PDF ya lleva firma digital). Puede no venir. */
+  allowedMethodsNow?: SignatureMethod[];
   order: SigningOrder;
   status: SignatureRequestStatus;
   /** El sobre exige verificación con passkey antes de firmar. */

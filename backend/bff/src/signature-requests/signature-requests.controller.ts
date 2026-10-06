@@ -115,7 +115,7 @@ export class SignatureRequestsController {
 
   @Get(':id/status')
   status(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.signatureRequests.getOrThrow(id, user.tenantId);
+    return this.signatureRequests.getStatus(id, user.tenantId);
   }
 
   @Post(':id/actions/consent')

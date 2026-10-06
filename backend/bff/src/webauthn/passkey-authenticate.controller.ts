@@ -1,9 +1,13 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Post } from '@nestjs/common';
 import { IsDefined, IsObject, IsString, IsUUID } from 'class-validator';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
+import { PrismaService } from '../prisma/prisma.service';
 import { PasskeyCeremonyService } from './passkey-ceremony.service';
+
+/** Estados en los que la solicitud aún admite firma. */
+const OPEN_STATUSES: string[] = ['PENDIENTE', 'EN_FIRMA'];
 
 export class PasskeyAuthBeginDto {
   @IsUUID()
@@ -35,10 +39,25 @@ export class PasskeyAuthFinishDto {
  */
 @Controller('webauthn/authenticate')
 export class PasskeyAuthenticateController {
-  constructor(private readonly ceremony: PasskeyCeremonyService) {}
+  constructor(
+    private readonly ceremony: PasskeyCeremonyService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post('begin')
-  begin(@CurrentUser() user: AuthenticatedUser, @Body() body: PasskeyAuthBeginDto) {
+  async begin(@CurrentUser() user: AuthenticatedUser, @Body() body: PasskeyAuthBeginDto) {
+    // Una solicitud cerrada ya no admite firma: no se emite challenge. Si no
+    // existe o es de otro tenant se deja a `beginForUser` (404 sin distinguir).
+    const request = await this.prisma.signatureRequest.findFirst({
+      where: { id: body.signatureRequestId, tenantId: user.tenantId },
+      select: { status: true },
+    });
+    if (request && !OPEN_STATUSES.includes(request.status)) {
+      throw new ConflictException({
+        error: 'REQUEST_NOT_OPEN',
+        message: `La solicitud ya está ${request.status}; no admite nuevas verificaciones de passkey`,
+      });
+    }
     return this.ceremony.beginForUser(user, body.signatureRequestId);
   }
 

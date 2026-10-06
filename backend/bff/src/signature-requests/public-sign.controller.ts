@@ -17,6 +17,7 @@ import { Public } from '../auth/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { OneTimeLinkService } from '../notifications/one-time-link.service';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
+import { allowedMethodsForRequest } from './allowed-methods';
 import { SignatureRequestsService } from './signature-requests.service';
 import { ConsentAcceptDto, PasskeyFinishDto, PublicRejectDto, SignActionDto } from './dto';
 
@@ -64,6 +65,8 @@ export class PublicSignController {
       documentId: request?.documentId ?? null,
       documentTitle: request?.document?.filename ?? null,
       methods: request?.methods ?? [],
+      /** Métodos usables hoy según el estado del PDF (sin los visuales si ya hay firma digital). */
+      allowedMethodsNow: request ? allowedMethodsForRequest(request) : [],
       order: request?.order ?? null,
       status: request?.status ?? null,
       myStatus: signer?.status ?? null,

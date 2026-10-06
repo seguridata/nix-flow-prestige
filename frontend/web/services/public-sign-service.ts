@@ -11,6 +11,8 @@ export interface PublicLinkContext {
   documentId: string | null;
   documentTitle: string | null;
   methods: string[];
+  /** Métodos usables hoy según el estado del PDF; puede no venir. */
+  allowedMethodsNow?: string[];
   order: string | null;
   status: string | null;
   myStatus: string | null;

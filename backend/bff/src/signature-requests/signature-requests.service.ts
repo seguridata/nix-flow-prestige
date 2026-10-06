@@ -32,7 +32,8 @@ import { SignerMailService } from '../notifications/signer-mail.service';
 import { SignaturePolicyService } from '../signing/signature-policy';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
 import { DocumentsService } from '../documents/documents.service';
-import { STABLE_ORDER, finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
+import { allowedMethodsForRequest, creationWarnings } from './allowed-methods';
+import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 
 export type { SignatureMethod, SigningOrder, SignerRole, KycPolicy };
 
@@ -371,7 +372,10 @@ export class SignatureRequestsService {
       await this.mail.sendInvites(created.id).catch(() => undefined);
     }
 
-    return this.getOrThrow(created.id, doc.tenantId);
+    // Los firmantes posteriores a una firma DIGITAL no podrán usar métodos
+    // visuales (ver allowed-methods.ts): se avisa, no se rechaza.
+    const warnings = creationWarnings(created.order, methods);
+    return { ...(await this.getOrThrow(created.id, doc.tenantId)), warnings };
   }
 
   /** Listado paginado (ver `common/pagination`): array sin limit/cursor, `{items,nextCursor}` con ellos. */
@@ -385,7 +389,7 @@ export class SignatureRequestsService {
   ) {
     const args = pageArgs(page);
     const rows = await this.findRequests({ signerId, status, documentId, requestedBy, tenantId }, prismaPage(args));
-    return finishPage(rows, args);
+    return mapPage(finishPage(rows, args), (r) => ({ ...r, allowedMethodsNow: allowedMethodsForRequest(r) }));
   }
 
   /** Igual que `list` pero siempre array (tope 200); lo usa la bandeja (inbox). */
@@ -420,6 +424,12 @@ export class SignatureRequestsService {
     });
     if (!found) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
     return found;
+  }
+
+  /** Estado de la solicitud + `allowedMethodsNow` (métodos usables hoy según el estado del PDF). */
+  async getStatus(id: string, tenantId?: string) {
+    const found = await this.getOrThrow(id, tenantId);
+    return { ...found, allowedMethodsNow: allowedMethodsForRequest(found) };
   }
 
   /** Ejecuta un efecto post-commit sin que su fallo tumbe la respuesta; devuelve si tuvo éxito. */
@@ -649,6 +659,19 @@ export class SignatureRequestsService {
         throw new BadRequestException(
           `Método ${body.method} no autorizado para esta solicitud (permitidos: ${request.methods.join(', ')})`,
         );
+      }
+
+      // Falla temprano (antes de storage/adaptadores) si el PDF ya lleva firma
+      // PAdES y el método estamparía visualmente: reescribirlo la invalidaría.
+      const allowedNow = allowedMethodsForRequest(request);
+      if (!allowedNow.includes(body.method)) {
+        throw new ConflictException({
+          error: 'METHOD_NOT_ALLOWED_AFTER_SIGNATURE',
+          message:
+            `El documento ya tiene firma digital: el método ${body.method} ya no se puede usar. ` +
+            `Métodos permitidos ahora: ${allowedNow.join(', ') || 'ninguno'}.`,
+          allowedMethods: allowedNow,
+        });
       }
 
       // FREEZE obligatorio: sólo se firma sobre un canónico congelado.

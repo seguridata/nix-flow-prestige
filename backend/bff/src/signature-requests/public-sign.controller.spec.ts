@@ -100,3 +100,30 @@ describe('PublicSignController.reject', () => {
     expect(await validate(extra, { whitelist: true, forbidNonWhitelisted: true })).not.toHaveLength(0);
   });
 });
+
+describe('PublicSignController.resolve — allowedMethodsNow', () => {
+  it('oculta los métodos visuales si ya hay firma DIGITAL en el PDF', async () => {
+    const links = {
+      resolve: vi.fn(async () => ({ purpose: 'sign', signatureRequestId: 'sr-1', signerId: 'segundo', expiresAt: new Date() })),
+    };
+    const prisma = {
+      signatureRequest: {
+        findUnique: vi.fn(async () => ({
+          documentId: 'd',
+          document: { filename: 'x.pdf' },
+          methods: ['DIGITAL', 'AUTOGRAFA', 'ACCEPT'],
+          order: 'SECUENCIAL',
+          status: 'EN_FIRMA',
+          signers: [
+            { signerId: 'primero', status: 'FIRMADO', usedMethod: 'DIGITAL' },
+            { signerId: 'segundo', status: 'PENDIENTE' },
+          ],
+        })),
+      },
+    };
+    const ctrl = new PublicSignController(links as never, {} as never, prisma as never, {} as never);
+    const out = await ctrl.resolve('tok');
+    expect(out.methods).toEqual(['DIGITAL', 'AUTOGRAFA', 'ACCEPT']);
+    expect(out.allowedMethodsNow).toEqual(['DIGITAL', 'ACCEPT']);
+  });
+});

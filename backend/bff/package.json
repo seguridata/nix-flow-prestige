@@ -19,6 +19,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
+    "bootstrap:tenant": "bun run prisma/scripts/bootstrap-tenant.ts",
+    "backfill:tenant-ids": "bun run prisma/scripts/backfill-tenant-ids.ts",
+    "backfill:audit-chain": "bun run prisma/scripts/backfill-audit-chain.ts",
     "sdk:gen": "openapi-typescript ../contracts/openapi.generated.json -o ../sdk/typescript/schema.d.ts"
   },
   "dependencies": {

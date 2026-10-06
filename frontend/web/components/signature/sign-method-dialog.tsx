@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, Fingerprint, KeyRound, PenTool, ShieldCheck } from "lucide-react";
 
 import {
@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import { cn } from "@/libs/utils";
+import { HIDDEN_VISUAL_METHODS_NOTICE, resolveAllowedMethods } from "@/libs/allowed-methods";
 import type { SignatureMethod } from "@/libs/types";
 
 const METHOD_INFO: Record<
@@ -50,6 +51,8 @@ interface SignMethodDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   allowedMethods: SignatureMethod[];
+  /** Métodos usables hoy según el estado del PDF; si viene, oculta el resto. */
+  allowedMethodsNow?: SignatureMethod[];
   consentText?: { version: string; text: string };
   biometricReady?: boolean;
   /** El sobre exige passkey para cualquier método. */
@@ -68,7 +71,8 @@ interface SignMethodDialogProps {
 export function SignMethodDialog({
   open,
   onOpenChange,
-  allowedMethods,
+  allowedMethods: allowedMethodsProp,
+  allowedMethodsNow,
   consentText,
   biometricReady = false,
   requirePasskey = false,
@@ -76,6 +80,10 @@ export function SignMethodDialog({
   onConfirm,
   isSubmitting,
 }: SignMethodDialogProps) {
+  const { methods: allowedMethods, hiddenSome } = useMemo(
+    () => resolveAllowedMethods(allowedMethodsProp, allowedMethodsNow),
+    [allowedMethodsProp, allowedMethodsNow],
+  );
   const [selected, setSelected] = useState<SignatureMethod | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [stroke, setStroke] = useState<Blob | null>(null);
@@ -127,6 +135,12 @@ export function SignMethodDialog({
             Consentimiento versionado, método y —si aplica— trazo autógrafo. Nada se simula.
           </DialogDescription>
         </DialogHeader>
+
+        {hiddenSome ? (
+          <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+            {HIDDEN_VISUAL_METHODS_NOTICE}
+          </p>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {allowedMethods.map((method) => {

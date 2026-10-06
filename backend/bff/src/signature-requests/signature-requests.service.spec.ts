@@ -824,3 +824,116 @@ describe('SignatureRequestsService.create — freeze y biometría', () => {
     expect(created).toHaveLength(1);
   });
 });
+
+describe('SignatureRequestsService.sign — métodos permitidos según el estado del PDF', () => {
+  const visualRequest = (over: Partial<FakeRequestRow> = {}) =>
+    baseRequest({ methods: ['DIGITAL', 'AUTOGRAFA', 'ACCEPT', 'PASSKEY'], ...over });
+  const withDigitalFirst = () => [
+    signerRow({ signerId: 'primero', status: 'FIRMADO', signedAt: new Date(), usedMethod: 'DIGITAL' }),
+    signerRow({ signerId: 'segundo', sortOrder: 1 }),
+  ];
+
+  it('secuencial: tras la DIGITAL del 1, AUTOGRAFA del 2 da 409 temprano sin tocar storage ni adaptadores', async () => {
+    const { service, signing, storage, signers } = makeService({
+      requests: [visualRequest({ status: 'EN_FIRMA' })],
+      signers: withDigitalFirst(),
+    });
+    const err = await service
+      .sign(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png'))
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.getResponse()).toMatchObject({
+      error: 'METHOD_NOT_ALLOWED_AFTER_SIGNATURE',
+      allowedMethods: ['DIGITAL', 'ACCEPT', 'PASSKEY'],
+    });
+    expect(err.getResponse().message).toContain('DIGITAL, ACCEPT, PASSKEY');
+    expect(signing.sign).not.toHaveBeenCalled();
+    expect(storage.getObject).not.toHaveBeenCalled();
+    expect(signers.get('signer-segundo')?.status).toBe('PENDIENTE');
+  });
+
+  it('secuencial: tras la DIGITAL del 1, ACCEPT del 2 sigue permitido', async () => {
+    const { service } = makeService({
+      requests: [visualRequest({ status: 'EN_FIRMA' })],
+      signers: withDigitalFirst(),
+    });
+    const out = await service.sign(REQUEST_ID, { signerId: 'segundo', method: 'ACCEPT', consentAccepted: true });
+    expect(out.status).toBe('FIRMADO');
+  });
+
+  it('sin firma previa AUTOGRAFA sigue permitida', async () => {
+    const { service, signing } = makeService({ requests: [visualRequest()], signers: twoSigners() });
+    const out = await service.sign(
+      REQUEST_ID,
+      { signerId: 'primero', method: 'AUTOGRAFA', consentAccepted: true },
+      Buffer.from('png'),
+    );
+    expect(out.status).toBe('FIRMADO');
+    expect(signing.sign).toHaveBeenCalledTimes(1);
+  });
+
+  it('paralelo: AUTOGRAFA permitida antes de cualquier DIGITAL y bloqueada después', async () => {
+    const before = makeService({ requests: [visualRequest({ order: 'PARALELO' })], signers: twoSigners() });
+    await expect(
+      before.service.sign(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png')),
+    ).resolves.toMatchObject({ status: 'FIRMADO' });
+
+    const after = makeService({
+      requests: [visualRequest({ order: 'PARALELO', status: 'EN_FIRMA' })],
+      signers: withDigitalFirst(),
+    });
+    await expect(
+      after.service.sign(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png')),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('getStatus expone allowedMethodsNow filtrado', async () => {
+    const { service } = makeService({
+      requests: [visualRequest({ status: 'EN_FIRMA' })],
+      signers: withDigitalFirst(),
+    });
+    const status = await service.getStatus(REQUEST_ID);
+    expect(status.allowedMethodsNow).toEqual(['DIGITAL', 'ACCEPT', 'PASSKEY']);
+    expect(status.methods).toContain('AUTOGRAFA');
+  });
+});
+
+describe('SignatureRequestsService.create — advertencia VISUAL_AFTER_DIGITAL_ORDER', () => {
+  async function create(order: 'SECUENCIAL' | 'PARALELO', methods: SignatureMethod[]) {
+    const m = makeService({ requests: [], signers: [] });
+    const prisma = (m.service as unknown as { prisma: Record<string, unknown> }).prisma;
+    prisma.document = {
+      ...(prisma.document as object),
+      findFirst: async () => ({ id: DOCUMENT_ID, tenantId: 'seguridata', caseId: 'case-1' }),
+    };
+    prisma.signatureRequest = {
+      ...(prisma.signatureRequest as object),
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        m.requests.set(REQUEST_ID, baseRequest({ methods: data.methods as SignatureMethod[], order: data.order as SigningOrder }));
+        const row = signerRow({ signerId: 'a' });
+        m.signers.set(row.id, row);
+        return { id: REQUEST_ID, documentId: DOCUMENT_ID, tenantId: 'seguridata', order: data.order, signers: [row] };
+      },
+    };
+    const priv = m.service as unknown as Record<string, unknown>;
+    priv.resolveSigners = async () => [{ signerId: 'a' }];
+    priv.applyOutOfOffice = async () => undefined;
+    return m.service.create({
+      documentId: DOCUMENT_ID,
+      tenantId: 'seguridata',
+      methods,
+      order,
+      signers: [{ signerId: 'a' }],
+    });
+  }
+
+  it('SECUENCIAL con AUTOGRAFA + DIGITAL: crea y devuelve la advertencia', async () => {
+    const out = await create('SECUENCIAL', ['DIGITAL', 'AUTOGRAFA']);
+    expect(out.warnings).toEqual(['VISUAL_AFTER_DIGITAL_ORDER']);
+  });
+
+  it('PARALELO o sin mezcla: sin advertencias', async () => {
+    expect((await create('PARALELO', ['DIGITAL', 'AUTOGRAFA'])).warnings).toEqual([]);
+    expect((await create('SECUENCIAL', ['DIGITAL', 'ACCEPT'])).warnings).toEqual([]);
+  });
+});

@@ -128,10 +128,17 @@ services:
         else
           mc mb --with-lock local/prestige-docs
         fi
-        if ! mc retention info local/prestige-docs >/dev/null 2>&1; then
-          mc retention set --default GOVERNANCE 30d local/prestige-docs
+        # `mc retention info` sale con código 0 aunque no haya retención por
+        # defecto ("Object locking is not enabled."), así que no sirve de guarda.
+        # `retention set --default` es idempotente: se aplica siempre.
+        # mc 2023 se niega a activar el lock en un bucket YA existente creado sin él
+        # ("does not support locking"): hay que recrear el bucket vacío con --with-lock.
+        if ! mc retention set --default GOVERNANCE 30d local/prestige-docs; then
+          echo 'ERROR: prestige-docs existe sin Object Lock; recréalo con mc mb --with-lock' >&2
+          exit 1
         fi
         mc version info local/prestige-docs
+        mc retention info --default local/prestige-docs
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prestige}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prestige-minio}

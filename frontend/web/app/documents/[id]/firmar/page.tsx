@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import { useSession } from "@/store/session-store";
 import { signerBlockedBy } from "@/libs/signing-turn";
+import { HIDDEN_VISUAL_METHODS_NOTICE, resolveAllowedMethods } from "@/libs/allowed-methods";
 import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import {
   fetchConsentText,
@@ -72,10 +73,13 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
     return { request, signer, blockedBy: signerBlockedBy(request, signerId) };
   }, [requestsData, signerId]);
 
-  const methods = useMemo(() => {
-    const allowed = mine?.request.methods ?? [];
+  const { methods, hiddenSome } = useMemo(() => {
+    const resolved = resolveAllowedMethods(mine?.request.methods ?? [], mine?.request.allowedMethodsNow);
     const configured = new Set((capsData ?? []).filter((c) => c.configured).map((c) => c.method));
-    return allowed.filter((m) => configured.size === 0 || configured.has(m));
+    return {
+      methods: resolved.methods.filter((m) => configured.size === 0 || configured.has(m)),
+      hiddenSome: resolved.hiddenSome,
+    };
   }, [mine, capsData]);
 
   async function submit() {
@@ -237,6 +241,7 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
                 {step === "metodo" && (
                   <div className="mt-2 space-y-4">
                     <p className="text-sm font-medium">Método de firma</p>
+                    {hiddenSome && <p className="text-xs text-muted-foreground">{HIDDEN_VISUAL_METHODS_NOTICE}</p>}
                     <div className="flex flex-wrap gap-2">
                       {methods.map((m) => (
                         <Button

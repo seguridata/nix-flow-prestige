@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AutographPad } from "@/components/signature/autograph-pad";
+import { HIDDEN_VISUAL_METHODS_NOTICE, resolveAllowedMethods } from "@/libs/allowed-methods";
 import {
   acceptPublicConsent,
   beginPasskey,
@@ -218,7 +219,9 @@ function FirmarForm({
     ACCEPT: "Acepto",
     PASSKEY: "Passkey",
   };
-  const methods = (ctx.methods.length ? ctx.methods : ["DIGITAL"]).filter(
+  const base = ctx.methods.length ? ctx.methods : ["DIGITAL"];
+  const { methods: usable, hiddenSome } = resolveAllowedMethods(base, ctx.allowedMethodsNow);
+  const methods = usable.filter(
     (m): m is Method => m === "DIGITAL" || m === "AUTOGRAFA" || m === "ACCEPT" || m === "PASSKEY",
   );
 
@@ -265,6 +268,7 @@ function FirmarForm({
 
       <div>
         <p className="mb-2 text-sm font-medium">Método de firma</p>
+        {hiddenSome ? <p className="mb-2 text-xs text-muted-foreground">{HIDDEN_VISUAL_METHODS_NOTICE}</p> : null}
         <div className="flex flex-wrap gap-2">
           {methods.map((m) => (
             <Button

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ZipArchive } from 'archiver';
 import { Public } from '../auth/public.decorator';
@@ -39,11 +39,14 @@ export class EvidenceController {
   }
 
   @Get('by-request/:signatureRequestId')
-  byRequest(
+  async byRequest(
     @Param('signatureRequestId') signatureRequestId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.evidence.findByRequest(signatureRequestId, user.tenantId);
+    // 404 idéntico para solicitud ajena y para solicitud sin evidencia (no revela cuál).
+    const found = await this.evidence.findByRequest(signatureRequestId, user.tenantId);
+    if (!found) throw new NotFoundException('Evidencia no encontrada para esta solicitud');
+    return found;
   }
 
   @Get(':manifestId')
