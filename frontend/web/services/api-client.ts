@@ -64,8 +64,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       const returnTo = window.location.pathname + window.location.search;
       window.location.href = `/api/auth/login?maxAge=${maxAge}&returnTo=${encodeURIComponent(returnTo)}`;
     }
+    const detail = (parsed as { errors?: unknown })?.errors;
+    const detailText = Array.isArray(detail) && detail.every((d) => typeof d === "string") ? ` ${detail.join(" ")}` : "";
     throw new ApiError(
-      (parsed as { message?: string })?.message ?? `Error ${res.status} en ${path}`,
+      `${(parsed as { message?: string })?.message ?? `Error ${res.status} en ${path}`}${detailText}`,
       res.status,
       parsed,
     );
