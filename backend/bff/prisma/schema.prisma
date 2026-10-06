@@ -19,10 +19,33 @@ model Case {
   title     String
   status    CaseStatus @default(ABIERTO)
   createdAt DateTime   @default(now())
+  /// Vista Drive: dueño (actorId) y carpeta. `ownerId` nulo = anterior a las carpetas (visible en la raíz del tenant).
+  ownerId   String?
+  folderId  String?
+  /// Expediente implícito de un documento suelto: la UI lo muestra como documento, no como expediente.
+  loose     Boolean    @default(false)
 
   documents Document[]
+  folder    Folder?    @relation(fields: [folderId], references: [id])
 
   @@index([tenantId])
+  @@index([tenantId, ownerId, folderId])
+}
+
+/// Carpeta personal (sin compartir) de la vista "Mis documentos". Anidable.
+model Folder {
+  id        String   @id @default(uuid())
+  tenantId  String
+  ownerId   String
+  parentId  String?
+  name      String
+  createdAt DateTime @default(now())
+
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderTree")
+  cases    Case[]
+
+  @@index([tenantId, ownerId, parentId])
 }
 
 model Document {

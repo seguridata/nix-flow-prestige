@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Case } from '@prisma/client';
+import { FoldersService } from '../folders/folders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { STABLE_ORDER, finishPage, pageArgs, prismaPage, type Page, type PageQueryDto } from '../common/pagination';
 
@@ -7,11 +8,50 @@ export type { Case };
 
 @Injectable()
 export class CasesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly folders: FoldersService,
+  ) {}
 
-  create(body: { tenantId: string; title: string }): Promise<Case> {
+  async create(body: {
+    tenantId: string;
+    title: string;
+    ownerId?: string;
+    folderId?: string | null;
+    loose?: boolean;
+  }): Promise<Case> {
+    if (body.folderId && body.ownerId) {
+      await this.folders.assertOwned(body.folderId, { tenantId: body.tenantId, ownerId: body.ownerId });
+    }
     return this.prisma.case.create({
-      data: { tenantId: body.tenantId, title: body.title },
+      data: {
+        tenantId: body.tenantId,
+        title: body.title,
+        ownerId: body.ownerId,
+        folderId: body.folderId ?? null,
+        loose: body.loose ?? false,
+      },
+    });
+  }
+
+  /** Renombra o mueve un expediente propio (o anterior a las carpetas, sin dueño). */
+  async update(
+    id: string,
+    patch: { title?: string; folderId?: string | null },
+    actor: { tenantId: string; ownerId: string },
+  ): Promise<Case> {
+    const kase = await this.prisma.case.findFirst({
+      where: { id, tenantId: actor.tenantId, OR: [{ ownerId: actor.ownerId }, { ownerId: null }] },
+    });
+    if (!kase) throw new NotFoundException(`Caso ${id} no encontrado`);
+    if (patch.folderId) await this.folders.assertOwned(patch.folderId, actor);
+    return this.prisma.case.update({
+      where: { id },
+      data: {
+        ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+        ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
+        ownerId: actor.ownerId,
+      },
     });
   }
 
