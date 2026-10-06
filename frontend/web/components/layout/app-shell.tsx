@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import {
   FilePlus2,
+  Files,
   GitBranch,
   Inbox,
   LayoutDashboard,
@@ -34,6 +35,7 @@ const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[
   { href: "/inbox", label: "Bandeja", icon: Inbox },
   { href: "/sent", label: "Enviados", icon: Send },
   { href: "/new", label: "Enviar", icon: FilePlus2, roles: ["sender", "admin"] },
+  { href: "/plantillas", label: "Plantillas", icon: Files, roles: ["sender", "admin"] },
   { href: "/onboarding", label: "Onboarding", icon: UserPlus, roles: ["rh", "admin"] },
   { href: "/tasks", label: "Tareas", icon: ListChecks },
   { href: "/process", label: "Proceso", icon: GitBranch, roles: ["sender", "admin"] },

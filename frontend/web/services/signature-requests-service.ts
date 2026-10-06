@@ -1,21 +1,41 @@
 import { apiClient, newIdempotencyKey } from "./api-client";
 import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { buildSignPayload } from "./payloads";
+import type { EnvelopeTemplate, KycPolicy } from "@/libs/envelope-template";
 import type { SignatureRequest, SignatureMethod, SigningOrder } from "@/libs/types";
 
 export interface CreateSignatureRequestBody {
   documentId: string;
+  /** Si viene, el BFF rellena lo que este cuerpo no traiga. Un campo explícito gana. */
+  templateId?: string;
   methods: SignatureMethod[];
   order: SigningOrder;
   slaHours?: number;
   // requestedBy / tenant salen del token en el BFF.
   signers: { signerId: string; name?: string; email?: string; role?: "FIRMANTE" | "REVISOR" }[];
   requirePasskey?: boolean;
-  kycPolicy?: "NONE" | "ONCE" | "EVERY_SIGN";
+  kycPolicy?: KycPolicy;
+}
+
+export interface CreateEnvelopeTemplateBody {
+  name: string;
+  order?: SigningOrder;
+  kycPolicy?: KycPolicy;
+  allowedMethods: SignatureMethod[];
+  requirePasskey?: boolean;
+  slaHours?: number;
 }
 
 export function createSignatureRequest(body: CreateSignatureRequestBody) {
   return apiClient.post<SignatureRequest>("/signature-requests", body);
+}
+
+export function fetchEnvelopeTemplates() {
+  return apiClient.get<EnvelopeTemplate[]>("/signature-requests/templates");
+}
+
+export function createEnvelopeTemplate(body: CreateEnvelopeTemplateBody) {
+  return apiClient.post<EnvelopeTemplate>("/signature-requests/templates", body);
 }
 
 export function fetchSignatureRequestsForDocument(documentId: string) {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
-import { FilePlus2, FileText, GitBranch, Inbox, LayoutDashboard, ListChecks, Send, ShieldCheck, UserPlus } from "lucide-react";
+import { FilePlus2, Files, FileText, GitBranch, Inbox, LayoutDashboard, ListChecks, Send, ShieldCheck, UserPlus } from "lucide-react";
 import { apiClient } from "@/services/api-client";
 
 interface SearchHit {
@@ -113,6 +113,9 @@ export function CommandPalette({
           </Command.Item>
           <Command.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-muted" onSelect={() => go("/new")}>
             <FilePlus2 className="size-4" /> Nuevo envío
+          </Command.Item>
+          <Command.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-muted" onSelect={() => go("/plantillas")}>
+            <Files className="size-4" /> Plantillas
           </Command.Item>
           <Command.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-muted" onSelect={() => go("/onboarding")}>
             <UserPlus className="size-4" /> Onboarding

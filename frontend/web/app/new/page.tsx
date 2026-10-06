@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle2, Fingerprint, PenTool, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Fingerprint, KeyRound, PenTool, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -20,8 +20,15 @@ import { SignerAutocomplete } from "@/components/new/signer-autocomplete";
 import { cn } from "@/libs/utils";
 import { createCase } from "@/services/cases-service";
 import { createDocument } from "@/services/documents-service";
-import { createSignatureRequest } from "@/services/signature-requests-service";
+import { createEnvelopeTemplate, createSignatureRequest, fetchEnvelopeTemplates } from "@/services/signature-requests-service";
 import { fetchColleagues } from "@/services/directory-service";
+import {
+  applyEnvelopeTemplate,
+  draftToTemplateBody,
+  ENVELOPE_METHOD_OPTIONS,
+  KYC_OPTIONS,
+  type KycPolicy,
+} from "@/libs/envelope-template";
 import type { Colleague, SignatureMethod } from "@/libs/types";
 
 const signerSchema = z.object({
@@ -38,18 +45,13 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-const METHOD_OPTIONS: { value: SignatureMethod; label: string; icon: typeof Fingerprint }[] = [
-  { value: "DIGITAL", label: "Digital", icon: ShieldCheck },
-  { value: "AUTOGRAFA", label: "Autógrafa", icon: PenTool },
-  { value: "BIOMETRICA", label: "Biométrica", icon: Fingerprint },
-  { value: "ACCEPT", label: "Acepto", icon: CheckCircle2 },
-];
-
-const KYC_OPTIONS: { value: "NONE" | "ONCE" | "EVERY_SIGN"; label: string }[] = [
-  { value: "NONE", label: "Sin verificación" },
-  { value: "ONCE", label: "Una vez (≤90 días)" },
-  { value: "EVERY_SIGN", label: "Cada firma" },
-];
+const METHOD_ICONS = {
+  DIGITAL: ShieldCheck,
+  AUTOGRAFA: PenTool,
+  BIOMETRICA: Fingerprint,
+  ACCEPT: CheckCircle2,
+  PASSKEY: KeyRound,
+} as const;
 
 const STEPS = ["Documento", "Firmantes", "Método y envío"] as const;
 
@@ -59,8 +61,15 @@ export default function NewSignatureRequestPage() {
   const [file, setFile] = useState<File | null>(null);
   const [methods, setMethods] = useState<SignatureMethod[]>(["DIGITAL"]);
   const [requirePasskey, setRequirePasskey] = useState(false);
-  const [kycPolicy, setKycPolicy] = useState<"NONE" | "ONCE" | "EVERY_SIGN">("NONE");
+  const [kycPolicy, setKycPolicy] = useState<KycPolicy>("NONE");
+  const [slaHours, setSlaHours] = useState(72);
+  const [templateId, setTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const templatesQuery = useQuery({ queryKey: ["envelope-templates"], queryFn: fetchEnvelopeTemplates });
+  const templates = templatesQuery.data ?? [];
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -87,6 +96,50 @@ export default function NewSignatureRequestPage() {
     setMethods((prev) =>
       prev.includes(method) ? prev.filter((m) => m !== method) : [...prev, method],
     );
+  }
+
+  function onPickTemplate(id: string) {
+    setTemplateId(id);
+    const template = templates.find((item) => item.id === id);
+    if (!template) return;
+    const draft = applyEnvelopeTemplate(template);
+    setMethods(draft.methods);
+    setRequirePasskey(draft.requirePasskey);
+    setKycPolicy(draft.kycPolicy);
+    setSlaHours(draft.slaHours);
+    form.setValue("sequential", draft.sequential);
+  }
+
+  async function saveTemplate() {
+    const name = templateName.trim();
+    if (name.length < 1) {
+      toast.error("Ponle un nombre a la plantilla.");
+      return;
+    }
+    if (methods.length === 0) {
+      toast.error("Autoriza al menos un método antes de guardar la plantilla.");
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const created = await createEnvelopeTemplate(
+        draftToTemplateBody(name, {
+          methods,
+          sequential: form.getValues("sequential"),
+          kycPolicy,
+          requirePasskey,
+          slaHours,
+        }),
+      );
+      setTemplateId(created.id);
+      setTemplateName("");
+      await templatesQuery.refetch();
+      toast.success("Plantilla guardada. El próximo envío puede partir de ella.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar la plantilla.");
+    } finally {
+      setSavingTemplate(false);
+    }
   }
 
   async function goNext() {
@@ -121,8 +174,10 @@ export default function NewSignatureRequestPage() {
       const document = await createDocument({ caseId: kase.id, file });
       await createSignatureRequest({
         documentId: document.id,
+        templateId: templateId || undefined,
         methods,
         order: values.sequential ? "SECUENCIAL" : "PARALELO",
+        slaHours,
         requirePasskey,
         kycPolicy,
         signers: values.signers.map((s) => ({
@@ -341,8 +396,30 @@ export default function NewSignatureRequestPage() {
                     </p>
                   </div>
 
+                  <div>
+                    <Label htmlFor="template">Plantilla</Label>
+                    <select
+                      id="template"
+                      value={templateId}
+                      onChange={(event) => onPickTemplate(event.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    >
+                      <option value="">Sin plantilla</option>
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Elegir una plantilla rellena métodos, orden, identidad, passkey y plazo. Lo que
+                      cambies aquí se envía tal cual.
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    {METHOD_OPTIONS.map(({ value, label, icon: Icon }) => {
+                    {ENVELOPE_METHOD_OPTIONS.map(({ value, label }) => {
+                      const Icon = METHOD_ICONS[value];
                       const active = methods.includes(value);
                       return (
                         <button
@@ -390,6 +467,35 @@ export default function NewSignatureRequestPage() {
                         </Button>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="rounded-md border border-border p-4">
+                    <Label htmlFor="sla">Plazo (horas)</Label>
+                    <Input
+                      id="sla"
+                      type="number"
+                      min={1}
+                      max={2160}
+                      className="mt-2 w-32"
+                      value={slaHours}
+                      onChange={(event) => setSlaHours(Number(event.target.value) || 1)}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3 rounded-md border border-border p-4 sm:flex-row sm:items-end">
+                    <div className="flex-1">
+                      <Label htmlFor="template-name">Guardar esta configuración</Label>
+                      <Input
+                        id="template-name"
+                        className="mt-2"
+                        placeholder="Nombre de la plantilla"
+                        value={templateName}
+                        onChange={(event) => setTemplateName(event.target.value)}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" disabled={savingTemplate} onClick={saveTemplate}>
+                      {savingTemplate ? "Guardando…" : "Guardar plantilla"}
+                    </Button>
                   </div>
 
                   <div className="rounded-md bg-muted p-4 text-sm text-muted-foreground">
