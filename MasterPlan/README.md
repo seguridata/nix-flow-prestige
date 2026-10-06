@@ -1,6 +1,6 @@
 # Paquete P1 — Homologación Prestige
 
-**Estado al 2026-10-05.** P1 está cerrado (DoD 11/11). La foto viva es `PROGRESO.md`. `fix/p1-hardening` cierra el seguimiento en `663d5f5` y la UI de plantillas en `4981fd2`. `develop` toma esa rama desde `3c98372`.
+**Estado al 2026-10-06.** P1 está cerrado (DoD 11/11). La foto viva es `PROGRESO.md`, que desde esta fecha incluye la sección «UI y producto» (vista Drive, formatos y flujos, PR #5). `fix/p1-hardening` cierra el seguimiento en `663d5f5` y la UI de plantillas en `4981fd2`. `develop` toma esa rama desde `3c98372`.
 
 `REPORTE.md` es la auditoría del commit `d80a296`. No describe el repo de hoy.
 

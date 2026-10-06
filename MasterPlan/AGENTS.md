@@ -2,7 +2,9 @@
 
 Instrucciones para humanos y agentes de código que toquen `seguridata/nix-flow-prestige`.
 
-## Nota de estado (2026-10-05)
+## Nota de estado (2026-10-06)
+
+`develop` ya trae el PR #5: propuesta de UI, vista Drive (`Folder`), formatos (`DocumentTemplate`) y flujos publicables (`ProcessDefinition.flow`). Léase la sección «UI y producto» de `PROGRESO.md` antes de tocar `backend/bff/src/folders`, `document-templates` o `flow`, o `frontend/web/app/{documentos,formatos,flujos}`. Ahí están los límites que quedan (los flujos publicados no los ejecuta Temporal por sí solos).
 
 P1 está cerrado. Léase `PROGRESO.md` antes de tocar código. `REPORTE.md` describe el commit `d80a296` y ya no es el mapa del repo.
 
@@ -32,6 +34,8 @@ Leer antes de codear:
 - Firmas: `backend/bff/src/signing/`
 - Evidencia: `backend/bff/src/evidence/`
 - Onboarding: `backend/bff/src/onboarding/`
+- Vista Drive: `backend/bff/src/folders/` y `frontend/web/app/documentos`
+- Formatos y flujos: `backend/bff/src/document-templates/`, `backend/bff/src/flow/`, `frontend/web/app/{formatos,flujos}`
 
 ## Reglas duras
 
@@ -43,8 +47,7 @@ Leer antes de codear:
 6. Eventos de auditoría: insert only + `prevHash`. El trigger de inmutabilidad ya está.  
 7. `@Public()` ya usado, y que no se ensancha sin motivo: `GET /operations/health`, `GET /signature-requests/consent`, `GET /signature-requests/capabilities`, el portal `/public/links/:token/*`, `GET /evidence/:manifestId/verify`, y `POST /internal/workflows/*` (ese último solo salta el JWT: lo cierra `WorkerGuard`). No hay webhook IdV.  
 8. No agregues NOM-151, blockchain ni FIEL en el cierre del hardening.  
-9. No borres Temporal; no diseñes procesos BPMN nuevos.  
-10. Si un cambio rompe el freeze, el cambio se rechaza.
+9. Si un cambio rompe el freeze, el cambio se rechaza.
 
 ## Cómo implementar (orden)
 
@@ -89,10 +92,14 @@ Verificar con SimpleWebAuthn. Guardar `counter`.
 
 Los specs existentes en `signature-requests.service.spec.ts` se actualizan; no se ignoran.
 
+Una migración escrita a mano debe coincidir con `schema.prisma`: el CI corre `prisma migrate diff` y falla ante cualquier desfase (p. ej. un `onDelete` distinto del que declara el esquema).
+
+Con `ValidationPipe` + `enableImplicitConversion`, un DTO con `unknown[]` de objetos necesita `@Type(() => Object)`; si no, cada elemento llega como Array.
+
 ## Estilo
 
 TypeScript strict. Bun. Prisma migrate con nombre explícito (`p1_freeze_tokens`, etc.).  
-UI: seguir brand Prestige (no rediseñar).  
+UI: evolucionar dentro de la marca SeguriData (verde `#84bd00`, carbón, DM Sans, IBM Plex Mono). El verde no alcanza contraste como texto sobre blanco: se usa como relleno con texto en carbón. El estado nunca depende solo del color. Decisiones y defectos de las maquetas: `frontend/web/design/propuesta-ui/README.md`.  
 Textos de firma: “Acepto” / “Autógrafa” / “Passkey”. Nunca “e.firma SAT” ni “FIEL”.
 
 ## Definition of Done P1

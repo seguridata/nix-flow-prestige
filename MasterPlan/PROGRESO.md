@@ -1,10 +1,10 @@
 # PROGRESO — Homologación P1 y lo que vino después
 
 > Documento vivo. La foto de los sprints P1 (abajo) no se reescribe: es el cierre del 2026-09-26.
-> **Última revisión: 2026-10-05**, contra `fix/p1-hardening` y `feat/p2-pkcs11`.
+> **Última revisión: 2026-10-06**, contra `develop` tras fusionar los PR #4 (PKCS#11) y #5 (UI, vista Drive, formatos y flujos).
 > El seguimiento del hardening está en `663d5f5`. La UI de plantillas está en `4981fd2`.
 > El paquete versionado de P1 es `3c98372`. `develop` y `fix/p1-hardening` están en `1e22320`.
-> El corte PKCS#11 está en `09e6ac3` (`feat/p2-pkcs11`). Este sandbox no tiene módulo.
+> El corte PKCS#11 llegó a `develop` con el PR #4 (`09e6ac3`). Este sandbox no tiene módulo. La UI y las capacidades de producto de la sección «UI y producto» llegaron con el PR #5 (`7461ce8`).
 > **DoD P1: 11/11**, cerrado en `27719e1`. Esta revisión no re-ejecutó la suite; el estado sale de los commits, del código y del sandbox local.
 
 ## Cómo leer esto
@@ -200,13 +200,69 @@ Se aplicó `backend/infra/README-despliegue-tenants.md` al compose `prestige-san
 
 ---
 
+## UI y producto — PR #5 (2026-10-06)
+
+Primera pasada de la propuesta de UI «mostrar la prueba» (maquetas y decisiones en `frontend/web/design/propuesta-ui/`) más tres capacidades de producto. Todo vive en `develop`; la rama `feat/ui-bandeja` ya se fusionó. Evoluciona dentro de la marca SeguriData, sin cambiar tokens ni logo.
+
+### Superficies
+
+- **Bandeja del operador** (`d5f655e`): sobres agrupados por lo que requiere acción, riel de firmantes y panel de evidencia. «Íntegro» solo si el verificador del servidor lo confirmó.
+- **Portal del firmante** `/firmar/[token]` (`2e414c9`): una columna pensada para móvil, consentimiento sin marcar, y los métodos que ya no aplican (p. ej. tras un PAdES) se muestran deshabilitados con su razón en lugar de ocultarse (`splitMethods`). No muestra una huella «verificada»: el portal no recibe el hash del documento.
+- **Onboarding de identidad y pantalla de evidencia** (`109ae36`): estado en una frase, `reviewMode` y anulaciones visibles como decisión humana, y solo las comprobaciones que el servidor devuelve hoy.
+
+### Mis documentos (vista Drive) — `/documentos`
+
+Commits `c95f224` (backend) y `ea32e98` (UI).
+
+- Carpetas **personales** (sin compartir) y anidables > expedientes > documentos, en un grid estilo Windows 11, con arrastrar para mover (dnd-kit) y soltar PDFs sobre la página.
+- Al subir un PDF se pregunta si va en un expediente nuevo, uno existente (con buscador) o suelto. Un documento suelto es un expediente implícito de un solo documento (`Case.loose`).
+- Modelo: `Folder` (migración `20261006100000_drive_folders`) y en `Case` las columnas `ownerId`, `folderId` y `loose`. Endpoints `/drive/contents`, `/drive/cases`, `/drive/folders` y `PATCH /cases/:id`.
+- Reglas: una carpeta ajena responde 404 (no revela que existe); no se mueve una carpeta dentro de sus descendientes; solo se borran carpetas vacías; `Folder.parentId` es `ON DELETE RESTRICT` (`0c836d5`). Los expedientes anteriores a las carpetas (`ownerId` nulo) salen en la raíz.
+
+### Formatos con campos que se llenan — `/formatos`
+
+Commits `f8067f3` (backend) y `88158e0` (UI). Migración `20261006200000_document_templates`.
+
+- `DocumentTemplate`: PDF base cifrado (como `Document`), campos colocados en fracciones de página, flujo embebido (copia de un flujo publicado o propio), métodos y reglas de identidad. Es independiente de `EnvelopeTemplate`, que solo guarda reglas de firma.
+- Quien usa el formato llena sus datos y los ve sobre el PDF en vivo. `POST /document-templates/:id/instantiate` valida, rellena el PDF con pdf-lib, crea expediente y documento y calcula los firmantes **a partir de las condiciones del flujo** antes de crear la solicitud con `SignatureRequestsService.create`. Cualquier usuario autenticado puede usar un formato publicado, aunque solo tenga el rol `signer`; crear, editar y publicar es `admin`.
+- Pasos del flujo: `initiator`, persona `fixed` o `ask` (se elige al usar el formato). Condiciones con «Y» sobre variables de tipo número, fecha, texto o lista.
+- Los métodos de firma de un formato se limitan a la política del tenant (`GET /signature-requests/policy`).
+
+### Flujos publicables — `/flujos`
+
+- `ProcessDefinition` gana `flow` (JSON) y `publishedAt`. El admin crea un flujo, cada guardado es una versión nueva en borrador, y publicar una versión despublica las demás de esa clave. El BPMN 2.0 se **genera** desde la definición (`backend/bff/src/flow/`) con `exclusiveGateway` y layout, y se muestra con el visor existente.
+- Los seeds sin `flow` (`contratoDosPartes`) no cambian.
+
+### Otros cambios
+
+- El filtro global de excepciones conserva la lista `errors` de los 4xx y el cliente la muestra.
+- Bug corregido: con `enableImplicitConversion` en el `ValidationPipe`, class-transformer convertía cada elemento de un `unknown[]` en un Array y guardar un formato ya creado fallaba. El DTO usa `@Type(() => Object)` y hay prueba de regresión.
+- CI: el job `Migration drift check` exige que el esquema y las migraciones coincidan. Las migraciones escritas a mano deben verificarse contra `prisma migrate diff`.
+
+### Verificación
+
+`tsc` limpio, `eslint` 0 errores, 125 pruebas de frontend y 432 de backend (438 con el PR #4). Verificado en navegador con el stack local: vista Drive (crear carpeta, abrir expediente, arrastrar, abrir el diálogo de subida) y el flujo completo de formatos (crear, colocar campos, publicar, usar y enviar, con tres firmantes y el de RH solo por superar 5 días).
+
+### Límites que quedan
+
+- **Los flujos publicados no los ejecuta Temporal por sí solos.** Alimentan a los formatos, y los formatos sí ejecutan su flujo al enviarse (calculan los firmantes). Un envío normal desde «Enviar» sigue con el flujo fijo `contratoDosPartes`.
+- Los formatos no dibujan cajas de firma en el editor (el backend admite `signatureBoxes`); la firma se coloca después en el documento.
+- No se probó subir un archivo real desde el diálogo de Drive, ni las pantallas nuevas en móvil.
+- Si `SignatureRequestsService.create` falla tras crear el expediente, quedan un expediente y un documento sin solicitud, sin limpieza automática.
+- Publicar o despublicar flujos no deja evento de auditoría.
+- La bandeja no muestra vencimiento (`/me/inbox` y `/me/sent` no devuelven `expiresAt`) y la evidencia no tiene el desglose de cinco comprobaciones de la maqueta: el verificador real devuelve menos.
+
+---
+
 ## Lo que sigue fuera
 
 - **Vendor IdV de redirect** y la tabla `IdvSession`. No hay contrato, así que no se construye. El gate `kycPolicy` no se toca: sigue consumiendo el alta de onboarding.
 - **HSM/KMS.** `SoftwareKeyCustodian` sigue siendo el default de este sandbox: no hay módulo PKCS#11. En `09e6ac3`, `KEY_CUSTODIAN=pkcs11` hace que `Pkcs11KeyCustodian` firme con `CKM_RSA_PKCS` dentro del token (`PKCS11_MODULE`, `PKCS11_PIN`, `PKCS11_KEY_LABEL`, `PKCS11_SLOT`). Sin esos datos, o sin el paquete `graphene-pk11`, el servicio no está disponible y no cae a software. La llave privada no entra al proceso. Ruta: `P2-KMS.md`.
 - **Constancia NOM-151** de un PSC acreditado. Hay sello RFC 3161 (`TSA_URL`) y los campos `timestampProvider` / `timestampTokenHash`. No hay contrato ni API, así que no se construye un cliente. `trustedChain` queda en falso.
 - **OCSP/CRL y LTV** para que Acrobat valide sin ancla manual. La CA interna no publica AIA ni CRL DP. No se incrusta una respuesta armada a mano.
-- **`templateId` persistido** en la solicitud. Hoy solo aplica defaults al crear. La UI no cambia eso.
+- **`templateId` persistido** en la solicitud. Hoy solo aplica defaults al crear. La UI no cambia eso. Un formato (`DocumentTemplate`) tampoco queda ligado a la solicitud que crea.
+- **Ejecutar un flujo publicado en Temporal.** Hoy solo los formatos lo ejecutan, resolviendo los firmantes al crear la solicitud.
+- **Carpetas compartidas** o con permisos por persona. «Mis documentos» es personal por decisión de producto.
 - **RLS de Postgres** y llave o bucket por tenant. El aislamiento actual es de aplicación, más el `tenantId` de fila.
 - **Filas que el backfill deja en NULL a propósito.** Sin pista única no se inventa un slug. Otro entorno con datos corre la misma guía.
 
@@ -214,4 +270,6 @@ Object Lock GOVERNANCE a 30 días ya está en el init de MinIO del sandbox. No e
 
 ## Qué sigue
 
-1. Cargar un módulo PKCS#11 real y un certificado que Acrobat reconozca. El custodio ya firma dentro del token cuando esa configuración existe. OCSP/CRL se incrusta cuando ese certificado traiga AIA o CRL DP. La constancia NOM-151 espera contrato de PSC (`P2-KMS.md`).
+1. Probar el custodio PKCS#11 contra SoftHSM o el HSM real (hoy solo hay pruebas con un módulo simulado), firmar un PDF y validar el PAdES.
+2. Cargar un módulo PKCS#11 real y un certificado que Acrobat reconozca. El custodio ya firma dentro del token cuando esa configuración existe. OCSP/CRL se incrusta cuando ese certificado traiga AIA o CRL DP. La constancia NOM-151 espera contrato de PSC (`P2-KMS.md`).
+3. Cajas de firma en el editor de formatos, auditoría de flujos y limpieza de expedientes huérfanos (ver «Límites que quedan»).
