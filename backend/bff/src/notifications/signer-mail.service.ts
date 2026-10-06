@@ -118,17 +118,39 @@ export class SignerMailService {
     const url = manifest
       ? this.appUrl(`/verificar?id=${manifest.manifestId}`)
       : this.appUrl(`/documents/${ctx.request.documentId}`);
-    const recipients = new Map<string, string | undefined>();
+    // Copia firmada para cada firmante: sólo si hay copia de ceremonia y no está
+    // apagada (`SIGNED_COPY_TO_SIGNERS=false`, p. ej. documentos confidenciales).
+    const sendCopy =
+      process.env.SIGNED_COPY_TO_SIGNERS !== 'false' && Boolean(ctx.request.document?.presentedObjectKey);
+    const recipients = new Map<string, { name?: string; signerId?: string }>();
     for (const s of ctx.request.signers) {
       const to = s.email ?? undefined; // el correo de firma es el del `Signer` de ESTA solicitud
-      if (to) recipients.set(to, s.delegatedToName ?? s.name ?? undefined);
+      if (to) recipients.set(to, { name: s.delegatedToName ?? s.name ?? undefined, signerId: s.delegatedTo ?? s.signerId });
     }
     if (ctx.request.requestedBy?.includes('@')) {
-      recipients.set(ctx.request.requestedBy, ctx.request.requestedByName ?? undefined);
+      recipients.set(ctx.request.requestedBy, { name: ctx.request.requestedByName ?? undefined });
     }
-    for (const [to, name] of recipients) {
-      const t = templates.completed({ name, documentTitle: ctx.documentTitle, url });
-      await this.enqueue(to, t, 'completed', `completed:${signatureRequestId}:${to}`, ctx.request.tenantId);
+    for (const [to, who] of recipients) {
+      // El emisor (sin `signerId`) usa la app; sólo los firmantes reciben enlace de descarga.
+      const copy = sendCopy && who.signerId ? await this.copyLink(signatureRequestId, who.signerId) : undefined;
+      const t = templates.completed({
+        name: who.name,
+        documentTitle: ctx.documentTitle,
+        url,
+        copyUrl: copy ? LINK_PLACEHOLDER : undefined,
+      });
+      await this.enqueue(to, t, 'completed', `completed:${signatureRequestId}:${to}`, ctx.request.tenantId, copy);
+    }
+  }
+
+  /** Enlace de descarga (ventana de tiempo, sin consumirse). Un fallo no debe tumbar el correo. */
+  private async copyLink(signatureRequestId: string, signerId: string): Promise<string | undefined> {
+    try {
+      const issued = await this.links.issue({ purpose: 'download', signatureRequestId, signerId });
+      return issued.url;
+    } catch (error) {
+      this.log.warn(`No se pudo emitir el enlace de copia firmada: ${(error as Error).message}`);
+      return undefined;
     }
   }
 

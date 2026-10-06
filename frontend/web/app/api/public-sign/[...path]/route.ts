@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+import { clientIpFromForwarded, trustedProxyHops } from "@/libs/client-ip";
+
 export const dynamic = "force-dynamic";
 
 const BFF_URL = process.env.BFF_URL ?? "http://localhost:3000";
@@ -39,6 +41,12 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
   req.headers.forEach((v, k) => {
     if (!STRIP.has(k.toLowerCase())) headers.set(k, v);
   });
+
+  // IP real del firmante (vía los proxies de confianza declarados): el BFF la usa
+  // para el throttler y para la prueba de consentimiento. Sin declarar proxies
+  // no se repone nada (no se puede distinguir una IP real de una falseada).
+  const ip = clientIpFromForwarded(req.headers.get("x-forwarded-for"), trustedProxyHops());
+  if (ip) headers.set("x-forwarded-for", ip);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   let upstream: Response;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BadRequestException, ConflictException, GoneException } from '@nestjs/common';
+import { BadRequestException, ConflictException, GoneException, NotFoundException } from '@nestjs/common';
 import { PublicSignController } from './public-sign.controller';
 
 describe('PublicSignController.sign - respuesta publica', () => {
@@ -125,5 +125,77 @@ describe('PublicSignController.resolve — allowedMethodsNow', () => {
     const out = await ctrl.resolve('tok');
     expect(out.methods).toEqual(['DIGITAL', 'AUTOGRAFA', 'ACCEPT']);
     expect(out.allowedMethodsNow).toEqual(['DIGITAL', 'ACCEPT']);
+  });
+});
+
+describe('PublicSignController - bloqueo por token', () => {
+  const link = { purpose: 'sign', signatureRequestId: 'sr-1', signerId: 'ana' };
+
+  it('una aserción de passkey rechazada suma un fallo al enlace y relanza', async () => {
+    const links = { resolve: vi.fn(async () => link), recordFailure: vi.fn(async () => undefined) };
+    const passkeys = { finish: vi.fn(async () => { throw new BadRequestException('aserción inválida'); }) };
+    const ctrl = new PublicSignController(links as never, {} as never, {} as never, passkeys as never);
+    await expect(ctrl.passkeyFinish('tok', { assertionId: 'a', response: {} } as never)).rejects.toBeInstanceOf(BadRequestException);
+    expect(links.recordFailure).toHaveBeenCalledWith('tok');
+  });
+
+  it('una firma rechazada suma un fallo y NO consume el enlace', async () => {
+    const links = { resolve: vi.fn(async () => link), recordFailure: vi.fn(async () => undefined), consume: vi.fn() };
+    const signatureRequests = { sign: vi.fn(async () => { throw new BadRequestException('consentimiento requerido'); }) };
+    const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
+    await expect(ctrl.sign('tok', { method: 'ACCEPT' } as never, '1.1.1.1', 'ua', undefined)).rejects.toBeInstanceOf(BadRequestException);
+    expect(links.recordFailure).toHaveBeenCalledWith('tok');
+    expect(links.consume).not.toHaveBeenCalled();
+  });
+
+  it('un conflicto de estado (409) no cuenta como intento fallido', async () => {
+    const links = { resolve: vi.fn(async () => link), recordFailure: vi.fn(), consume: vi.fn() };
+    const signatureRequests = { sign: vi.fn(async () => { throw new ConflictException('ya firmó'); }) };
+    const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
+    await expect(ctrl.sign('tok', { method: 'ACCEPT' } as never, '1.1.1.1', 'ua', undefined)).rejects.toBeInstanceOf(ConflictException);
+    expect(links.recordFailure).not.toHaveBeenCalled();
+  });
+});
+
+describe('PublicSignController.download', () => {
+  function res() {
+    const headers: Record<string, unknown> = {};
+    const r = {
+      status: vi.fn(() => r),
+      setHeader: vi.fn((k: string, v: unknown) => { headers[k] = v; return r; }),
+      end: vi.fn(),
+    };
+    return { r, headers };
+  }
+  const link = { purpose: 'download', signatureRequestId: 'sr-1', signerId: 'ana' };
+  const completed = { id: 'sr-1', status: 'COMPLETADA', documentId: 'd-1', document: { tenantId: 't1' } };
+
+  it('entrega la copia firmada como adjunto, audita y NO consume el enlace', async () => {
+    const links = { resolve: vi.fn(async () => link), consume: vi.fn() };
+    const prisma = { signatureRequest: { findUnique: vi.fn(async () => completed) } };
+    const documents = { getPresented: vi.fn(async () => ({ bytes: Buffer.from('%PDF-firmado'), filename: 'contrato.pdf' })) };
+    const signatureRequests = { recordSignedCopyDownload: vi.fn(async () => undefined) };
+    const ctrl = new PublicSignController(links as never, signatureRequests as never, prisma as never, {} as never, documents as never);
+    const { r, headers } = res();
+
+    await ctrl.download('tok', r as never, '9.9.9.9', 'ua');
+
+    expect(links.resolve).toHaveBeenCalledWith('tok', 'download');
+    expect(documents.getPresented).toHaveBeenCalledWith('d-1', 't1');
+    expect(headers['Content-Type']).toBe('application/pdf');
+    expect(String(headers['Content-Disposition'])).toContain("attachment; filename*=UTF-8''contrato-firmado.pdf");
+    expect(headers['Cache-Control']).toBe('private, no-store');
+    expect(r.end).toHaveBeenCalledWith(Buffer.from('%PDF-firmado'));
+    expect(signatureRequests.recordSignedCopyDownload).toHaveBeenCalledWith('sr-1', { signerId: 'ana', ip: '9.9.9.9', userAgent: 'ua' });
+    expect(links.consume).not.toHaveBeenCalled();
+  });
+
+  it('solicitud aún no COMPLETADA => 404 y no lee el PDF', async () => {
+    const links = { resolve: vi.fn(async () => link) };
+    const prisma = { signatureRequest: { findUnique: vi.fn(async () => ({ ...completed, status: 'EN_FIRMA' })) } };
+    const documents = { getPresented: vi.fn() };
+    const ctrl = new PublicSignController(links as never, {} as never, prisma as never, {} as never, documents as never);
+    await expect(ctrl.download('tok', res().r as never, 'ip')).rejects.toBeInstanceOf(NotFoundException);
+    expect(documents.getPresented).not.toHaveBeenCalled();
   });
 });

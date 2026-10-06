@@ -515,6 +515,21 @@ export class SignatureRequestsService {
     return this.writeConsent(id, body.signerId, body.ip, body.userAgent);
   }
 
+  /** Descarga de la copia firmada desde el portal público: queda en la cadena de auditoría. */
+  async recordSignedCopyDownload(
+    id: string,
+    body: { signerId: string; ip?: string; userAgent?: string },
+  ) {
+    const request = await this.getOrThrow(id);
+    await this.collab.audit({
+      signatureRequestId: id,
+      documentId: request.documentId,
+      actorId: body.signerId,
+      action: 'SIGNED_COPY_DOWNLOADED',
+      payload: { ip: body.ip, userAgent: body.userAgent },
+    });
+  }
+
   /** Marca la solicitud EXPIRADA (si sigue abierta) y avisa al workflow. */
   private async expire(request: { id: string; documentId: string }) {
     const closed = await this.prisma.signatureRequest.updateMany({
