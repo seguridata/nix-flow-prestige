@@ -4,11 +4,12 @@ import { use, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { startAuthentication } from "@simplewebauthn/browser";
+import { CircleCheck, CircleX } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AutographPad } from "@/components/signature/autograph-pad";
-import { HIDDEN_VISUAL_METHODS_NOTICE, resolveAllowedMethods } from "@/libs/allowed-methods";
+import { splitMethods } from "@/libs/allowed-methods";
+import { cn } from "@/libs/utils";
 import {
   acceptPublicConsent,
   beginPasskey,
@@ -94,37 +95,37 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
   const passkeySatisfied = !needsPasskey || Boolean(assertionId);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-4 py-10">
-      <div className="mb-6 flex items-baseline gap-2">
-        <span className="text-lg font-bold tracking-wide">PRESTIGE</span>
-        <span className="text-sm text-muted-foreground">· Portal de firma</span>
-      </div>
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-4 pb-10 pt-5">
+      <header className="mb-8 flex items-center gap-2.5 border-b border-border pb-4">
+        <img src="/brand/seguridata-logo.png" alt="" className="size-8 rounded-md object-contain" width={32} height={32} />
+        <span className="flex flex-col leading-none">
+          <span className="text-[17px] font-semibold tracking-tight">Prestige</span>
+          <span className="mt-0.5 text-xs text-muted-foreground">por SeguriData</span>
+        </span>
+      </header>
 
       {link.isLoading ? (
-        <Card className="p-6 text-sm text-muted-foreground">Validando el enlace…</Card>
+        <p className="text-sm text-muted-foreground" role="status">
+          Validando el enlace…
+        </p>
       ) : link.isError ? (
-        <Card className="p-6">
-          <h1 className="text-lg font-semibold">Enlace no válido</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{(link.error as Error).message}</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Solicita al remitente que te reenvíe un enlace nuevo.
-          </p>
-        </Card>
+        <Outcome
+          icon={<CircleX className="size-6" aria-hidden />}
+          title="Este enlace no es válido"
+          body={`${(link.error as Error).message} Pide al remitente que te envíe un enlace nuevo.`}
+        />
       ) : rejected || link.data?.myStatus === "RECHAZADO" ? (
-        <Card className="p-6" role="status">
-          <h1 className="text-lg font-semibold">Solicitud rechazada</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Rechazaste firmar este documento. Se notificó al remitente y este enlace ya no puede
-            utilizarse. Puedes cerrar esta ventana.
-          </p>
-        </Card>
+        <Outcome
+          icon={<CircleX className="size-6" aria-hidden />}
+          title="Rechazaste este documento"
+          body="Se avisó al remitente y el enlace ya no puede usarse. Puedes cerrar esta ventana."
+        />
       ) : done || link.data?.myStatus === "FIRMADO" ? (
-        <Card className="p-6">
-          <h1 className="text-lg font-semibold">Firma completada</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Gracias. Tu firma quedó registrada en el expediente de evidencia de Prestige.
-          </p>
-        </Card>
+        <Outcome
+          icon={<CircleCheck className="size-6" aria-hidden />}
+          title="Firma registrada"
+          body="Tu firma quedó en el expediente de evidencia de Prestige. Puedes cerrar esta ventana."
+        />
       ) : (
         <FirmarForm
           ctx={link.data!}
@@ -144,11 +145,13 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
             passkeySatisfied &&
             !sign.isPending
           }
+          hasStroke={!!stroke}
           onSubmit={() => sign.mutate()}
           pending={sign.isPending}
           onReject={() => setRejectOpen(true)}
         />
       )}
+
       <Dialog open={rejectOpen} onOpenChange={(o) => !reject.isPending && setRejectOpen(o)}>
         <DialogContent>
           <DialogHeader>
@@ -182,6 +185,26 @@ export default function FirmarPage({ params }: { params: Promise<{ token: string
   );
 }
 
+function Outcome({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <section role="status" className="space-y-3">
+      <span className="text-foreground">{icon}</span>
+      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
+    </section>
+  );
+}
+
+const METHOD_TEXT: Record<Method, { label: string; hint: string }> = {
+  ACCEPT: { label: "Acepto", hint: "Confirmas con un toque, sobre el documento original congelado." },
+  PASSKEY: { label: "Passkey", hint: "Usa tu huella o el desbloqueo del teléfono." },
+  AUTOGRAFA: { label: "Autógrafa", hint: "Dibuja tu firma con el dedo." },
+  DIGITAL: { label: "Firma digital", hint: "Certificado emitido por la CA interna de SeguriData." },
+};
+const METHOD_ORDER: Method[] = ["ACCEPT", "PASSKEY", "AUTOGRAFA", "DIGITAL"];
+const isMethod = (m: string): m is Method => m in METHOD_TEXT;
+const byOrder = (a: Method, b: Method) => METHOD_ORDER.indexOf(a) - METHOD_ORDER.indexOf(b);
+
 function FirmarForm({
   ctx,
   consent,
@@ -189,6 +212,7 @@ function FirmarForm({
   method,
   setMethod,
   setStroke,
+  hasStroke,
   onVerifyPasskey,
   verifyingPasskey,
   passkeyVerified,
@@ -204,6 +228,7 @@ function FirmarForm({
   method: Method | null;
   setMethod: (m: Method) => void;
   setStroke: (b: Blob | null) => void;
+  hasStroke: boolean;
   onVerifyPasskey: () => void;
   verifyingPasskey: boolean;
   passkeyVerified: boolean;
@@ -213,92 +238,163 @@ function FirmarForm({
   pending: boolean;
   onReject: () => void;
 }) {
-  const labels: Record<Method, string> = {
-    DIGITAL: "Firma digital (PAdES)",
-    AUTOGRAFA: "Firma autógrafa",
-    ACCEPT: "Acepto",
-    PASSKEY: "Passkey",
-  };
-  const base = ctx.methods.length ? ctx.methods : ["DIGITAL"];
-  const { methods: usable, hiddenSome } = resolveAllowedMethods(base, ctx.allowedMethodsNow);
-  const methods = usable.filter(
-    (m): m is Method => m === "DIGITAL" || m === "AUTOGRAFA" || m === "ACCEPT" || m === "PASSKEY",
-  );
+  const base = (ctx.methods.length ? ctx.methods : ["DIGITAL"]).filter(isMethod);
+  const split = splitMethods(base, ctx.allowedMethodsNow?.filter(isMethod));
+  const usable = split.usable.sort(byOrder);
+  const unavailable = split.unavailable.sort(byOrder);
+
+  const expires = ctx.expiresAt
+    ? new Date(ctx.expiresAt).toLocaleDateString("es-MX", { day: "numeric", month: "long" })
+    : null;
+
+  // Lo que falta para poder firmar, dicho en una frase (el botón solo está apagado por esto).
+  const missing = !consent
+    ? "Marca el consentimiento para continuar."
+    : !method
+      ? "Elige cómo firmar."
+      : needsPasskey && !passkeyVerified
+        ? "Verifica tu passkey para continuar."
+        : method === "AUTOGRAFA" && !hasStroke
+          ? "Dibuja tu firma para continuar."
+          : null;
 
   return (
-    <Card className="space-y-5 p-6">
-      <div>
-        <h1 className="text-lg font-semibold">{ctx.documentTitle ?? "Documento por firmar"}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {ctx.requestedByName ? `${ctx.requestedByName} te ` : "Se te "}envió este documento para tu
-          firma electrónica{ctx.signerName ? `, ${ctx.signerName}` : ""}.
-        </p>
-      </div>
+    <div className="space-y-7">
+      <section>
+        <h1 className="text-2xl font-semibold leading-tight tracking-tight">
+          {ctx.requestedByName ? `${ctx.requestedByName} te pidió firmar` : "Te pidieron firmar"}
+        </h1>
+        <div className="mt-4 rounded-lg border border-border bg-muted/50 p-4">
+          <p className="text-base font-medium">{ctx.documentTitle ?? "Documento por firmar"}</p>
+          {ctx.signerName ? <p className="mt-1 text-sm text-muted-foreground">Firmas como {ctx.signerName}</p> : null}
+          <p className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">
+            El documento original quedó congelado: tu firma se registra sobre su huella y cualquier cambio posterior se
+            detecta.
+          </p>
+        </div>
+      </section>
 
-      <label className="flex items-start gap-2 text-sm">
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 text-sm leading-snug">
         <input
           type="checkbox"
-          className="mt-1"
+          className="mt-0.5 size-5 shrink-0 accent-[var(--brand-carbon)]"
           checked={consent}
           onChange={(e) => setConsent(e.target.checked)}
         />
         <span>
-          Acepto firmar electrónicamente este documento y que se registren la fecha, hora y datos
-          técnicos de mi firma como evidencia (consentimiento versionado).
+          Acepto firmar electrónicamente este documento y que se registren la fecha, la hora y los datos técnicos de mi
+          firma como evidencia.
         </span>
       </label>
 
+      <fieldset>
+        <legend className="mb-3 text-lg font-semibold">Elige cómo firmar</legend>
+        <div className="space-y-2.5">
+          {usable.map((m) => (
+            <MethodOption key={m} selected={method === m} onSelect={() => setMethod(m)} {...METHOD_TEXT[m]}>
+              {m === "AUTOGRAFA" && method === "AUTOGRAFA" ? (
+                <div className="mt-3 h-40 overflow-hidden rounded-md border border-border bg-background">
+                  <AutographPad onChange={setStroke} />
+                </div>
+              ) : null}
+            </MethodOption>
+          ))}
+          {unavailable.map((m) => (
+            <MethodOption
+              key={m}
+              disabled
+              selected={false}
+              label={METHOD_TEXT[m].label}
+              hint="No disponible: este documento ya tiene firma digital."
+            />
+          ))}
+        </div>
+      </fieldset>
+
       {needsPasskey ? (
-        <div className="rounded-md border border-border bg-muted/40 p-3">
+        <section className="rounded-lg border border-border p-4">
           <p className="text-sm font-medium">
-            {ctx.requirePasskey ? "Esta firma exige verificación con passkey" : "Verifica con tu passkey"}
+            {ctx.requirePasskey ? "Esta firma exige verificar tu passkey" : "Verifica tu identidad con tu passkey"}
           </p>
           <Button
             type="button"
-            size="sm"
-            className="mt-2"
+            className="mt-3 w-full"
             variant={passkeyVerified ? "outline" : "default"}
             disabled={verifyingPasskey || passkeyVerified}
             onClick={onVerifyPasskey}
           >
-            {passkeyVerified ? "Passkey verificada ✓" : verifyingPasskey ? "Verificando…" : "Verificar con passkey"}
+            {passkeyVerified ? "Passkey verificada" : verifyingPasskey ? "Verificando…" : "Verificar con passkey"}
           </Button>
-        </div>
+        </section>
       ) : null}
 
-      <div>
-        <p className="mb-2 text-sm font-medium">Método de firma</p>
-        {hiddenSome ? <p className="mb-2 text-xs text-muted-foreground">{HIDDEN_VISUAL_METHODS_NOTICE}</p> : null}
-        <div className="flex flex-wrap gap-2">
-          {methods.map((m) => (
-            <Button
-              key={m}
-              type="button"
-              size="sm"
-              variant={method === m ? "default" : "outline"}
-              onClick={() => setMethod(m)}
-            >
-              {labels[m]}
-            </Button>
-          ))}
-        </div>
+      <div className="space-y-3">
+        <Button size="lg" className="w-full" disabled={!canSubmit} onClick={onSubmit}>
+          {pending ? "Firmando…" : method ? `Firmar con ${METHOD_TEXT[method].label}` : "Firmar documento"}
+        </Button>
+        {missing && !pending ? (
+          <p className="text-center text-sm text-muted-foreground" role="status">
+            {missing}
+          </p>
+        ) : null}
+        <Button type="button" variant="ghost" className="w-full text-muted-foreground" disabled={pending} onClick={onReject}>
+          Rechazar este documento
+        </Button>
       </div>
 
-      {method === "AUTOGRAFA" ? (
-        <div>
-          <p className="mb-2 text-sm font-medium">Traza tu firma</p>
-          <div className="h-40 rounded-md border border-border">
-            <AutographPad onChange={setStroke} />
-          </div>
-        </div>
-      ) : null}
+      <p className="text-center text-xs text-muted-foreground">
+        Este enlace es de un solo uso{expires ? ` · vence el ${expires}` : ""}
+      </p>
+    </div>
+  );
+}
 
-      <Button className="w-full" disabled={!canSubmit} onClick={onSubmit}>
-        {pending ? "Firmando…" : "Firmar documento"}
-      </Button>
-      <Button type="button" variant="outline" className="w-full" disabled={pending} onClick={onReject}>
-        Rechazar
-      </Button>
-    </Card>
+/** Opción de método como radio nativo: el estado seleccionado cambia el aro y el punto, no solo el color. */
+function MethodOption({
+  label,
+  hint,
+  selected,
+  disabled = false,
+  onSelect,
+  children,
+}: {
+  label: string;
+  hint: string;
+  selected: boolean;
+  disabled?: boolean;
+  onSelect?: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <label
+      className={cn(
+        "relative flex items-start gap-3 rounded-lg border p-4",
+        disabled ? "cursor-not-allowed border-border bg-muted/50" : "cursor-pointer",
+        !disabled && (selected ? "border-2 border-foreground" : "border-border"),
+      )}
+    >
+      <input
+        type="radio"
+        name="metodo"
+        className="peer sr-only"
+        checked={selected}
+        disabled={disabled}
+        onChange={onSelect}
+      />
+      <span
+        aria-hidden
+        className={cn(
+          "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2",
+          selected ? "border-foreground" : "border-border",
+        )}
+      >
+        {selected ? <span className="size-2.5 rounded-full bg-foreground" /> : null}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn("block text-base font-medium", disabled && "text-muted-foreground")}>{label}</span>
+        <span className="block text-sm text-muted-foreground">{hint}</span>
+        {children}
+      </span>
+    </label>
   );
 }
