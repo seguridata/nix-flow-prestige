@@ -53,6 +53,18 @@ export class OnboardingActionDto {
   approve?: boolean;
 }
 
+export class EnableOnboardingDto {
+  /** Anular un resultado biométrico NO aprobado. Exige `notes` (≥ 10 caracteres) y queda auditado. */
+  @IsOptional()
+  @IsBoolean()
+  override?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+}
+
 export class AttachIneDto {
   @IsIn(['front', 'back'])
   part!: 'front' | 'back';

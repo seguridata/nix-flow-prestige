@@ -9,6 +9,7 @@ import { StorageService } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
+import { baseSignerId, decideEnableMode, uniqueSignerId } from './enable-policy';
 import { BIOMETRIC_CONSENT_TEXT, BIOMETRIC_CONSENT_VERSION, biometricConsentHash } from './biometric-consent';
 import { OcrService } from '../identity/ocr.service';
 import { IDENTITY_VERIFIER, type IdentityVerifier } from '../identity/identity-verifier';
@@ -374,7 +375,10 @@ export class OnboardingService {
     return publicView(updated);
   }
 
-  async enable(id: string, body: { actorId: string; actorName?: string; tenantId: string }) {
+  async enable(
+    id: string,
+    body: { actorId: string; actorName?: string; tenantId: string; override?: boolean; notes?: string },
+  ) {
     const current = await this.load(id, body.tenantId);
     assertBiometricConsent(current);
     if (!current.ineVerified) {
@@ -383,17 +387,39 @@ export class OnboardingService {
     if (!current.selfie) {
       throw new BadRequestException('Falta la prueba de vida');
     }
-    const signerId = current.email.split('@')[0].replace(/[^a-z0-9._-]/gi, '') || current.id.slice(0, 8);
+    // No se marca livenessOk por decreto: el modo de revisión queda explícito y auditado.
+    const reviewMode = decideEnableMode(current, { override: body.override, notes: body.notes });
+    const signerId = await uniqueSignerId(
+      baseSignerId(current.email, current.id),
+      current.email,
+      current.id,
+      async (candidate, email) =>
+        (await this.prisma.onboardingCase.count({
+          where: {
+            tenantId: current.tenantId,
+            enabledSignerId: candidate,
+            status: 'HABILITADO',
+            NOT: { email: { equals: email, mode: 'insensitive' } },
+          },
+        })) > 0,
+    );
     const updated = await this.prisma.onboardingCase.update({
       where: { id },
-      data: { status: 'HABILITADO', enabledSignerId: signerId, livenessOk: true },
+      data: { status: 'HABILITADO', enabledSignerId: signerId },
     });
     await this.collab.audit({
       onboardingId: id,
       actorId: body.actorId,
       actorName: body.actorName,
       action: 'SIGNER_ENABLED',
-      payload: { enabledSignerId: signerId },
+      payload: {
+        enabledSignerId: signerId,
+        reviewMode,
+        engine: current.biometricEngine ?? 'noop',
+        livenessOk: current.livenessOk,
+        faceMatchOk: current.faceMatchOk,
+        ...(reviewMode === 'manual-override' ? { overrideNotes: (body.notes ?? '').trim().slice(0, 500) } : {}),
+      },
     });
     await this.collab.notify(
       signerId,

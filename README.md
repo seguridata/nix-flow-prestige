@@ -72,7 +72,7 @@ Infra Docker (Postgres, Keycloak, Temporal, MinIO, Redis) + Prisma + frontend (`
 
 `Ctrl+C` para front y BFF. La infra Docker sigue; `bun run down` la baja. Para rehacer el sandbox: `bun run dev -- --reset`.
 
-App: http://127.0.0.1:3001 (sesión local `maria`). BFF: http://127.0.0.1:3000.
+App: http://localhost:3001 (login OIDC contra Keycloak; usuarios de desarrollo `maria`, `carlos` y `roberto`, ver `backend/infra/keycloak/prestige-realm.json`). BFF: http://localhost:3000. Usa `localhost`, no `127.0.0.1`: el redirect OIDC del realm está registrado para `localhost`.
 
 ### Paso a paso (manual)
 
@@ -166,7 +166,7 @@ curl.exe -s http://127.0.0.1:3000/operations/health
 
 | Servicio      | URL                              | Credenciales                                 |
 | ------------- | -------------------------------- | -------------------------------------------- |
-| App           | http://localhost:3001            | sesión local `maria` (aún no hay login OIDC) |
+| App           | http://localhost:3001            | login OIDC (Keycloak, realm `prestige`)      |
 | BFF           | http://localhost:3000            | —                                            |
 | Cockpit       | http://localhost:3001/operations | salud Postgres / MinIO / Temporal            |
 | Temporal UI   | http://localhost:8088            | —                                            |
@@ -199,4 +199,4 @@ Solo van en `.env` las URLs y secretos de conexión (ver `backend/bff/.env.examp
 
 - Persistencia Postgres, guard JWT Keycloak, WebSocket, orden secuencial, evidencia SHA-256 verificable, campos sobre PDF, Temporal (con fallback local si el motor aún no responde), MinIO opcional, consentimiento persistido, autógrafa sellada.
 
-Pendiente explícito: login OIDC en el cliente, HSM/PKI de producción, proveedor biométrico de pago, constancia NOM-151.
+Pendiente explícito: HSM/PKI de producción, proveedor biométrico de pago, constancia NOM-151.
