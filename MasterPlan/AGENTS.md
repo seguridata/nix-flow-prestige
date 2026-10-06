@@ -8,7 +8,7 @@ P1 está cerrado. Léase `PROGRESO.md` antes de tocar código. `REPORTE.md` desc
 
 La rama con el endurecimiento es `fix/p1-hardening`. El seguimiento (métodos tras un PAdES, reconciliador de Temporal, `bootstrap:tenant`, `backfill:tenant-ids`, 404 de evidencia, passkey en solicitud cerrada y guarda de Object Lock) está en `663d5f5`. La UI de plantillas está en `4981fd2`. No los reimplementes.
 
-**`DigitalSignerAdapter` no es HMAC.** Firma PAdES (`backend/bff/src/signing/digital.adapter.ts`). El default de este sandbox es la CA interna. `KEY_CUSTODIAN=pkcs11` selecciona `Pkcs11KeyCustodian`: la RSA se calcula en el token (`CKM_RSA_PKCS`) y este proceso no recibe la llave. Sin módulo, PIN, etiqueta o `graphene-pk11`, el servicio no está disponible y no hay fallback a software. OCSP/CRL embebido y la constancia NOM-151 siguen abiertos (`P2-KMS.md`).
+**`DigitalSignerAdapter` no es HMAC.** Firma PAdES (`backend/bff/src/signing/digital.adapter.ts`). El default de este sandbox es la CA interna. `KEY_CUSTODIAN=pkcs11` selecciona `Pkcs11KeyCustodian` (`09e6ac3`): la RSA se calcula en el token (`CKM_RSA_PKCS`) y este proceso no recibe la llave. Sin módulo, PIN, etiqueta o `graphene-pk11`, el servicio no está disponible y no hay fallback a software. OCSP/CRL embebido y la constancia NOM-151 siguen abiertos (`P2-KMS.md`).
 
 `TenantContextGuard` deja `user.tenantId` en el slug. `TenantMembership.tenantId` es el uuid del `Tenant`. Un backfill o un filtro que copie ese uuid aísla contra el identificador equivocado.
 

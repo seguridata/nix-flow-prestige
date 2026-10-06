@@ -4,7 +4,7 @@
 > **Última revisión: 2026-10-05**, contra `fix/p1-hardening` y `feat/p2-pkcs11`.
 > El seguimiento del hardening está en `663d5f5`. La UI de plantillas está en `4981fd2`.
 > El paquete versionado de P1 es `3c98372`. `develop` y `fix/p1-hardening` están en `1e22320`.
-> El corte PKCS#11 está en `feat/p2-pkcs11`. Este sandbox no tiene módulo.
+> El corte PKCS#11 está en `09e6ac3` (`feat/p2-pkcs11`). Este sandbox no tiene módulo.
 > **DoD P1: 11/11**, cerrado en `27719e1`. Esta revisión no re-ejecutó la suite; el estado sale de los commits, del código y del sandbox local.
 
 ## Cómo leer esto
@@ -203,7 +203,7 @@ Se aplicó `backend/infra/README-despliegue-tenants.md` al compose `prestige-san
 ## Lo que sigue fuera
 
 - **Vendor IdV de redirect** y la tabla `IdvSession`. No hay contrato, así que no se construye. El gate `kycPolicy` no se toca: sigue consumiendo el alta de onboarding.
-- **HSM/KMS.** `SoftwareKeyCustodian` sigue siendo el default de este sandbox: no hay módulo PKCS#11. En `feat/p2-pkcs11`, `KEY_CUSTODIAN=pkcs11` hace que `Pkcs11KeyCustodian` firme con `CKM_RSA_PKCS` dentro del token (`PKCS11_MODULE`, `PKCS11_PIN`, `PKCS11_KEY_LABEL`, `PKCS11_SLOT`). Sin esos datos, o sin el paquete `graphene-pk11`, el servicio no está disponible y no cae a software. La llave privada no entra al proceso. Ruta: `P2-KMS.md`.
+- **HSM/KMS.** `SoftwareKeyCustodian` sigue siendo el default de este sandbox: no hay módulo PKCS#11. En `09e6ac3`, `KEY_CUSTODIAN=pkcs11` hace que `Pkcs11KeyCustodian` firme con `CKM_RSA_PKCS` dentro del token (`PKCS11_MODULE`, `PKCS11_PIN`, `PKCS11_KEY_LABEL`, `PKCS11_SLOT`). Sin esos datos, o sin el paquete `graphene-pk11`, el servicio no está disponible y no cae a software. La llave privada no entra al proceso. Ruta: `P2-KMS.md`.
 - **Constancia NOM-151** de un PSC acreditado. Hay sello RFC 3161 (`TSA_URL`) y los campos `timestampProvider` / `timestampTokenHash`. No hay contrato ni API, así que no se construye un cliente. `trustedChain` queda en falso.
 - **OCSP/CRL y LTV** para que Acrobat valide sin ancla manual. La CA interna no publica AIA ni CRL DP. No se incrusta una respuesta armada a mano.
 - **`templateId` persistido** en la solicitud. Hoy solo aplica defaults al crear. La UI no cambia eso.

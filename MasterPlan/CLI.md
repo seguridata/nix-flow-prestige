@@ -24,7 +24,7 @@ Foto del 2026-10-05. El detalle está en `PROGRESO.md`.
 - No crees `src/idv/`, `IdvSession` ni un webhook de vendor. No hay contrato. El gate `kycPolicy` no se toca.
 - La UI de plantillas ya está (`4981fd2`): elegir en el wizard y crear en `/plantillas`. No hay edición ni borrado. No persistas `templateId`: el backend lo aplica al crear y lo descarta.
 - `TenantMembership.tenantId` es el uuid. El aislamiento compara el slug.
-- El custodio PKCS#11 está en `feat/p2-pkcs11` (`P2-KMS.md`). Este sandbox sigue en software. OCSP/CRL y NOM-151 siguen abiertos.
+- El custodio PKCS#11 está en `09e6ac3` (`P2-KMS.md`). Este sandbox sigue en software. OCSP/CRL y NOM-151 siguen abiertos.
 
 ## Arranque local
 

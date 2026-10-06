@@ -1,10 +1,10 @@
 # P2 — Custodia PKCS#11 y constancia (una página)
 
-> Fuera del paquete P1 y del hardening ya integrado en `develop` (`1e22320`). El corte de custodia está en `feat/p2-pkcs11`. P1 está cerrado. El canónico no se muta y `DIGITAL` ya es PAdES/CAdES. P2 no está cerrado: este sandbox no tiene módulo PKCS#11, ni certificado de una CA que Acrobat reconozca, ni contrato de PSC.
+> Fuera del paquete P1 y del hardening ya integrado en `develop` (`1e22320`). El corte de custodia está en `09e6ac3`, rama `feat/p2-pkcs11`. P1 está cerrado. El canónico no se muta y `DIGITAL` ya es PAdES/CAdES. P2 no está cerrado: este sandbox no tiene módulo PKCS#11, ni certificado de una CA que Acrobat reconozca, ni contrato de PSC.
 
 ## Qué ya hace el código
 
-| Pieza | Estado en `feat/p2-pkcs11` |
+| Pieza | Estado en `09e6ac3` |
 |---|---|
 | `SoftwareKeyCustodian` | Sigue siendo el default (`KEY_CUSTODIAN=software`). Genera el PKCS#12 en `PKI_DIR`. |
 | `Pkcs11KeyCustodian` | Con `KEY_CUSTODIAN=pkcs11` abre el módulo (`PKCS11_MODULE`, `PKCS11_PIN`, `PKCS11_KEY_LABEL`; `PKCS11_SLOT` opcional, default 0) por `graphene-pk11`. Firma con `CKM_RSA_PKCS` sobre el DigestInfo ya armado. No lee `CKA_VALUE` de la llave privada y no devuelve PKCS#12. |

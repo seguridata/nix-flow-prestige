@@ -22,7 +22,7 @@ Lo que ya no es deuda:
 
 Lo que sigue abierto, y no es P1:
 
-- Módulo PKCS#11 cargado, OCSP/CRL y constancia NOM-151 de un PSC. El código del custodio ya firma dentro del token; este sandbox no tiene módulo. Ver `P2-KMS.md`.
+- Módulo PKCS#11 cargado, OCSP/CRL y constancia NOM-151 de un PSC. El custodio de `09e6ac3` ya firma dentro del token; este sandbox no tiene módulo. Ver `P2-KMS.md`.
 - RLS de Postgres. El aislamiento es de aplicación.
 - `backfill:tenant-ids` (`663d5f5`) deja en NULL lo que no tiene una pista única. El sandbox local ya lo corrió.
 
