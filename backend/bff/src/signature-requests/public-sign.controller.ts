@@ -4,24 +4,32 @@ import {
   Controller,
   Get,
   Headers,
+  HttpException,
   Ip,
+  NotFoundException,
   Param,
   ParseFilePipeBuilder,
   Post,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { OneTimeLinkService } from '../notifications/one-time-link.service';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
+import { DocumentsService } from '../documents/documents.service';
 import { allowedMethodsForRequest } from './allowed-methods';
 import { SignatureRequestsService } from './signature-requests.service';
 import { ConsentAcceptDto, PasskeyFinishDto, PublicRejectDto, SignActionDto } from './dto';
 
 const MAX_STROKE_BYTES = 2 * 1024 * 1024;
+
+/** Fallos que cuentan para el bloqueo por token: credencial/entrada rechazada, no 404/409/410/429/5xx. */
+const LOCKOUT_STATUSES = new Set([400, 401, 403, 422]);
 
 /**
  * M13 / A-12 — portal del firmante externo. `@Public()` es intencional:
@@ -42,7 +50,24 @@ export class PublicSignController {
     private readonly signatureRequests: SignatureRequestsService,
     private readonly prisma: PrismaService,
     private readonly passkeys: PasskeyCeremonyService,
+    private readonly documents: DocumentsService,
   ) {}
+
+  /**
+   * Ejecuta una operación que valida credenciales con un enlace vivo y, si
+   * falla por entrada/credencial rechazada, suma un intento al enlace. Tras N
+   * fallos `resolve` responde 429 (bloqueo temporal) sin consumir el enlace.
+   */
+  private async guarded<T>(token: string, op: () => Promise<T>): Promise<T> {
+    try {
+      return await op();
+    } catch (e) {
+      if (e instanceof HttpException && LOCKOUT_STATUSES.has(e.getStatus())) {
+        await this.links.recordFailure(token).catch(() => undefined);
+      }
+      throw e;
+    }
+  }
 
   @Public()
   @Get(':token')
@@ -110,11 +135,13 @@ export class PublicSignController {
     const link = await this.links.resolve(token);
     // La aserción debe pertenecer al firmante dueño del enlace (no basta con
     // conocer un assertionId ajeno).
-    return this.passkeys.finish({
-      assertionId: body.assertionId,
-      response: body.response,
-      expectedSignerId: link.signerId,
-    });
+    return this.guarded(token, () =>
+      this.passkeys.finish({
+        assertionId: body.assertionId,
+        response: body.response,
+        expectedSignerId: link.signerId,
+      }),
+    );
   }
 
   @Public()
@@ -137,18 +164,21 @@ export class PublicSignController {
     if (link.purpose !== 'sign' || !link.signatureRequestId) {
       throw new BadRequestException('El enlace no sirve para firmar');
     }
-    const result = await this.signatureRequests.sign(
-      link.signatureRequestId,
-      {
-        signerId: link.signerId,
-        method: body.method,
-        consentAccepted: body.consentAccepted,
-        biometricSessionId: body.biometricSessionId,
-        passkeyAssertionId: body.passkeyAssertionId,
-        ip,
-        userAgent,
-      },
-      file?.buffer,
+    const signatureRequestId = link.signatureRequestId;
+    const result = await this.guarded(token, () =>
+      this.signatureRequests.sign(
+        signatureRequestId,
+        {
+          signerId: link.signerId,
+          method: body.method,
+          consentAccepted: body.consentAccepted,
+          biometricSessionId: body.biometricSessionId,
+          passkeyAssertionId: body.passkeyAssertionId,
+          ip,
+          userAgent,
+        },
+        file?.buffer,
+      ),
     );
     await this.links.consume(token);
     // Sólo el estado del propio firmante: nunca el PDF firmado ni datos de otros.
@@ -178,5 +208,46 @@ export class PublicSignController {
     });
     await this.links.consume(token);
     return { status: 'RECHAZADO' };
+  }
+
+  /**
+   * Copia firmada para el firmante, desde el enlace del correo de «completado».
+   * El enlace es de propósito `download` (no sirve para firmar), tiene ventana
+   * de tiempo y NO se consume al descargar: los escáneres de correo abren los
+   * enlaces antes que la persona y lo quemarían. Cada descarga queda en la
+   * cadena de auditoría. Sólo solicitudes COMPLETADAS con copia de ceremonia.
+   */
+  @Public()
+  @Get(':token/download')
+  async download(
+    @Param('token') token: string,
+    @Res() res: Response,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<void> {
+    const link = await this.links.resolve(token, 'download');
+    if (!link.signatureRequestId) throw new NotFoundException('El enlace no tiene solicitud asociada');
+    const request = await this.prisma.signatureRequest.findUnique({
+      where: { id: link.signatureRequestId },
+      select: { id: true, status: true, documentId: true, document: { select: { tenantId: true } } },
+    });
+    if (!request || request.status !== 'COMPLETADA') {
+      throw new NotFoundException('La copia firmada aún no está disponible');
+    }
+    const { bytes, filename } = await this.documents.getPresented(request.documentId, request.document.tenantId);
+    await this.signatureRequests.recordSignedCopyDownload(request.id, {
+      signerId: link.signerId,
+      ip,
+      userAgent,
+    });
+    const name = filename.replace(/\.pdf$/i, '') + '-firmado.pdf';
+    res
+      .status(200)
+      .setHeader('Content-Type', 'application/pdf')
+      .setHeader('Content-Length', bytes.length)
+      .setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
+      .setHeader('Cache-Control', 'private, no-store')
+      .setHeader('X-Content-Type-Options', 'nosniff')
+      .end(bytes);
   }
 }

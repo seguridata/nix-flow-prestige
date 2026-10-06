@@ -118,16 +118,27 @@ export const templates = {
     };
   },
 
-  completed(p: { name?: string; documentTitle: string; url: string }): Rendered {
+  completed(p: { name?: string; documentTitle: string; url: string; copyUrl?: string }): Rendered {
+    // Con `copyUrl`, el botón principal es la copia firmada y la evidencia queda
+    // como enlace secundario. `copyUrl` suele ser LINK_PLACEHOLDER (secreto cifrado en la bandeja).
+    const evidence = p.copyUrl
+      ? `<tr><td style="padding-top:8px">Descarga tu copia del PDF firmado con el botón de abajo
+           (el enlace es personal y vence en unos días). El expediente de evidencia (manifiesto
+           firmado + sello de tiempo RFC 3161 + verificador offline) está en:
+           <a href="${esc(p.url)}">${esc(p.url)}</a></td></tr>`
+      : `<tr><td style="padding-top:8px">Ya puedes descargar el expediente de evidencia (manifiesto
+           firmado + sello de tiempo RFC 3161 + verificador offline).</td></tr>`;
     return {
       subject: subj(`Documento firmado: ${p.documentTitle}`),
       html: shell(
         'Documento firmado',
         `<tr><td>Hola${p.name ? ` ${esc(p.name)}` : ''},</td></tr>
          <tr><td style="padding-top:8px"><strong>${esc(p.documentTitle)}</strong> quedó firmado por todas
-           las partes. Ya puedes descargar el expediente de evidencia (manifiesto firmado + sello de
-           tiempo RFC 3161 + verificador offline).</td></tr>`,
-        { label: 'Descargar evidencia', url: p.url },
+           las partes.</td></tr>
+         ${evidence}`,
+        p.copyUrl
+          ? { label: 'Descargar copia firmada', url: p.copyUrl }
+          : { label: 'Descargar evidencia', url: p.url },
       ),
     };
   },
