@@ -41,7 +41,7 @@ model Folder {
   name      String
   createdAt DateTime @default(now())
 
-  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Restrict)
   children Folder[] @relation("FolderTree")
   cases    Case[]
 
