@@ -5,6 +5,7 @@ import {
   buildDelegatePayload,
   buildOnboardingActionPayload,
   buildOnboardingCreatePayload,
+  buildOnboardingEnablePayload,
   buildPublicRejectPayload,
   buildSignPayload,
 } from "@/services/payloads";
@@ -21,6 +22,8 @@ const DELEGATE_KEYS = ["toSignerId", "toName"];
 const ONBOARDING_CREATE_KEYS = ["kind", "fullName", "email", "curp", "rfc", "biometricConsent"];
 // backend/bff/src/onboarding/dto.ts (OnboardingActionDto) — verify-ine y reject
 const ONBOARDING_ACTION_KEYS = ["notes", "approve"];
+// backend/bff/src/onboarding/dto.ts (EnableOnboardingDto)
+const ONBOARDING_ENABLE_KEYS = ["override", "notes"];
 // backend/bff/src/signature-requests/dto.ts (SignActionDto)
 const SIGN_KEYS = ["method", "biometricSessionId", "passkeyAssertionId", "consentAccepted"];
 // backend/bff/src/signature-requests/dto.ts (ConsentAcceptDto: vacío)
@@ -61,6 +64,15 @@ describe("contratos de payload hacia el BFF", () => {
     const reject = buildOnboardingActionPayload({ notes: "Rechazado por RH" });
     expect(onlyAllowed(reject, ONBOARDING_ACTION_KEYS)).toEqual([]);
     expect(reject).toEqual({ notes: "Rechazado por RH" });
+  });
+
+  it("onboarding enable: sin body normal; con anulación manda override y motivo recortado", () => {
+    expect(buildOnboardingEnablePayload()).toEqual({});
+    // notes sin override se descarta: el BFF solo las usa para anular
+    expect(buildOnboardingEnablePayload({ notes: "x".repeat(20) })).toEqual({});
+    const o = buildOnboardingEnablePayload({ override: true, notes: "  revisión presencial con INE  " });
+    expect(onlyAllowed(o, ONBOARDING_ENABLE_KEYS)).toEqual([]);
+    expect(o).toEqual({ override: true, notes: "revisión presencial con INE" });
   });
 
   it("sign: solo claves del SignActionDto y descarta extras", () => {

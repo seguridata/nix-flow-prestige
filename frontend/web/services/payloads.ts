@@ -48,6 +48,15 @@ export function buildOnboardingActionPayload(opts: { notes?: string; approve?: b
   };
 }
 
+/** DTO: backend/bff/src/onboarding/dto.ts (EnableOnboardingDto: override, notes). */
+export function buildOnboardingEnablePayload(opts: { override?: boolean; notes?: string } = {}) {
+  const notes = opts.notes?.trim();
+  return {
+    ...(opts.override ? { override: true } : {}),
+    ...(opts.override && notes ? { notes } : {}),
+  };
+}
+
 /** DTO: backend/bff/src/signature-requests/dto.ts (SignActionDto / PasskeyFinishDto). */
 export function buildSignPayload(body: {
   method: string;

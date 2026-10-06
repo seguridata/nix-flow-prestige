@@ -9,8 +9,9 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/documents/status-badge";
 import { Stepper } from "@/components/ui/stepper";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { buildOnboardingActionPayload } from "@/services/payloads";
-import { apiClient } from "@/services/api-client";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { buildOnboardingActionPayload, buildOnboardingEnablePayload } from "@/services/payloads";
+import { ApiError, apiClient } from "@/services/api-client";
 
 interface OnboardingDetail {
   id: string;
@@ -39,6 +40,9 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   const [cameraOn, setCameraOn] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [confirmEnable, setConfirmEnable] = useState(false);
+  // El motor biométrico corrió y no pasó: RH solo habilita anulando con un motivo auditado.
+  const [overrideMessage, setOverrideMessage] = useState<string | null>(null);
+  const [overrideNotes, setOverrideNotes] = useState("");
   const [biometricConsent, setBiometricConsent] = useState(false);
   const notice = useQuery({
     queryKey: ["biometric-consent"],
@@ -108,12 +112,22 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   });
 
   const enable = useMutation({
-    mutationFn: () => apiClient.post(`/onboarding/${id}/actions/enable`, {}),
+    mutationFn: (opts: { override?: boolean; notes?: string } = {}) =>
+      apiClient.post(`/onboarding/${id}/actions/enable`, buildOnboardingEnablePayload(opts)),
     onSuccess: () => {
       toast.success("Firma habilitada.");
+      setOverrideMessage(null);
+      setOverrideNotes("");
       invalidate();
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "No se pudo habilitar"),
+    onError: (error) => {
+      const body = error instanceof ApiError ? (error.body as { error?: string } | undefined) : undefined;
+      if (error instanceof ApiError && error.status === 409 && body?.error === "BIOMETRIC_NOT_PASSED") {
+        setOverrideMessage(error.message);
+        return;
+      }
+      toast.error(error instanceof Error ? error.message : "No se pudo habilitar");
+    },
   });
 
   const reject = useMutation({
@@ -336,10 +350,39 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
         confirmLabel="Habilitar"
         pending={enable.isPending}
         onConfirm={() => {
-          enable.mutate();
+          enable.mutate({});
           setConfirmEnable(false);
         }}
       />
+      <Dialog open={overrideMessage !== null} onOpenChange={(o) => !enable.isPending && !o && setOverrideMessage(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>La prueba biométrica no pasó</DialogTitle>
+            <DialogDescription>{overrideMessage}</DialogDescription>
+          </DialogHeader>
+          <label className="text-sm font-medium" htmlFor="override-notes">
+            Motivo de la anulación (mínimo 10 caracteres, queda en la auditoría)
+          </label>
+          <textarea
+            id="override-notes"
+            className="min-h-24 w-full rounded-md border bg-background p-2 text-sm"
+            value={overrideNotes}
+            maxLength={2000}
+            onChange={(e) => setOverrideNotes(e.target.value)}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOverrideMessage(null)} disabled={enable.isPending}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => enable.mutate({ override: true, notes: overrideNotes })}
+              disabled={enable.isPending || overrideNotes.trim().length < 10}
+            >
+              Habilitar con anulación
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
