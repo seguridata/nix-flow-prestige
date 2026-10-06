@@ -39,6 +39,8 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
     volumes:
       - ./infra/keycloak/prestige-realm.json:/opt/keycloak/data/import/prestige-realm.json:ro
+      # Tema de login de Prestige (loginTheme del realm). start-dev no cachea temas: los cambios se ven al recargar.
+      - ./infra/keycloak/themes:/opt/keycloak/themes:ro
     ports:
       - "127.0.0.1:8081:8080"
     depends_on:
