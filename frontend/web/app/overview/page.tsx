@@ -82,12 +82,16 @@ export default function OverviewPage() {
   );
 
   const loading = inbox.isLoading || (isOperator && board.isLoading);
-  const title = headline({
-    sign: groups.action.length,
-    review: attention?.reviewOnboarding.length ?? 0,
-    expiring: attention?.slaRisk.length ?? 0,
-    broken: attention?.brokenRuns.length ?? 0,
-  });
+  // Si algo no cargó no se puede afirmar que todo está al día.
+  const failed = inbox.isError || sent.isError || (isOperator && board.isError);
+  const title = failed
+    ? "No se pudo cargar tu resumen"
+    : headline({
+        sign: groups.action.length,
+        review: attention?.reviewOnboarding.length ?? 0,
+        expiring: attention?.slaRisk.length ?? 0,
+        broken: attention?.brokenRuns.length ?? 0,
+      });
 
   return (
     <AppShell title="Overview">
