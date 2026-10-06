@@ -1,5 +1,6 @@
 import { ApiError, apiClient } from "./api-client";
-import type { EvidenceManifest, EvidenceVerificationResult } from "@/libs/types";
+import type { VerificationResult } from "@/libs/evidence-checks";
+import type { EvidenceManifest } from "@/libs/types";
 
 /** El BFF responde 404 si la solicitud no tiene evidencia (o no es del tenant): se trata como `null`. */
 export async function fetchEvidenceForRequest(signatureRequestId: string) {
@@ -18,7 +19,10 @@ export function fetchEvidenceManifest(manifestId: string) {
 }
 
 export function verifyEvidenceManifest(manifestId: string) {
-  return apiClient.get<EvidenceVerificationResult>(
+  return apiClient.get<VerificationResult>(
     `/evidence/${encodeURIComponent(manifestId)}/verify`,
   );
 }
+
+/** Expediente probatorio en ZIP (PDF firmado, manifiesto, sello de tiempo y verificador sin conexión). */
+export const evidenceDossierUrl = (manifestId: string) => `/api/bff/evidence/${encodeURIComponent(manifestId)}/dossier`;

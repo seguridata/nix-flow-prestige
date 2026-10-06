@@ -35,7 +35,8 @@ export function EvidencePanel({ row }: { row: EnvelopeRow }) {
     enabled: closed,
     queryFn: async () => {
       const manifest = await fetchEvidenceForRequest(row.signatureRequestId);
-      return manifest ? await verifyEvidenceManifest(manifest.id) : null;
+      // El servidor busca por `manifestId` (no por el UUID `id` de la fila).
+      return manifest ? await verifyEvidenceManifest(manifest.manifestId) : null;
     },
   });
 
