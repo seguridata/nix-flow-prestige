@@ -7,6 +7,7 @@ import forge from 'node-forge';
 import { extractSignature } from '@signpdf/utils';
 import { DigitalSignerAdapter, countSignatures } from './digital.adapter';
 import { PdfStampService } from './pdf-stamp.service';
+import type { KeyCustodian } from './pki/key-custodian';
 import { SoftwareKeyCustodian } from './pki/software-key-custodian';
 import type { SignCommand } from './signer-adapter';
 
@@ -130,5 +131,52 @@ describe('DigitalSignerAdapter — PAdES real', () => {
         pdfBytes: fake,
       }),
     ).rejects.toMatchObject({ response: { error: 'INCREMENTAL_SIGN_UNSUPPORTED' } });
+  });
+
+  it('firma contra un custodio PKCS#11 que no entrega la llave', async () => {
+    const keys = forge.pki.rsa.generateKeyPair(2048);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = 'aa';
+    cert.validity.notBefore = new Date('2026-01-01T00:00:00Z');
+    cert.validity.notAfter = new Date('2027-01-01T00:00:00Z');
+    cert.setSubject([{ name: 'commonName', value: 'Sello HSM' }]);
+    cert.setIssuer([{ name: 'commonName', value: 'PSC' }]);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    const custodian: KeyCustodian = {
+      kind: 'pkcs11',
+      async getSigningMaterial() {
+        return {
+          certificatePem: forge.pki.certificateToPem(cert),
+          certificate: {
+            serialNumber: cert.serialNumber,
+            subject: 'CN=Sello HSM',
+            issuer: 'CN=PSC',
+            notBefore: cert.validity.notBefore.toISOString(),
+            notAfter: cert.validity.notAfter.toISOString(),
+          },
+          signRsaPkcs1: (digestInfo) =>
+            Buffer.from(keys.privateKey.sign(digestInfo.toString('binary'), 'NONE'), 'binary'),
+        };
+      },
+    };
+    const tokenAdapter = new DigitalSignerAdapter(custodian, new PdfStampService());
+    const pdf = await minimalPdf();
+    const result = await tokenAdapter.sign({
+      method: 'DIGITAL',
+      signerId: 'sello',
+      signerName: 'Sello',
+      documentId: 'doc-1',
+      tenantId: 'seguridata',
+      signatureRequestId: 'sr-1',
+      documentHash: 'abc',
+      pdfBytes: pdf,
+    });
+    expect(result.provider).toBe('prestige-pki-pkcs11');
+    expect(result.signedPdf!.toString('latin1')).toContain('/ETSI.CAdES.detached');
+    const { signature } = extractSignature(result.signedPdf!);
+    const p7 = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(Buffer.from(signature, 'binary').toString('binary')));
+    const embedded = (p7 as unknown as { certificates: forge.pki.Certificate[] }).certificates;
+    expect(embedded.some((item) => item.subject.getField('CN')?.value === 'Sello HSM')).toBe(true);
   });
 });

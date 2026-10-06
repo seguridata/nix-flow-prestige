@@ -264,9 +264,10 @@ Lo que sigue siendo cierto y sí aplica en P1:
 - `capabilities()` debe seguir reportando de forma honesta si el custodio
   es software o HSM (ya lo hace).
 
-P2 real, dado lo anterior: mover el custodio de software a HSM/KMS
-(`KEY_CUSTODIAN=pkcs11` ya es el enchufe) y cerrar TSA/NOM-151. No es
-"construir KMS/PAdES desde cero" como decía este spec — eso ya existe.
+P2, dado lo anterior: con `KEY_CUSTODIAN=pkcs11` la firma RSA ocurre en el
+token y la llave no sale. Este sandbox no tiene módulo, así que el default
+sigue en software. Falta el certificado de una CA que Acrobat reconozca,
+OCSP/CRL de ese certificado y la constancia NOM-151. PAdES ya existe.
 
 ## 14. Temporal
 

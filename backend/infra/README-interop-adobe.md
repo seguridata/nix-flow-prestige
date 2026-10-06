@@ -31,8 +31,9 @@ Requiere Acrobat Reader DC en una máquina con GUI:
    - Sello de tiempo: si `TSA_URL` estaba configurada, Acrobat debe mostrar la
      hora de la TSA (RFC 3161) y no la del reloj local.
 5. Para **LTV** (Long-Term Validation) en Acrobat hace falta incrustar OCSP/CRL
-   en el PDF — hoy N/A para la CA software; corresponde al adaptador PKCS#11 /
-   la PSC de SeguriData (ver checklist OLA 2).
+   en el PDF. Sigue N/A: la CA de software no publica AIA ni CRL DP, y el
+   custodio PKCS#11 tampoco incrusta esas respuestas. Hace falta un certificado
+   de la PSC que traiga esas URL.
 
 ## En producción
 

@@ -9,7 +9,7 @@ P1 cerró el 2026-09-26 (DoD 11/11, commits `5659271` … `27719e1`). La foto vi
 Lo que ya no es deuda:
 
 - El PDF canónico vive en `Document.objectKey` + `enc` (AES-256-GCM). No hay `contentBase64`.
-- `DIGITAL` es PAdES: X.509 + PKCS#7 CAdES-detached (`digital.adapter.ts`). El custodio de software es el que corre. `Pkcs11KeyCustodian` existe y responde que el HSM no está conectado.
+- `DIGITAL` es PAdES: X.509 + PKCS#7 CAdES-detached (`digital.adapter.ts`). En este sandbox corre el custodio de software. `Pkcs11KeyCustodian` firma dentro del token cuando `KEY_CUSTODIAN=pkcs11` y hay módulo; si falta la configuración, el servicio no está disponible.
 - `OneTimeLink`: hash del token, TTL, consumo atómico.
 - Auditoría con `prevHash` y trigger de inmutabilidad (`20261005110000_p1_audit_immutability`).
 - `tenantId` en documento y solicitud, `TenantMembership`, `TenantContextGuard` fail-closed. El guard deja el tenant de la petición en el **slug**.
@@ -22,7 +22,7 @@ Lo que ya no es deuda:
 
 Lo que sigue abierto, y no es P1:
 
-- HSM/KMS, OCSP/CRL, constancia NOM-151 de un PSC. Ver `P2-KMS.md`.
+- Módulo PKCS#11 cargado, OCSP/CRL y constancia NOM-151 de un PSC. El custodio de `09e6ac3` ya firma dentro del token; este sandbox no tiene módulo. Ver `P2-KMS.md`.
 - RLS de Postgres. El aislamiento es de aplicación.
 - `backfill:tenant-ids` (`663d5f5`) deja en NULL lo que no tiene una pista única. El sandbox local ya lo corrió.
 
@@ -41,11 +41,10 @@ Objetivo que se cumplió: el sistema **congela bytes, identifica tenant, autenti
 
 ## Fase destino inmediata: P2 — custodia y constancia
 
-P1 ya cerró, y PAdES sobre el hash congelado ya existe con CA de software. P2, cuando se abra, es sustituir esa custodia y cerrar la constancia. El detalle está en `P2-KMS.md`:
+P1 ya cerró, y PAdES sobre el hash congelado ya existe con CA de software. El camino PKCS#11 ya firma dentro del token (`CKM_RSA_PKCS`, sin exportar la llave) cuando el entorno trae módulo, PIN, etiqueta y `graphene-pk11`. Este sandbox no lo tiene: el default sigue siendo software. P2 no está cerrado. El detalle está en `P2-KMS.md`:
 
-- Clave de firma dentro del HSM/KMS (`Pkcs11KeyCustodian` deja de ser un stub).
-- Certificado que Acrobat reconozca (AATL o la PSC de SeguriData), más OCSP/CRL.
-- Constancia NOM-151 de un PSC. El sello RFC 3161 ya está enchufado.
+- Certificado que Acrobat reconozca (AATL o la PSC), más OCSP/CRL leídos de ese certificado.
+- Constancia NOM-151 de un PSC. El sello RFC 3161 ya está enchufado. Sin contrato no se construye un cliente.
 - IdV de proveedor de pago solo con contrato. El gate `kycPolicy` no se toca.
 
 ## Fase posterior: P3 — Plataforma
