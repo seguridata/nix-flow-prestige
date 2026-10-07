@@ -21,6 +21,8 @@ export interface InboxItem {
   currentSignerId?: string;
   /** ¿Puede firmar ya el destinatario de esta bandeja? */
   myTurn?: boolean;
+  /** Vencimiento de la solicitud (ISO), o null si no tiene. */
+  expiresAt?: string | null;
 }
 
 /**
@@ -80,6 +82,10 @@ export class InboxService {
           order: request.order,
           currentSignerId,
           myTurn,
+          expiresAt: request.expiresAt?.toISOString() ?? null,
+          signers: [...request.signers]
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((s) => ({ signerId: s.signerId, name: s.name, status: s.status })),
         } satisfies InboxItem;
       }),
     );
@@ -111,6 +117,7 @@ export class InboxService {
           myStatus: pending.length ? `FALTAN ${pending.length}` : 'COMPLETO',
           methods: request.methods,
           createdAt: request.createdAt.toISOString(),
+          expiresAt: request.expiresAt?.toISOString() ?? null,
           pendingSigners: pending.map((s) => s.name ?? s.signerId),
           signers: request.signers.map((s) => ({
             signerId: s.signerId,
