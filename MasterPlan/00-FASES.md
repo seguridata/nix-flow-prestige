@@ -1,10 +1,12 @@
 # Fases — Prestige / NIX Flow
 
-## Fase actual (revisado 2026-10-05 contra código): P1 cerrado, hardening integrado
+## Fase actual (revisado 2026-10-06 contra código): P1 cerrado, hardening y UI integrados en `develop`
 
 P1 cerró el 2026-09-26 (DoD 11/11, commits `5659271` … `27719e1`). La foto viva está en `PROGRESO.md`.
 
 `fix/p1-hardening` llega a la UI de plantillas en `4981fd2`. El hardening va de `4726f71` a `fe45256` y el seguimiento está en `663d5f5`. `develop` toma esta rama desde `3c98372`.
+
+El 2026-10-06 `develop` sumó el PR #4 (custodio PKCS#11) y el PR #5 (propuesta de UI, vista Drive «Mis documentos», formatos con campos que se llenan y administrador de flujos). El detalle está en `PROGRESO.md`, sección «UI y producto».
 
 Lo que ya no es deuda:
 
@@ -19,9 +21,12 @@ Lo que ya no es deuda:
 - Freeze obligatorio al crear la solicitud. `sign()` rehashea el canónico. Una autógrafa sobre un PDF que ya tiene PAdES responde 409.
 - INE y selfie son claves de storage cifrado, con consentimiento LFPDPPP antes de capturarlas.
 - Puerto `IdvProvider` de redirect: no se construye. No hay contrato. El gate `kycPolicy` no se toca.
+- UI «mostrar la prueba» (bandeja, portal del firmante, onboarding, evidencia) y vista Drive personal con carpetas, expedientes y documentos.
+- Formatos (`DocumentTemplate`) que se llenan y calculan sus firmantes por condiciones, y flujos que el admin crea y publica. Los flujos publicados alimentan a los formatos; el flujo de Temporal sigue siendo `contratoDosPartes`.
 
 Lo que sigue abierto, y no es P1:
 
+- Ejecutar un flujo publicado en Temporal (hoy solo los formatos lo ejecutan, resolviendo firmantes al crear la solicitud), cajas de firma en el editor de formatos y auditoría de publicar flujos.
 - Módulo PKCS#11 cargado, OCSP/CRL y constancia NOM-151 de un PSC. El custodio de `09e6ac3` ya firma dentro del token; este sandbox no tiene módulo. Ver `P2-KMS.md`.
 - RLS de Postgres. El aislamiento es de aplicación.
 - `backfill:tenant-ids` (`663d5f5`) deja en NULL lo que no tiene una pista única. El sandbox local ya lo corrió.

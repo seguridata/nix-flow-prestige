@@ -22,6 +22,15 @@ Cambios que este paquete pedía sobre `backend/bff/prisma/schema.prisma`. Lo de 
 
 El mismo hardening añadió `tenantId` nullable en `NotificationOutbox`, `HumanTask`, `DocumentComment`, `UserNotification`, `ProcessWatcher`, `WorkflowRun` y `SignatureField`. `bun run backfill:tenant-ids` (`663d5f5`) rellena outbox y `UserNotification` cuando hay una pista única; lo demás se queda NULL. `WebhookSubscription` tiene `previousSecret` y `previousSecretUntil` (`20261005120000_webhook_secret_rotation`).
 
+## Delta posterior: vista Drive, formatos y flujos (2026-10-06)
+
+| Qué | Dónde |
+|---|---|
+| `Folder` | Carpeta personal y anidable (`tenantId`, `ownerId`, `parentId`, `name`). `parentId` es `ON DELETE RESTRICT`. Migración `20261006100000_drive_folders`. |
+| `Case.ownerId`, `Case.folderId`, `Case.loose` | Ubicación del expediente en «Mis documentos». `ownerId` nulo = anterior a las carpetas. `loose` = expediente implícito de un documento suelto. |
+| `DocumentTemplate` | Formato con PDF base cifrado (`objectKey`, `enc`, `hash`), `fields` (JSON, fracciones de página), `signatureBoxes`, `flow` (JSON), `flowKey`/`flowVersion`, `methods`, `kycPolicy`, `requirePasskey`, `published`. Único por `tenantId` + `name`. Migración `20261006200000_document_templates`. No es `EnvelopeTemplate`. |
+| `ProcessDefinition.flow`, `publishedAt` | Definición de flujo del admin (variables, pasos con condiciones, orden y SLA). Las versiones nuevas nacen en borrador; una versión publicada por clave. |
+
 ## Conservar
 
 `Case`, `SignatureField`, `HumanTask`, `ConsentAcceptance`, `WorkflowRun`, `DocumentComment`, `UserNotification`, `ProcessDefinition`, `ProcessWatcher`, `OnboardingKind/Status`.
