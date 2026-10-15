@@ -29,6 +29,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ControlPlaneModule } from './control-plane/control-plane.module';
 import { WebauthnModule } from './webauthn/webauthn.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { WebauthnModule } from './webauthn/webauthn.module';
     WebhooksModule,
     ControlPlaneModule,
     WebauthnModule,
+    AiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
