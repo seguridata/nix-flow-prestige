@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prestige
+resources:
+  - workloads.yaml
+  - platform.yaml
+commonLabels:
+  app.kubernetes.io/part-of: prestige
+# config.example.yaml queda fuera a propósito: los secretos reales vienen de un gestor externo.
+# Uso:  kubectl apply -k deploy/k8s/base   (crea antes el namespace y los Secrets/ConfigMaps reales)

@@ -1,0 +1,105 @@
+# Migraciones como Job (una sola ejecución antes de desplegar), no en cada arranque de cada réplica.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prestige }
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: prestige-migrate
+  annotations: { argocd.argoproj.io/hook: PreSync, helm.sh/hook: pre-upgrade }
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: prestige
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: migrate
+          image: prestige-bff:latest
+          command: ["sh", "-c", "node /opt/prisma-cli/node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma"]
+          envFrom: [{ secretRef: { name: prestige-secrets } }]
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+# Entrada con TLS. El front y la API comparten dominio de aplicación; las rutas públicas de firma pasan por el front.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prestige
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt   # ajustar al emisor del clúster
+    nginx.ingress.kubernetes.io/proxy-body-size: 12m   # PDF de hasta 10 MB + multipart
+spec:
+  ingressClassName: nginx
+  tls: [{ hosts: [prestige.example.com, api.prestige.example.com], secretName: prestige-tls }]
+  rules:
+    - host: prestige.example.com
+      http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: web, port: { name: http } } } }] }
+    - host: api.prestige.example.com
+      http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: bff, port: { name: http } } } }] }
+---
+# Tope de recursos del namespace (cuotas) y valores por defecto de contenedor.
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: prestige-quota }
+spec:
+  hard: { requests.cpu: "20", requests.memory: 40Gi, limits.cpu: "40", limits.memory: 80Gi, pods: "80" }
+---
+apiVersion: v1
+kind: LimitRange
+metadata: { name: prestige-limits }
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+      max: { cpu: "4", memory: 8Gi }
+---
+# Red: todo denegado por defecto y solo se abre lo que hace falta.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny }
+spec: { podSelector: {}, policyTypes: [Ingress, Egress] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-dns }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress: [{ to: [{ namespaceSelector: {} , podSelector: { matchLabels: { k8s-app: kube-dns } } }], ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ingress-to-web-and-bff }
+spec:
+  podSelector: { matchExpressions: [{ key: app, operator: In, values: [web, bff] }] }
+  policyTypes: [Ingress]
+  ingress: [{ from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: web-and-worker-to-bff }
+spec:
+  podSelector: { matchLabels: { app: bff } }
+  policyTypes: [Ingress]
+  ingress: [{ from: [{ podSelector: { matchLabels: { app: web } } }, { podSelector: { matchLabels: { app: worker } } }], ports: [{ port: 3000 }] }]
+---
+# Salida a los servicios de datos (Postgres, Redis, Temporal, S3, Keycloak). En producción apuntar a los CIDR
+# de los servicios gestionados en lugar de abrir 0.0.0.0/0.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: egress-backends }
+spec:
+  podSelector: { matchExpressions: [{ key: app, operator: In, values: [web, bff, worker] }] }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchExpressions: [{ key: app, operator: In, values: [bff] }] } }]
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [169.254.169.254/32] } }]   # AJUSTAR: CIDR de Postgres/Redis/Temporal/S3/IdP
+      ports: [{ port: 5432 }, { port: 6379 }, { port: 7233 }, { port: 443 }, { port: 587 }]

@@ -1,0 +1,154 @@
+# BFF, worker de Temporal y front. Todos SIN ESTADO: el estado vive en Postgres, Redis y S3.
+# El modelo de tenancy es "pool": una sola copia de la aplicación sirve a todos los tenants (el aislamiento es
+# lógico, por tenantId). Para un cliente que exija aislamiento físico, ver "silo por tier" en
+# MasterPlan/ARQUITECTURA-MULTITENANT-Y-ESCALA.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: bff, labels: { app: bff } }
+spec:
+  replicas: 3
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector: { matchLabels: { app: bff } }
+  template:
+    metadata: { labels: { app: bff } }
+    spec:
+      serviceAccountName: prestige
+      terminationGracePeriodSeconds: 45
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: bff
+          image: prestige-bff:latest   # fijar por digest en el overlay
+          ports: [{ name: http, containerPort: 3000 }]
+          envFrom:
+            - configMapRef: { name: prestige-config }
+            - secretRef: { name: prestige-secrets }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: RUN_MIGRATIONS, value: "false" }   # las migraciones corren en el Job prestige-migrate
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          startupProbe: { httpGet: { path: /operations/health/live, port: http }, periodSeconds: 5, failureThreshold: 30 }
+          livenessProbe: { httpGet: { path: /operations/health/live, port: http }, periodSeconds: 15 }
+          readinessProbe: { httpGet: { path: /operations/health/ready, port: http }, periodSeconds: 10, failureThreshold: 3 }
+          lifecycle: { preStop: { exec: { command: ["sleep", "10"] } } }   # deja drenar el balanceador antes de SIGTERM
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: tesseract, mountPath: /tmp/tesseract }
+            - { name: pki, mountPath: /app/backend/bff/pki, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: tesseract, emptyDir: {} }
+        - { name: pki, secret: { secretName: prestige-pki } }   # PKI como Secret (o KMS/PKCS#11 con KEY_CUSTODIAN=pkcs11)
+      topologySpreadConstraints:
+        - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app: bff } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: bff, labels: { app: bff } }
+spec: { selector: { app: bff }, ports: [{ name: http, port: 3000, targetPort: http }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: bff }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: bff }
+  minReplicas: 3
+  maxReplicas: 20
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } } }]
+  behavior: { scaleDown: { stabilizationWindowSeconds: 300 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: bff }
+spec: { minAvailable: 2, selector: { matchLabels: { app: bff } } }
+---
+# Worker de Temporal: misma imagen, otro comando. Para dar aislamiento a un tier, duplica este Deployment
+# con otra cola (cuando exista TEMPORAL_TASK_QUEUE por tier) y otros recursos.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: worker, labels: { app: worker } }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector: { matchLabels: { app: worker } }
+  template:
+    metadata: { labels: { app: worker } }
+    spec:
+      serviceAccountName: prestige
+      terminationGracePeriodSeconds: 60   # mayor que TEMPORAL_SHUTDOWN_GRACE_SECONDS (30 por defecto)
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: worker
+          image: prestige-bff:latest
+          command: ["node", "dist/src/temporal/worker.js"]
+          envFrom:
+            - configMapRef: { name: prestige-config }
+            - secretRef: { name: prestige-secrets }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: RUN_MIGRATIONS, value: "false" }
+            - { name: BFF_INTERNAL_URL, value: "http://bff:3000" }   # al Service, nunca a una réplica concreta
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: worker }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: worker }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: worker }
+spec: { minAvailable: 1, selector: { matchLabels: { app: worker } } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web, labels: { app: web } }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector: { matchLabels: { app: web } }
+  template:
+    metadata: { labels: { app: web } }
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: web
+          image: prestige-web:latest
+          ports: [{ name: http, containerPort: 3001 }]
+          envFrom:
+            - configMapRef: { name: prestige-web-config }
+            - secretRef: { name: prestige-web-secrets }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          readinessProbe: { httpGet: { path: /login, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /login, port: http }, periodSeconds: 20, failureThreshold: 5 }
+          lifecycle: { preStop: { exec: { command: ["sleep", "5"] } } }
+          volumeMounts: [{ name: cache, mountPath: /app/frontend/web/.next/cache }, { name: tmp, mountPath: /tmp }]
+      volumes: [{ name: cache, emptyDir: {} }, { name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, labels: { app: web } }
+spec: { selector: { app: web }, ports: [{ name: http, port: 3001, targetPort: http }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: web }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: web }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } } }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: web }
+spec: { minAvailable: 1, selector: { matchLabels: { app: web } } }
