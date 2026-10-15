@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { clientIpFromForwarded, trustedProxyHops } from "@/libs/client-ip";
+import { filterRequestHeaders } from "@/libs/proxy-headers";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +38,10 @@ async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[]
   }
   const target = `${BFF_URL}/public/links/${segments.join("/")}${req.nextUrl.search}`;
 
-  const headers = new Headers();
-  req.headers.forEach((v, k) => {
-    if (!STRIP.has(k.toLowerCase())) headers.set(k, v);
-  });
+  // Lista blanca de entrada (además del saneado de STRIP, que se conserva por defensa en profundidad).
+  const headers = filterRequestHeaders(req.headers);
+  headers.delete("content-length");
+  STRIP.forEach((k) => headers.delete(k));
 
   // IP real del firmante (vía los proxies de confianza declarados): el BFF la usa
   // para el throttler y para la prueba de consentimiento. Sin declarar proxies

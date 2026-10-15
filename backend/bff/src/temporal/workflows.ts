@@ -102,6 +102,7 @@ export async function contratoDosPartes(input: ContratoWorkflowInput): Promise<C
     nudges += 1;
     try {
       await sendNudge({
+        tenantId: input.tenantId,
         signatureRequestId: input.signatureRequestId,
         kind: nudgeKindFor(mark),
         ratio: mark,
@@ -133,7 +134,7 @@ export async function contratoDosPartes(input: ContratoWorkflowInput): Promise<C
       onNudge: nudge(),
     });
     if (!reached && !stopped()) {
-      await markExpired(input.signatureRequestId);
+      await markExpired(input.signatureRequestId, input.tenantId);
       return { ...state(), phase: 'EXPIRADO' };
     }
   }
@@ -143,10 +144,10 @@ export async function contratoDosPartes(input: ContratoWorkflowInput): Promise<C
   }
 
   if (!allSigned()) {
-    await markExpired(input.signatureRequestId);
+    await markExpired(input.signatureRequestId, input.tenantId);
     return { ...state(), phase: 'EXPIRADO' };
   }
 
-  await sealEvidence(input.signatureRequestId);
+  await sealEvidence(input.signatureRequestId, input.tenantId);
   return { ...state(), phase: 'CERRADO' };
 }

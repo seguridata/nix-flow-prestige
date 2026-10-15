@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "sonner";
+import { resolveTenant } from "@/libs/tenant-claim";
 import { SessionContext, type SessionUser } from "@/store/session-store";
 
 function SessionProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const queryClient = useQueryClient();
+  const identityRef = useRef<string | null>(null);
   const skip =
     pathname === "/login" ||
     pathname.startsWith("/verificar") ||
@@ -29,12 +32,17 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
         }
         if (!r.ok) throw new Error(`auth/me ${r.status}`);
         const data = await r.json();
+        const tenantId = resolveTenant(data.tenantId);
+        // Si cambia el tenant o el usuario, la caché del cliente no puede arrastrar datos ajenos.
+        const identity = `${tenantId}|${data.actorId}`;
+        if (identityRef.current !== null && identityRef.current !== identity) queryClient.clear();
+        identityRef.current = identity;
         setUser({
           signerId: data.actorId,
           name: data.name,
           email: data.email,
           roles: data.roles ?? [],
-          tenantId: data.tenantId ?? "seguridata",
+          tenantId,
         });
         setReady(true);
       })
@@ -44,7 +52,7 @@ function SessionProvider({ children }: { children: React.ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [skip, attempt]);
+  }, [skip, attempt, queryClient]);
 
   if (skip) return <>{children}</>;
 

@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SigningRouter } from '../signing/signing.router';
-import { StorageService } from '../storage/storage.service';
+import { StorageService, assertTenantKey } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { cloudEvent, EVENT_TYPES } from '../webhooks/cloud-events';
@@ -60,7 +60,7 @@ export class OnboardingService {
     @Inject(BIOMETRIC_ENGINE) private readonly biometrics: BiometricEngine,
   ) {}
 
-  async list(tenantId = 'seguridata', page?: PageQueryDto) {
+  async list(tenantId: string, page?: PageQueryDto) {
     const args = pageArgs(page);
     const rows = await this.prisma.onboardingCase.findMany({
       where: { tenantId },
@@ -79,7 +79,7 @@ export class OnboardingService {
   }
 
   async create(body: {
-    tenantId?: string;
+    tenantId: string;
     kind?: OnboardingKind;
     fullName: string;
     email: string;
@@ -91,6 +91,7 @@ export class OnboardingService {
     ip?: string;
     userAgent?: string;
   }) {
+    if (!body.tenantId) throw new BadRequestException('Falta el tenant del alta');
     if (!body.fullName?.trim() || !body.email?.trim()) {
       throw new BadRequestException('Nombre y correo son obligatorios');
     }
@@ -102,7 +103,7 @@ export class OnboardingService {
     const now = new Date();
     const created = await this.prisma.onboardingCase.create({
       data: {
-        tenantId: body.tenantId ?? 'seguridata',
+        tenantId: body.tenantId,
         kind: body.kind ?? 'EMPLEADO',
         status: 'DATOS',
         fullName: body.fullName.trim(),
@@ -187,7 +188,13 @@ export class OnboardingService {
     return { key: s.objectKey, sha256: s.sha256, size: s.sizeBytes, enc: s.enc };
   }
 
-  private readRef(ref: StoredRef): Promise<Buffer> {
+  /**
+   * `ref.key` se guarda COMPLETA en la fila (también las claves antiguas
+   * `onboarding/ine/...`), así que la lectura no depende del formato nuevo;
+   * `assertTenantKey` acepta ambos y rechaza claves de otro tenant.
+   */
+  private readRef(ref: StoredRef, tenantId: string): Promise<Buffer> {
+    assertTenantKey(tenantId, ref.key);
     return this.storage.getObject(ref.key, ref.enc);
   }
 
@@ -205,10 +212,10 @@ export class OnboardingService {
     }
 
     const ineFront: StoredRef | null = body.front?.length
-      ? await this.store('onboarding/ine', `${id}-frente.jpg`, body.front, 'image/jpeg')
+      ? await this.store(`onboarding/${body.tenantId}/ine`, `${id}-frente.jpg`, body.front, 'image/jpeg')
       : (current.ineFront as unknown as StoredRef | null);
     const ineBack: StoredRef | null = body.back?.length
-      ? await this.store('onboarding/ine', `${id}-reverso.jpg`, body.back, 'image/jpeg')
+      ? await this.store(`onboarding/${body.tenantId}/ine`, `${id}-reverso.jpg`, body.back, 'image/jpeg')
       : (current.ineBack as unknown as StoredRef | null);
 
     // ineHash: SHA-256 del conjunto ordenado de hashes de frente+reverso presentes.
@@ -219,8 +226,8 @@ export class OnboardingService {
     let ineOcr: unknown = current.ineOcr;
     if (ineFront && ineBack) {
       try {
-        const frontBytes = body.front?.length ? body.front : await this.readRef(ineFront);
-        const backBytes = body.back?.length ? body.back : await this.readRef(ineBack);
+        const frontBytes = body.front?.length ? body.front : await this.readRef(ineFront, body.tenantId);
+        const backBytes = body.back?.length ? body.back : await this.readRef(ineBack, body.tenantId);
         ineOcr = await this.ocr.recognizeIne({ front: frontBytes, back: backBytes });
       } catch (error) {
         ineOcr = { engine: 'tesseract.js', error: (error as Error).message };
@@ -265,7 +272,7 @@ export class OnboardingService {
     if (!body.selfie?.length) throw new BadRequestException('Se requiere una captura de prueba de vida');
     if (body.selfie.length < 2_000) throw new BadRequestException('La captura es demasiado pequeña');
 
-    const selfie = await this.store('onboarding/selfie', `${id}-selfie.jpg`, body.selfie, 'image/jpeg');
+    const selfie = await this.store(`onboarding/${body.tenantId}/selfie`, `${id}-selfie.jpg`, body.selfie, 'image/jpeg');
     const livenessHash = selfie.sha256;
 
     // M16 — puerto BiometricEngine (noop|local face-api|remote). Nunca lanza:
@@ -273,7 +280,7 @@ export class OnboardingService {
     let bio;
     try {
       const inePortrait = current.ineFront
-        ? await this.readRef(current.ineFront as unknown as StoredRef).catch(() => undefined)
+        ? await this.readRef(current.ineFront as unknown as StoredRef, body.tenantId).catch(() => undefined)
         : undefined;
       bio = await this.biometrics.analyze({ onboardingId: id, selfie: body.selfie, inePortrait });
     } catch (error) {
@@ -323,6 +330,7 @@ export class OnboardingService {
         'Onboarding en revisión',
         `${current.fullName} ya tiene INE y prueba de vida. Falta habilitar la firma.`,
         `/onboarding/${id}`,
+        current.tenantId,
       );
     }
     return publicView(updated);
@@ -426,6 +434,7 @@ export class OnboardingService {
       'Identidad habilitada',
       'Ya puedes firmar documentos en Prestige.',
       '/inbox',
+      current.tenantId,
     );
     await this.webhooks
       .emit(

@@ -84,14 +84,14 @@ describe('SignatureRequestsService.sign — gate requirePasskey', () => {
   it('rechaza ACCEPT sin passkeyAssertionId cuando requirePasskey=true', async () => {
     const { svc, passkeys } = makeService({ requirePasskey: true, consumeOk: true });
     await expect(
-      svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
+      svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(passkeys.consume).not.toHaveBeenCalled();
   });
 
   it('deja pasar ACCEPT con una aserción válida cuando requirePasskey=true', async () => {
     const { svc, passkeys, signing } = makeService({ requirePasskey: true, consumeOk: true });
-    await svc.sign('sr-1', {
+    await svc.signFromPublicLink('sr-1', {
       signerId: 'maria',
       method: 'ACCEPT',
       consentAccepted: true,
@@ -108,7 +108,7 @@ describe('SignatureRequestsService.sign — gate requirePasskey', () => {
 
   it('no exige passkey cuando requirePasskey=false', async () => {
     const { svc, passkeys, signing } = makeService({ requirePasskey: false, consumeOk: true });
-    await svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
+    await svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
     expect(passkeys.consume).not.toHaveBeenCalled();
     expect(signing.sign).toHaveBeenCalled();
   });
@@ -116,7 +116,7 @@ describe('SignatureRequestsService.sign — gate requirePasskey', () => {
   it('rechaza con la excepción del servicio de ceremonia si la aserción es inválida', async () => {
     const { svc } = makeService({ requirePasskey: true, consumeOk: false });
     await expect(
-      svc.sign('sr-1', {
+      svc.signFromPublicLink('sr-1', {
         signerId: 'maria',
         method: 'ACCEPT',
         consentAccepted: true,

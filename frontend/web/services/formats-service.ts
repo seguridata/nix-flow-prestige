@@ -162,7 +162,19 @@ export const createFlowDefinition = (body: { name: string; description?: string;
 export const saveFlowDefinition = (key: string, body: { name?: string; description?: string; flow: Flow }) =>
   apiClient.put<FlowDefinition>(`/process-definitions/${encodeURIComponent(key)}/flow`, body);
 
-export const setFlowPublished = (key: string, version: number, published: boolean) =>
+export interface BpmnToFlowResult {
+  /** `null` si el diagrama no se pudo convertir; los motivos van en `errors`. */
+  flow: Flow | null;
+  errors: string[];
+  /** Valores completados por defecto (rol, participante, variables inferidas…). */
+  warnings: string[];
+}
+
+/** Convierte el BPMN del modelador en un flujo ejecutable, sin guardarlo. */
+export const convertBpmnToFlow = (xml: string, variables?: Flow["variables"]) =>
+  apiClient.post<BpmnToFlowResult>("/flows/from-bpmn", { xml, variables });
+
+export const setFlowPublished =(key: string, version: number, published: boolean) =>
   apiClient.post<FlowDefinition>(
     `/process-definitions/${encodeURIComponent(key)}/versions/${version}/${published ? "publish" : "unpublish"}`,
   );

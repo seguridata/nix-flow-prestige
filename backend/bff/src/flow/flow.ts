@@ -10,13 +10,13 @@ import {
 } from './flow.types';
 
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,39}$/;
-const STEP_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const STEP_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const OPS: Op[] = ['>', '>=', '<', '<=', '==', '!='];
 const ORDERED_OPS: Op[] = ['>', '>=', '<', '<='];
 const VAR_TYPES = ['text', 'date', 'number', 'select'] as const;
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+export const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Valida la forma y la coherencia de un flujo. Devuelve los errores en español (vacío = válido). */
 export function validateFlow(input: unknown): string[] {
@@ -208,11 +208,18 @@ export function flowToBpmn(flow: Flow, meta: { key: string; name: string }): str
 
   flow.steps.forEach((step: FlowStep, i) => {
     const sid = `Step_${i + 1}`;
-    const ext = [
+    const extAttrs = [
       `prestige:stepId="${esc(step.id)}"`,
       `prestige:role="${step.role}"`,
       `prestige:who="${esc(step.who.type === 'fixed' ? `fixed:${step.who.signerId}` : step.who.type)}"`,
-    ].join(' ');
+    ];
+    // Lo necesario para reconstruir el flujo desde el BPMN (ver `bpmnToFlow`).
+    if (step.who.type === 'ask') extAttrs.push(`prestige:prompt="${esc(step.who.prompt)}"`);
+    if (step.who.type === 'fixed') {
+      if (step.who.name) extAttrs.push(`prestige:signerName="${esc(step.who.name)}"`);
+      if (step.who.email) extAttrs.push(`prestige:signerEmail="${esc(step.who.email)}"`);
+    }
+    const ext = extAttrs.join(' ');
     const taskXml = `    <bpmn:userTask id="${sid}" name="${esc(step.label)}" ${ext} />`;
 
     if (!step.when?.length) {
@@ -279,7 +286,7 @@ export function flowToBpmn(flow: Flow, meta: { key: string; name: string }): str
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:prestige="http://prestige.seguridata.com/bpmn" id="Definitions_${meta.key.replace(/[^A-Za-z0-9_]/g, '_')}" targetNamespace="http://prestige.seguridata.com/bpmn">
-  <bpmn:process id="${processId}" name="${esc(meta.name)}" isExecutable="false" prestige:order="${flow.order}" prestige:slaHours="${flow.slaHours}">
+  <bpmn:process id="${processId}" name="${esc(meta.name)}" isExecutable="false" prestige:order="${flow.order}" prestige:slaHours="${flow.slaHours}" prestige:variables="${esc(JSON.stringify(flow.variables))}">
 ${nodes.join('\n')}
 ${flows.join('\n')}
   </bpmn:process>

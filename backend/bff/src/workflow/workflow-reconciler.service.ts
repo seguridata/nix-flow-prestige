@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
-import { withAdvisoryLock } from '../common/advisory-lock';
+import { withTickLock } from '../common/advisory-lock';
+import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkflowService } from './workflow.service';
 
@@ -27,6 +28,7 @@ export class WorkflowReconcilerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   protected client(): Promise<Client> {
@@ -51,7 +53,7 @@ export class WorkflowReconcilerService {
     if (this.running) return;
     this.running = true;
     try {
-      await withAdvisoryLock(this.prisma, 'prestige:workflow-reconciler', () => this.reconcile());
+      await withTickLock({ redis: this.redis, prisma: this.prisma }, 'prestige:workflow-reconciler', () => this.reconcile());
     } catch (error) {
       this.log.error(`reconcile: ${(error as Error).message}`);
     } finally {

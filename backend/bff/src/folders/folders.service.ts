@@ -2,10 +2,16 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Folder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** Tope por defecto (sin `limit`) y maximo por pagina de expedientes de una carpeta. */
+const CASES_LEGACY_CAP = 500;
+const CASES_MAX_PAGE = 500;
+
 export interface DriveContents {
   folder: Folder | null;
   /** De la raíz a la carpeta actual (incluida). */
   path: Pick<Folder, 'id' | 'name'>[];
+  /** Cursor para la siguiente pagina de `cases` (`?cursor=`); null si no hay mas. */
+  nextCursor: string | null;
   folders: (Folder & { itemCount: number })[];
   /** Expedientes y documentos sueltos (`loose`); la UI distingue cuál es cuál. */
   cases: {
@@ -50,7 +56,13 @@ export class FoldersService {
     return path;
   }
 
-  async contents(folderId: string | null, actor: DriveActor): Promise<DriveContents> {
+  async contents(
+    folderId: string | null,
+    actor: DriveActor,
+    page: { limit?: number; cursor?: string } = {},
+  ): Promise<DriveContents> {
+    // Compatible: sin limit/cursor el tope sigue siendo 500; con ellos pagina por cursor (id).
+    const limit = Math.min(CASES_MAX_PAGE, Math.max(1, Math.trunc(page.limit ?? CASES_LEGACY_CAP) || CASES_LEGACY_CAP));
     const folder = folderId ? await this.mine(folderId, actor) : null;
     // En la raíz también salen los expedientes anteriores a las carpetas (ownerId nulo).
     const caseOwner = folderId
@@ -65,8 +77,9 @@ export class FoldersService {
       }),
       this.prisma.case.findMany({
         where: { tenantId: actor.tenantId, ...caseOwner },
-        orderBy: { createdAt: 'desc' },
-        take: 500,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(page.cursor ? { cursor: { id: page.cursor }, skip: 1 } : {}),
         include: {
           _count: { select: { documents: true } },
           documents: {
@@ -79,11 +92,14 @@ export class FoldersService {
       this.pathOf(folder, actor),
     ]);
 
+    const hasMore = cases.length > limit;
+    const pageCases = hasMore ? cases.slice(0, limit) : cases;
     return {
       folder,
       path,
+      nextCursor: hasMore ? pageCases[pageCases.length - 1].id : null,
       folders: folders.map(({ _count, ...f }) => ({ ...f, itemCount: _count.children + _count.cases })),
-      cases: cases.map((c) => ({
+      cases: pageCases.map((c) => ({
         id: c.id,
         title: c.title,
         status: c.status,

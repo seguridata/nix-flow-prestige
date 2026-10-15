@@ -9,6 +9,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.STORAGE_MASTER_KEY_V2;
+  delete process.env.STORAGE_ACTIVE_KID;
   if (previous === undefined) delete process.env.STORAGE_MASTER_KEY;
   else process.env.STORAGE_MASTER_KEY = previous;
 });
@@ -57,5 +59,47 @@ describe('encryptObject / decryptObject', () => {
     process.env.STORAGE_MASTER_KEY = randomBytes(32).toString('base64');
     const { ciphertext, enc } = encryptObject(Buffer.from('x'));
     expect(() => decryptObject(ciphertext, { ...enc, alg: 'AES-128-CBC' as 'AES-256-GCM' })).toThrow(/no soportado/);
+  });
+});
+
+describe('kid y AAD de tenant', () => {
+  it('cifra con kid v1 por defecto y sin aad', () => {
+    const { enc } = encryptObject(Buffer.from('x'));
+    expect(enc.dek.kid).toBe('v1');
+    expect(enc.aad).toBeUndefined();
+  });
+
+  it('objeto antiguo (sin kid ni aad) sigue descifrando con la llave actual', () => {
+    const plain = Buffer.from('antiguo');
+    const { ciphertext, enc } = encryptObject(plain);
+    const legacy = { ...enc, dek: { wrapped: enc.dek.wrapped, iv: enc.dek.iv, tag: enc.dek.tag } };
+    expect(decryptObject(ciphertext, legacy).equals(plain)).toBe(true);
+  });
+
+  it('rotación: objetos v1 y v2 conviven con ambas llaves configuradas', () => {
+    const plain = Buffer.from('rotacion');
+    const old = encryptObject(plain);
+    process.env.STORAGE_MASTER_KEY_V2 = randomBytes(32).toString('base64');
+    process.env.STORAGE_ACTIVE_KID = 'v2';
+    const fresh = encryptObject(plain);
+    expect(old.enc.dek.kid).toBe('v1');
+    expect(fresh.enc.dek.kid).toBe('v2');
+    expect(decryptObject(old.ciphertext, old.enc).equals(plain)).toBe(true);
+    expect(decryptObject(fresh.ciphertext, fresh.enc).equals(plain)).toBe(true);
+    delete process.env.STORAGE_MASTER_KEY_V2;
+    expect(() => decryptObject(fresh.ciphertext, fresh.enc)).toThrow(/STORAGE_MASTER_KEY_V2/);
+  });
+
+  it('AAD de tenant: round-trip con el mismo tenant, falla con otro o sin tenant', () => {
+    const plain = Buffer.from('expediente del tenant');
+    const { ciphertext, enc } = encryptObject(plain, { tenantId: 'tenant-a' });
+    expect(enc.aad).toBe('tenant');
+    expect(decryptObject(ciphertext, enc, { tenantId: 'tenant-a' }).equals(plain)).toBe(true);
+    expect(() => decryptObject(ciphertext, enc, { tenantId: 'tenant-b' })).toThrow();
+    expect(() => decryptObject(ciphertext, enc)).toThrow(/tenantId/);
+  });
+
+  it('rechaza un kid con caracteres inválidos', () => {
+    expect(() => encryptObject(Buffer.from('x'), { kid: '../v1' })).toThrow(/inválido/);
   });
 });

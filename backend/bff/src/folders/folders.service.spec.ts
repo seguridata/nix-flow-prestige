@@ -83,3 +83,42 @@ describe('carpetas personales', () => {
     await expect(s.create('   ', null, me)).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('contents: paginación de expedientes', () => {
+  const mkCase = (id: string) => ({
+    id,
+    title: id,
+    status: 'ABIERTO',
+    loose: false,
+    createdAt: new Date(),
+    _count: { documents: 0 },
+    documents: [],
+  });
+  function contentsSvc(all: string[]) {
+    const caseFindMany = vi.fn(async (args: any) => {
+      let ids = [...all];
+      if (args.cursor) ids = ids.slice(ids.indexOf(args.cursor.id) + (args.skip ?? 0));
+      return ids.slice(0, args.take).map(mkCase);
+    });
+    const prisma = { folder: { findMany: vi.fn(async () => []) }, case: { findMany: caseFindMany } };
+    return { s: new FoldersService(prisma as any), caseFindMany };
+  }
+
+  it('sin limit/cursor conserva el tope legado de 500 (pide 501 para detectar más)', async () => {
+    const { s, caseFindMany } = contentsSvc(['c1', 'c2']);
+    const r = await s.contents(null, me);
+    expect(caseFindMany.mock.calls[0][0].take).toBe(501);
+    expect(r.cases.map((c) => c.id)).toEqual(['c1', 'c2']);
+    expect(r.nextCursor).toBeNull();
+  });
+
+  it('con limit devuelve nextCursor y la siguiente página continúa', async () => {
+    const { s } = contentsSvc(['c1', 'c2', 'c3']);
+    const p1 = await s.contents(null, me, { limit: 2 });
+    expect(p1.cases.map((c) => c.id)).toEqual(['c1', 'c2']);
+    expect(p1.nextCursor).toBe('c2');
+    const p2 = await s.contents(null, me, { limit: 2, cursor: p1.nextCursor! });
+    expect(p2.cases.map((c) => c.id)).toEqual(['c3']);
+    expect(p2.nextCursor).toBeNull();
+  });
+});

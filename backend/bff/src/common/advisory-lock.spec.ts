@@ -65,3 +65,89 @@ describe('withAdvisoryLock', () => {
     expect((await withAdvisoryLock(db as never, 'k', async () => 1)).acquired).toBe(true);
   });
 });
+
+import { withTickLock } from './advisory-lock';
+
+/** Redis falso con SET NX PX y EVAL compare-and-delete/pexpire. */
+function fakeRedis() {
+  const kv = new Map<string, string>();
+  const client = {
+    set: vi.fn(async (k: string, v: string, _px: 'PX', _ttl: number, _nx: 'NX') => {
+      if (kv.has(k)) return null;
+      kv.set(k, v);
+      return 'OK';
+    }),
+    eval: vi.fn(async (script: string, _n: number, k: string, token: string) => {
+      if (kv.get(k) !== token) return 0;
+      if (script.includes("'del'")) kv.delete(k);
+      return 1;
+    }),
+  };
+  return { redis: { client: () => client }, client, kv };
+}
+
+describe('withTickLock', () => {
+  it('toma el lease en Redis y NO abre transacción de Postgres durante fn', async () => {
+    const { redis, kv } = fakeRedis();
+    const $transaction = vi.fn();
+    const r = await withTickLock({ redis, prisma: { $transaction } as never }, 'k', async () => {
+      expect(kv.size).toBe(1); // lease tomado mientras corre fn
+      return 7;
+    });
+    expect(r).toEqual({ acquired: true, value: 7 });
+    expect($transaction).not.toHaveBeenCalled();
+    expect(kv.size).toBe(0); // liberado
+  });
+
+  it('otra réplica con el lease => no ejecuta fn', async () => {
+    const { redis } = fakeRedis();
+    const deps = { redis, prisma: { $transaction: vi.fn() } as never };
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const first = withTickLock(deps, 'k', () => gate);
+    await new Promise((r) => setTimeout(r, 1));
+    const fn2 = vi.fn();
+    expect(await withTickLock(deps, 'k', fn2)).toEqual({ acquired: false });
+    expect(fn2).not.toHaveBeenCalled();
+    release();
+    await first;
+    expect((await withTickLock(deps, 'k', async () => 1)).acquired).toBe(true);
+  });
+
+  it('libera el lease aunque fn lance', async () => {
+    const { redis, kv } = fakeRedis();
+    const deps = { redis, prisma: { $transaction: vi.fn() } as never };
+    await expect(withTickLock(deps, 'k', async () => { throw new Error('x'); })).rejects.toThrow('x');
+    expect(kv.size).toBe(0);
+  });
+
+  it('sin Redis usa el lock transaccional de respaldo', async () => {
+    const db = fakeDb();
+    const r = await withTickLock({ redis: { client: () => null }, prisma: db as never }, 'k', async () => 3);
+    expect(r).toEqual({ acquired: true, value: 3 });
+  });
+
+  it('si Redis falla al adquirir, cae al respaldo transaccional', async () => {
+    const db = fakeDb();
+    const redis = { client: () => ({ set: async () => { throw new Error('down'); }, eval: vi.fn() }) };
+    const r = await withTickLock({ redis, prisma: db as never }, 'k', async () => 9);
+    expect(r).toEqual({ acquired: true, value: 9 });
+  });
+
+  it('renueva el lease con latido mientras fn sigue vivo', async () => {
+    vi.useFakeTimers();
+    try {
+      const { redis, client } = fakeRedis();
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const p = withTickLock({ redis, prisma: {} as never }, 'k', () => gate, { ttlMs: 3_000 });
+      await vi.advanceTimersByTimeAsync(2_100);
+      const renews = client.eval.mock.calls.filter((c) => String(c[0]).includes('pexpire'));
+      expect(renews.length).toBeGreaterThanOrEqual(2);
+      release();
+      await p;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

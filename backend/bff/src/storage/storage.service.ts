@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import {
   DeleteObjectCommand,
@@ -17,6 +17,48 @@ export interface StoredObject {
   enc: EncMeta;
 }
 
+/** Prefijos de clave que llevan el tenant como SEGUNDO segmento: `<prefijo>/<tenant>/...`. */
+const TENANT_KEY_PREFIXES = new Set(['documents', 'templates', 'evidence', 'presented', 'onboarding']);
+
+/**
+ * Claves guardadas ANTES de que el tenant formara parte de la clave. Siguen
+ * siendo datos válidos (la fila que las referencia ya se consultó filtrada por
+ * tenant), así que se aceptan —con aviso— y no se bloquean descargas existentes:
+ *  - `documents/<yyyy-mm-dd>/<uuid>-<nombre>`: documentos previos a 5659271 y
+ *    el script `prisma/scripts/backfill-storage.ts` (prefijo plano 'documents').
+ *  - `legacy/pendiente-de-backfill/<id>`: marcador de la migración de de-base64.
+ *  - `onboarding/(ine|selfie)/<yyyy-mm-dd>/...`: INE/selfie previos a llevar tenant.
+ */
+const LEGACY_KEY_PATTERNS: RegExp[] = [
+  /^documents\/\d{4}-\d{2}-\d{2}\//,
+  /^legacy\/pendiente-de-backfill\//,
+  /^onboarding\/(ine|selfie)\/\d{4}-\d{2}-\d{2}\//,
+];
+
+const keyLog = new Logger('StorageTenantKey');
+
+/**
+ * Defensa en profundidad: exige que una clave de objeto guardada en una fila
+ * pertenezca al tenant que la pide (`documents|templates|evidence|presented|
+ * onboarding/<tenantId>/...`). Las consultas por fila ya filtran por tenant;
+ * esto evita leer/borrar un objeto ajeno si una fila quedara corrupta o mal
+ * escrita. Si no cumple: error CLARO en el log (con tenant y clave) y
+ * `NotFoundException` (404) al usuario, sin revelar nada. Las claves antiguas
+ * sin tenant (ver `LEGACY_KEY_PATTERNS`) se aceptan con aviso.
+ */
+export function assertTenantKey(tenantId: string, objectKey: string): void {
+  const segments = typeof objectKey === 'string' ? objectKey.split('/') : [];
+  // Sin segmentos vacíos ni '.'/'..' (nada de recorridos de ruta).
+  const wellFormed = segments.length >= 3 && segments.every((s) => s !== '' && s !== '.' && s !== '..');
+  if (wellFormed && tenantId.length > 0 && TENANT_KEY_PREFIXES.has(segments[0]) && segments[1] === tenantId) return;
+  if (wellFormed && LEGACY_KEY_PATTERNS.some((re) => re.test(objectKey))) {
+    keyLog.warn(`Clave de storage antigua sin tenant (se permite): ${objectKey} (tenant ${tenantId})`);
+    return;
+  }
+  keyLog.error(`Clave de storage NO pertenece al tenant "${tenantId}": ${objectKey}. Acceso denegado.`);
+  throw new NotFoundException('Archivo no encontrado');
+}
+
 /**
  * Object storage S3-compatible (MinIO en el sandbox). Obligatorio: no hay
  * fallback a base64 en la base de datos. Todo objeto se cifra en reposo con
@@ -31,6 +73,16 @@ export class StorageService {
 
   constructor() {
     const endpoint = process.env.S3_ENDPOINT;
+    const accessKeyId = process.env.S3_ACCESS_KEY?.trim() || undefined;
+    const secretAccessKey = process.env.S3_SECRET_KEY?.trim() || undefined;
+    if (endpoint && process.env.NODE_ENV === 'production') {
+      // En producción no hay credenciales por defecto de MinIO de desarrollo.
+      if (!accessKeyId || !secretAccessKey || accessKeyId === 'prestige' || secretAccessKey === 'prestige-minio') {
+        throw new Error(
+          'S3_ACCESS_KEY / S3_SECRET_KEY deben estar definidas y distintas de las de desarrollo (prestige / prestige-minio) en producción.',
+        );
+      }
+    }
     this.bucket = process.env.S3_BUCKET ?? 'prestige-docs';
     this.client = endpoint
       ? new S3Client({
@@ -38,8 +90,8 @@ export class StorageService {
           endpoint,
           forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
           credentials: {
-            accessKeyId: process.env.S3_ACCESS_KEY ?? 'prestige',
-            secretAccessKey: process.env.S3_SECRET_KEY ?? 'prestige-minio',
+            accessKeyId: accessKeyId ?? 'prestige',
+            secretAccessKey: secretAccessKey ?? 'prestige-minio',
           },
         })
       : null;

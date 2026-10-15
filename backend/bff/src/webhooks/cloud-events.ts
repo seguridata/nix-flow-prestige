@@ -28,9 +28,11 @@ export function cloudEvent<T>(params: {
   type: string;
   data: T;
   subject?: string;
-  tenantId?: string;
+  /** Obligatorio: un evento sin tenant jamás debe atribuirse a otro (antes caía en 'seguridata'). */
+  tenantId: string;
   source?: string;
 }): CloudEvent<T> {
+  if (!params.tenantId) throw new Error('cloudEvent: tenantId es obligatorio');
   return {
     specversion: '1.0',
     id: randomUUID(),
@@ -39,7 +41,7 @@ export function cloudEvent<T>(params: {
     subject: params.subject,
     time: new Date().toISOString(),
     datacontenttype: 'application/json',
-    tenantid: params.tenantId ?? 'seguridata',
+    tenantid: params.tenantId,
     data: params.data,
   };
 }

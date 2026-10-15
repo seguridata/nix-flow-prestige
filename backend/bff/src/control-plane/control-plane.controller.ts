@@ -19,7 +19,7 @@ import { PageQueryDto } from '../common/pagination';
 import { ControlPlaneService, isPlatformAdmin } from './control-plane.service';
 import { SloService } from './slo.service';
 
-const SLUG = /^[a-z0-9-]{2,40}$/;
+const SLUG = /^[a-z0-9-]{3,40}$/;
 const PRINCIPAL = /^[A-Za-z0-9._@+-]{1,120}$/;
 
 class CatalogQueryDto extends PageQueryDto {
@@ -85,6 +85,20 @@ export class ControlPlaneController {
   @Patch('tenants/:id')
   updateTenant(@Param('id') id: string, @Body() body: UpdateTenantDto) {
     return this.cp.updateTenant(id, body);
+  }
+
+  /** Suspende el tenant: bloquea el acceso, pausa webhooks y cancela entregas pendientes. */
+  @Roles('platform_admin')
+  @Post('tenants/:tenant/suspend')
+  suspendTenant(@Param('tenant') tenant: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.cp.suspendTenant(tenant, user.actorId);
+  }
+
+  /** Reactiva el tenant (no reactiva sus webhooks). */
+  @Roles('platform_admin')
+  @Post('tenants/:tenant/reactivate')
+  reactivateTenant(@Param('tenant') tenant: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.cp.reactivateTenant(tenant, user.actorId);
   }
 
   @Get('tenants/:tenant/members')
@@ -163,6 +177,6 @@ export class ControlPlaneController {
   @Get('slo')
   sloSnapshot(@CurrentUser() user: AuthenticatedUser) {
     // Vista global solo para platform_admin; el resto ve únicamente su tenant.
-    return this.slo.snapshot(isPlatformAdmin(user) ? undefined : user.tenantId);
+    return isPlatformAdmin(user) ? this.slo.snapshotGlobal() : this.slo.snapshot(user.tenantId);
   }
 }

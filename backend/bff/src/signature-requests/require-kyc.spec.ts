@@ -89,14 +89,14 @@ function makeService(opts: { kycPolicy: 'NONE' | 'ONCE' | 'EVERY_SIGN'; onboardi
 describe('SignatureRequestsService.sign — gate kycPolicy', () => {
   it('NONE no exige nada', async () => {
     const { svc, signing } = makeService({ kycPolicy: 'NONE', onboardingCases: [] });
-    await svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
+    await svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
     expect(signing.sign).toHaveBeenCalled();
   });
 
   it('ONCE rechaza sin ningún alta HABILITADO', async () => {
     const { svc } = makeService({ kycPolicy: 'ONCE', onboardingCases: [] });
     await expect(
-      svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
+      svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -105,7 +105,7 @@ describe('SignatureRequestsService.sign — gate kycPolicy', () => {
       kycPolicy: 'ONCE',
       onboardingCases: [{ updatedAt: ONE_DAY_AGO }],
     });
-    await svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
+    await svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
     expect(signing.sign).toHaveBeenCalled();
   });
 
@@ -115,7 +115,7 @@ describe('SignatureRequestsService.sign — gate kycPolicy', () => {
       onboardingCases: [{ updatedAt: NINETY_ONE_DAYS_AGO }],
     });
     await expect(
-      svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
+      svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -125,7 +125,7 @@ describe('SignatureRequestsService.sign — gate kycPolicy', () => {
       onboardingCases: [{ updatedAt: new Date(REQUEST_CREATED_AT.getTime() - 1000) }],
     });
     await expect(
-      svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
+      svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -134,7 +134,7 @@ describe('SignatureRequestsService.sign — gate kycPolicy', () => {
       kycPolicy: 'EVERY_SIGN',
       onboardingCases: [{ updatedAt: new Date(REQUEST_CREATED_AT.getTime() + 1000) }],
     });
-    await svc.sign('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
+    await svc.signFromPublicLink('sr-1', { signerId: 'maria', method: 'ACCEPT', consentAccepted: true });
     expect(signing.sign).toHaveBeenCalled();
   });
 });

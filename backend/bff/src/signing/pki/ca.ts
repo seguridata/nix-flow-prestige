@@ -135,11 +135,11 @@ export function issueLeaf(
   return { keyPem: forge.pki.privateKeyToPem(keys.privateKey), certPem: forge.pki.certificateToPem(cert), cert };
 }
 
-/** Empaqueta llave + cadena en un PKCS#12 (DER) cifrado con `passphrase`. */
+/** Empaqueta llave + cadena en un PKCS#12 (DER) cifrado con `passphrase`. Los P12 nuevos usan AES-256; los 3DES existentes se siguen leyendo. */
 export function buildP12(leaf: IssuedLeaf, ca: CaChain, passphrase: string): Buffer {
   const key = forge.pki.privateKeyFromPem(leaf.keyPem);
   const asn1 = forge.pkcs12.toPkcs12Asn1(key, [leaf.cert, ca.intermediateCert, ca.rootCert], passphrase, {
-    algorithm: '3des',
+    algorithm: 'aes256',
     friendlyName: 'Prestige Signer',
   });
   return Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary');

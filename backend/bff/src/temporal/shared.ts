@@ -2,6 +2,12 @@ export const PRESTIGE_TASK_QUEUE = 'prestige';
 export const CONTRATO_DOS_PARTES = 'contratoDosPartes';
 
 export interface ContratoWorkflowInput {
+  /**
+   * Tenant dueño de la solicitud. Opcional por compatibilidad con workflows en
+   * curso iniciados antes de que el input lo trajera: en ese caso el BFF lo
+   * deduce de la BD (y registra un warn).
+   */
+  tenantId?: string;
   signatureRequestId: string;
   documentId: string;
   caseId?: string;
@@ -20,9 +26,21 @@ export interface ContratoWorkflowState {
   nudges: number;
 }
 
+/** Id de workflow para workflows NUEVOS: incluye el tenant. */
+export function workflowIdFor(tenantId: string, processKey: string, signatureRequestId: string): string {
+  return `${tenantId}:${processKey}:${signatureRequestId}`;
+}
+
+/** Fórmula antigua (sin tenant): solo para workflows ya en curso sin fila en BD. */
+export function legacyWorkflowIdFor(processKey: string, signatureRequestId: string): string {
+  return `${processKey}:${signatureRequestId}`;
+}
+
 export type NudgeKind = 'REMINDER' | 'ESCALATION';
 
 export interface NudgeCommand {
+  /** Tenant de la solicitud; el BFF verifica que coincida. Opcional (workflows antiguos). */
+  tenantId?: string;
   signatureRequestId: string;
   kind: NudgeKind;
   /** Fracción del SLA en la que se dispara (0.5, 0.75, 0.9…). */

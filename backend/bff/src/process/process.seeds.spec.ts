@@ -15,6 +15,15 @@ describe('ProcessService.ensureSeeds - idempotente con arranques paralelos', () 
     expect(create).toHaveBeenCalled();
   });
 
+  it('las semillas nacen en la plataforma, nunca en un tenant', async () => {
+    const create = vi.fn(async () => ({}));
+    const findFirst = vi.fn(async () => null);
+    await new ProcessService({ processDefinition: { findFirst, create } } as any, {} as any).ensureSeeds();
+    expect(findFirst.mock.calls.every((c: any[]) => c[0].where.tenantId === 'platform')).toBe(true);
+    expect(create.mock.calls.every((c: any[]) => c[0].data.tenantId === 'platform')).toBe(true);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it('propaga otros errores', async () => {
     const prisma = {
       processDefinition: { findFirst: vi.fn(async () => null), create: vi.fn(async () => { throw new Error('boom'); }) },

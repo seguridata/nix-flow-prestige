@@ -40,13 +40,13 @@ export class InboxService {
   ) {}
 
   /** Documentos y casos en 2 consultas en lote (antes: 2 por solicitud). */
-  private async lookups(documentIds: string[], tenantId?: string) {
+  private async lookups(documentIds: string[], tenantId: string) {
     const docs = await this.documents.findManyByIds(documentIds, tenantId);
     const kases = await this.cases.findManyByIds([...docs.values()].map((d) => d.caseId), tenantId);
     return { docs, kases };
   }
 
-  async forSigner(signerId: string, tenantId?: string): Promise<InboxItem[]> {
+  async forSigner(signerId: string, tenantId: string): Promise<InboxItem[]> {
     const requests = await this.signatureRequests.listAll(signerId, undefined, undefined, undefined, tenantId);
     const { docs, kases } = await this.lookups(requests.map((r) => r.documentId), tenantId);
 
@@ -93,7 +93,7 @@ export class InboxService {
     return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 
-  async forRequester(requestedBy: string, tenantId?: string): Promise<InboxItem[]> {
+  async forRequester(requestedBy: string, tenantId: string): Promise<InboxItem[]> {
     const requests = await this.signatureRequests.listAll(
       undefined,
       undefined,

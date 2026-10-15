@@ -48,3 +48,24 @@ describe('InboxService: vencimiento y firmantes', () => {
     expect(item!.expiresAt).toBe(expires.toISOString());
   });
 });
+
+describe('InboxService: el tenant viaja a TODAS las consultas', () => {
+  it('forSigner pasa el tenant a solicitudes, documentos y casos', async () => {
+    const signatureRequests = { listAll: vi.fn(async () => [request()]) };
+    const documents = { findManyByIds: vi.fn(async () => new Map()) };
+    const cases = { findManyByIds: vi.fn(async () => new Map()) };
+    await new InboxService(signatureRequests as any, documents as any, cases as any).forSigner('carlos', 'acme');
+    expect(signatureRequests.listAll).toHaveBeenCalledWith('carlos', undefined, undefined, undefined, 'acme');
+    expect(documents.findManyByIds).toHaveBeenCalledWith(['d1'], 'acme');
+    expect(cases.findManyByIds).toHaveBeenCalledWith([], 'acme');
+  });
+
+  it('forRequester pasa el tenant a solicitudes, documentos y casos', async () => {
+    const signatureRequests = { listAll: vi.fn(async () => [request()]) };
+    const documents = { findManyByIds: vi.fn(async () => new Map()) };
+    const cases = { findManyByIds: vi.fn(async () => new Map()) };
+    await new InboxService(signatureRequests as any, documents as any, cases as any).forRequester('ana', 'acme');
+    expect(signatureRequests.listAll).toHaveBeenCalledWith(undefined, undefined, undefined, 'ana', 'acme');
+    expect(documents.findManyByIds).toHaveBeenCalledWith(['d1'], 'acme');
+  });
+});

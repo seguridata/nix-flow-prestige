@@ -1,9 +1,10 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Optional, Query, ServiceUnavailableException } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Public } from '../auth/public.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { SigningRouter } from '../signing/signing.router';
 import { StorageService } from '../storage/storage.service';
 
@@ -15,6 +16,7 @@ export class OperationsController {
     private readonly prisma: PrismaService,
     private readonly signing: SigningRouter,
     private readonly storage: StorageService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   @Public()
@@ -32,6 +34,55 @@ export class OperationsController {
       adapters: this.signing.capabilities(),
       at: new Date().toISOString(),
     };
+  }
+
+  /** Liveness: el proceso responde. Nunca toca dependencias (para el balanceador/orquestador). */
+  @Public()
+  @Get('health/live')
+  live() {
+    return { status: 'ok', at: new Date().toISOString() };
+  }
+
+  /**
+   * Readiness: 503 si Postgres no responde (la réplica no debe recibir tráfico).
+   * Redis y el almacenamiento de objetos se reportan como informativos.
+   */
+  @Public()
+  @Get('health/ready')
+  async ready() {
+    const [postgres, redis, objectStorage] = await Promise.all([
+      this.checkPostgres(),
+      this.checkRedis(),
+      this.storage.ping(HEALTH_TIMEOUT_MS).catch(() => false),
+    ]);
+    const body = {
+      status: postgres ? 'ok' : 'unavailable',
+      postgres,
+      redis, // 'disabled' si REDIS_URL no está configurado
+      objectStorage,
+      at: new Date().toISOString(),
+    };
+    if (!postgres) throw new ServiceUnavailableException(body);
+    return body;
+  }
+
+  private async checkRedis(): Promise<boolean | 'disabled'> {
+    const client = this.redis?.client() ?? null;
+    if (!client) return 'disabled';
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        client.ping(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('timeout')), HEALTH_TIMEOUT_MS);
+        }),
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /** SELECT 1 con timeout corto; nunca lanza ni expone el error. */

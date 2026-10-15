@@ -111,7 +111,7 @@ export class PublicSignController {
   ) {
     const link = await this.links.resolve(token);
     if (!link.signatureRequestId) throw new BadRequestException('El enlace no tiene solicitud asociada');
-    return this.signatureRequests.recordConsent(link.signatureRequestId, {
+    return this.signatureRequests.recordConsentFromPublicLink(link.signatureRequestId, {
       signerId: link.signerId,
       ip,
       userAgent,
@@ -166,7 +166,7 @@ export class PublicSignController {
     }
     const signatureRequestId = link.signatureRequestId;
     const result = await this.guarded(token, () =>
-      this.signatureRequests.sign(
+      this.signatureRequests.signFromPublicLink(
         signatureRequestId,
         {
           signerId: link.signerId,
@@ -202,7 +202,7 @@ export class PublicSignController {
     if (link.purpose !== 'sign' || !link.signatureRequestId) {
       throw new BadRequestException('El enlace no sirve para rechazar');
     }
-    await this.signatureRequests.reject(link.signatureRequestId, {
+    await this.signatureRequests.rejectFromPublicLink(link.signatureRequestId, {
       signerId: link.signerId,
       reason: body.reason,
     });

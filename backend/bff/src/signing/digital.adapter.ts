@@ -57,7 +57,7 @@ export class DigitalSignerAdapter implements SignerAdapter {
   }
 
   async sign(command: SignCommand): Promise<SignResult> {
-    const material = await this.custodian.getSigningMaterial(command.signerId, command.signerName);
+    const material = await this.custodian.getSigningMaterial(command.signerId, command.signerName, command.tenantId);
     const at = new Date();
 
     // Multi-firma en serie: si el PDF ya trae una firma PAdES, CUALQUIER

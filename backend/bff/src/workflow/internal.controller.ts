@@ -16,9 +16,12 @@ import {
 import { Public } from '../auth/public.decorator';
 import { WorkerGuard } from '../auth/worker.guard';
 import { WorkflowService } from './workflow.service';
-import type { ContratoWorkflowInput } from '../temporal/shared';
+import { CONTRATO_DOS_PARTES, type ContratoWorkflowInput } from '../temporal/shared';
 
 class NudgeCommandDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(200)
+  tenantId?: string;
+
   @IsString() @MaxLength(200)
   signatureRequestId!: string;
 
@@ -33,6 +36,9 @@ class NudgeCommandDto {
 }
 
 class SignatureRequestIdDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(200)
+  tenantId?: string;
+
   @IsString() @MinLength(1) @MaxLength(200)
   signatureRequestId!: string;
 }
@@ -46,6 +52,9 @@ class SeedSignerDto {
 }
 
 class SeedTasksDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(200)
+  tenantId?: string;
+
   @IsString() @MinLength(1) @MaxLength(200)
   signatureRequestId!: string;
 
@@ -83,19 +92,20 @@ export class WorkflowInternalController {
   @Public()
   @Post('seed-tasks')
   seed(@Body() body: SeedTasksDto) {
-    return this.workflow.seedTasks(body as ContratoWorkflowInput, `${body.processKey ?? 'contratoDosPartes'}:${body.signatureRequestId}`);
+    // El id real del workflow sale de WorkflowRun (los ya en curso conservan el suyo).
+    return this.workflow.seedTasksFromWorker(body as ContratoWorkflowInput, body.processKey ?? CONTRATO_DOS_PARTES);
   }
 
   @Public()
   @Post('expire')
   expire(@Body() body: SignatureRequestIdDto) {
-    return this.workflow.expire(body.signatureRequestId);
+    return this.workflow.expire(body.signatureRequestId, body.tenantId);
   }
 
   @Public()
   @Post('seal-evidence')
   seal(@Body() body: SignatureRequestIdDto) {
-    return this.workflow.seal(body.signatureRequestId);
+    return this.workflow.seal(body.signatureRequestId, body.tenantId);
   }
 
   @Public()

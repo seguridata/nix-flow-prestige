@@ -26,6 +26,11 @@ export class ManifestSigner {
       this.pubPem = readFileSync(pubPath, 'utf8');
       this.keyId = ManifestSigner.keyIdFrom(this.pubPem);
     } else {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'Falta la llave de firma del manifiesto (PKI_DIR/manifest-signing.key.pem y .pub.pem). En producción no se emiten manifiestos sin firmar: ejecuta `bun run pki:init`.',
+        );
+      }
       this.keyId = null;
       this.log.warn('Falta la llave de firma del manifiesto (ejecuta `bun run pki:init`). Se guardará sin firmar.');
     }

@@ -145,36 +145,61 @@ describe('WorkerGuard — HMAC con método+path+ts y anti-replay', () => {
     });
   };
 
-  it('acepta una firma válida y rechaza su replay', () => {
+  it('acepta una firma válida y rechaza su replay (memoria)', async () => {
     process.env.WORKER_SHARED_SECRET = SECRET;
     const guard = new WorkerGuard();
     const { context } = make({ ts: Date.now() });
-    expect(guard.canActivate(context)).toBe(true);
-    expect(() => guard.canActivate(context)).toThrow(/ya utilizada/);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    await expect(guard.canActivate(context)).rejects.toThrow(/ya utilizada/);
   });
 
-  it('rechaza timestamp fuera de la ventana de 60 s', () => {
+  it('con Redis usa SET NX EX y rechaza el replay aunque lo vea otra réplica', async () => {
     process.env.WORKER_SHARED_SECRET = SECRET;
-    expect(() => new WorkerGuard().canActivate(make({ ts: Date.now() - 61_000 }).context)).toThrow(
+    const store = new Set<string>();
+    const set = vi.fn(async (k: string, _v: string, _ex: string, _ttl: number, _nx: string) => {
+      if (store.has(k)) return null;
+      store.add(k);
+      return 'OK';
+    });
+    const redis = { client: () => ({ set }) } as never;
+    const { context } = make({ ts: Date.now() });
+    await expect(new WorkerGuard(redis).canActivate(context)).resolves.toBe(true);
+    // otra réplica (otra instancia, mismo Redis)
+    await expect(new WorkerGuard(redis).canActivate(context)).rejects.toThrow(/ya utilizada/);
+    expect(set).toHaveBeenCalledWith(expect.stringMatching(/^worker-sig:/), '1', 'EX', 120, 'NX');
+  });
+
+  it('si Redis falla cae a memoria (sigue rechazando el replay)', async () => {
+    process.env.WORKER_SHARED_SECRET = SECRET;
+    const redis = { client: () => ({ set: async () => { throw new Error('down'); } }) } as never;
+    const guard = new WorkerGuard(redis);
+    const { context } = make({ ts: Date.now() });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    await expect(guard.canActivate(context)).rejects.toThrow(/ya utilizada/);
+  });
+
+  it('rechaza timestamp fuera de la ventana de 60 s', async () => {
+    process.env.WORKER_SHARED_SECRET = SECRET;
+    await expect(new WorkerGuard().canActivate(make({ ts: Date.now() - 61_000 }).context)).rejects.toThrow(
       UnauthorizedException,
     );
   });
 
-  it('la firma está atada al path y al body', () => {
+  it('la firma está atada al path y al body', async () => {
     process.env.WORKER_SHARED_SECRET = SECRET;
-    expect(() =>
+    await expect(
       new WorkerGuard().canActivate(make({ path: '/internal/workflows/seal-evidence' }).context),
-    ).toThrow(/inválida/);
+    ).rejects.toThrow(/inválida/);
     const { context } = make({});
     (context.switchToHttp().getRequest() as { body: unknown }).body = { signatureRequestId: 'otro' };
-    expect(() => new WorkerGuard().canActivate(context)).toThrow(/inválida/);
+    await expect(new WorkerGuard().canActivate(context)).rejects.toThrow(/inválida/);
   });
 
-  it('sin secreto o sin cabeceras => 401', () => {
+  it('sin secreto o sin cabeceras => 401', async () => {
     delete process.env.WORKER_SHARED_SECRET;
-    expect(() => new WorkerGuard().canActivate(make({}).context)).toThrow(UnauthorizedException);
+    await expect(new WorkerGuard().canActivate(make({}).context)).rejects.toThrow(UnauthorizedException);
     process.env.WORKER_SHARED_SECRET = SECRET;
-    expect(() => new WorkerGuard().canActivate(ctx({ method: 'POST', headers: {} }).context)).toThrow(
+    await expect(new WorkerGuard().canActivate(ctx({ method: 'POST', headers: {} }).context)).rejects.toThrow(
       UnauthorizedException,
     );
   });

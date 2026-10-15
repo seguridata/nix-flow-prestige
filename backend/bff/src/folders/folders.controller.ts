@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
-import { IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { FoldersService, type DriveContents } from './folders.service';
@@ -8,6 +9,18 @@ class ContentsQueryDto {
   @IsOptional()
   @IsUUID()
   folderId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  cursor?: string;
 }
 
 class SearchCasesQueryDto {
@@ -49,7 +62,7 @@ export class FoldersController {
 
   @Get('contents')
   contents(@Query() q: ContentsQueryDto, @CurrentUser() user: AuthenticatedUser): Promise<DriveContents> {
-    return this.folders.contents(q.folderId ?? null, actorOf(user));
+    return this.folders.contents(q.folderId ?? null, actorOf(user), { limit: q.limit, cursor: q.cursor });
   }
 
   @Get('cases')

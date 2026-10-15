@@ -74,7 +74,19 @@ function fakePrisma(rows: Partial<Delivery>[], sub: Partial<Delivery['subscripti
   );
   const prisma = {
     webhookDelivery: {
-      findMany: async () => [...store.values()].filter((d) => ['PENDIENTE', 'FALLIDO'].includes(d.status)),
+      // Como Prisma: sólo vencidas (nextAttemptAt <= now) y devuelve copias (no la fila viva).
+      findMany: async () =>
+        [...store.values()]
+          .filter((d) => ['PENDIENTE', 'FALLIDO'].includes(d.status) && d.nextAttemptAt.getTime() <= Date.now())
+          .map((d) => ({ ...d })),
+      updateMany: async ({ where, data }: { where: { id: string; nextAttemptAt: Date }; data: Record<string, unknown> }) => {
+        const d = store.get(where.id);
+        if (!d || !['PENDIENTE', 'FALLIDO'].includes(d.status) || d.nextAttemptAt.getTime() !== where.nextAttemptAt.getTime()) {
+          return { count: 0 };
+        }
+        Object.assign(d, data);
+        return { count: 1 };
+      },
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const d = store.get(where.id)!;
         for (const [k, v] of Object.entries(data)) {
@@ -224,5 +236,34 @@ describe('rotación de secreto de webhook', () => {
       expect(out).not.toContain('old-secret-9999');
       expect(out).not.toContain('previousSecret');
     }
+  });
+});
+
+describe('WebhooksService.dispatchDue - claim antes del fetch', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('toma la entrega (nextAttemptAt a futuro) ANTES del fetch y no la duplica entre ticks', async () => {
+    const { prisma, store } = fakePrisma([{ id: 'd1' }]);
+    const fetchSpy = vi.fn(async () => {
+      // durante el fetch otro tick ya no debe ver la entrega como vencida
+      expect(store.get('d1')!.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+      const second = await new WebhooksService(prisma, async () => ['93.184.216.34']).dispatchDue();
+      expect(second).toMatchObject({ sent: 0, failed: 0, dead: 0 });
+      return new Response('ok', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const res = await new WebhooksService(prisma, async () => ['93.184.216.34']).dispatchDue();
+    expect(res).toMatchObject({ sent: 1 });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el claim pierde la carrera (count 0) no hace fetch', async () => {
+    const { prisma } = fakePrisma([{ id: 'd1' }]);
+    (prisma as any).webhookDelivery.updateMany = async () => ({ count: 0 });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const res = await new WebhooksService(prisma, async () => ['93.184.216.34']).dispatchDue();
+    expect(res).toMatchObject({ sent: 0 });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

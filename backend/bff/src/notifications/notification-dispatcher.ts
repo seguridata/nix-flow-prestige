@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { withAdvisoryLock } from '../common/advisory-lock';
+import { withTickLock } from '../common/advisory-lock';
+import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationOutboxService } from './notification-outbox.service';
 
@@ -17,6 +18,7 @@ export class NotificationDispatcher {
   constructor(
     private readonly outbox: NotificationOutboxService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   @Interval('notification-outbox', 15_000)
@@ -25,7 +27,7 @@ export class NotificationDispatcher {
     this.running = true;
     try {
       // Una sola réplica por tick; el claim SKIP LOCKED del outbox cubre además el solape.
-      await withAdvisoryLock(this.prisma, 'prestige:notification-outbox', () => this.outbox.dispatchDue());
+      await withTickLock({ redis: this.redis, prisma: this.prisma }, 'prestige:notification-outbox', () => this.outbox.dispatchDue());
     } catch (error) {
       this.log.error(`dispatchDue falló: ${(error as Error).message}`);
     } finally {

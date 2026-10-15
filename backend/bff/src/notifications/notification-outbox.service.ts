@@ -98,8 +98,10 @@ export class NotificationOutboxService {
    * RETURNING *`. El lease (`nextAttemptAt = now() + lease`) va en el mismo
    * UPDATE, así que otra réplica no ve estas filas hasta que expire.
    */
-  private claim(limit: number, tenantId?: string): Promise<ClaimedRow[]> {
-    const tenantFilter = tenantId ? Prisma.sql`AND "tenantId" = ${tenantId}` : Prisma.empty;
+  private claim(limit: number, tenantId: string | null): Promise<ClaimedRow[]> {
+    // `null` = barrido global EXPLÍCITO (sólo el worker de plataforma); un string
+    // (incluso vacío) SIEMPRE filtra: ya no se omite el filtro por ser falsy.
+    const tenantFilter = tenantId === null ? Prisma.empty : Prisma.sql`AND "tenantId" = ${tenantId}`;
     return this.prisma.$queryRaw<ClaimedRow[]>(Prisma.sql`
       UPDATE "NotificationOutbox"
          SET "nextAttemptAt" = now() + make_interval(secs => ${LEASE_SECONDS}),
@@ -142,10 +144,23 @@ export class NotificationOutboxService {
   }
 
   /**
-   * Procesa un lote de mensajes vencidos. Devuelve el conteo por resultado.
-   * `tenantId` (despacho manual del admin) limita el lote a ese tenant.
+   * Despacho GLOBAL (todos los tenants). Existe sólo para el worker de
+   * plataforma (`NotificationDispatcher`), que corre sin sesión ni tenant y
+   * debe vaciar la cola completa. NO exponer en endpoints de usuario: ahí se
+   * usa `dispatchDueForTenant`.
    */
-  async dispatchDue(limit = 25, tenantId?: string) {
+  async dispatchDue(limit = 25) {
+    return this.dispatchBatch(limit, null);
+  }
+
+  /** Despacho manual del admin: limita el lote a SU tenant (obligatorio). */
+  async dispatchDueForTenant(limit: number, tenantId: string) {
+    if (!tenantId) throw new Error('dispatchDueForTenant requiere tenantId');
+    return this.dispatchBatch(limit, tenantId);
+  }
+
+  /** Procesa un lote de mensajes vencidos. Devuelve el conteo por resultado. */
+  private async dispatchBatch(limit: number, tenantId: string | null) {
     if (!this.mailer.enabled) return { skipped: true as const, sent: 0, failed: 0, dead: 0 };
 
     const due = await this.claim(limit, tenantId);

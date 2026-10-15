@@ -16,7 +16,7 @@ function setup(startImpl: () => Promise<unknown>) {
     return run;
   });
   const seed = vi.fn();
-  const prisma = { workflowRun: { upsert } } as unknown as PrismaService;
+  const prisma = { workflowRun: { upsert, findUnique: vi.fn(async () => null) } } as unknown as PrismaService;
   const svc = new WorkflowService(prisma, {} as never, {} as never, {} as never);
   (svc as unknown as { clientPromise: Promise<unknown> }).clientPromise = Promise.resolve({
     workflow: { start: startImpl },

@@ -63,14 +63,14 @@ const boxes = [
 const admin: TemplateActor = { tenantId: 'T', actorId: 'roberto', name: 'Roberto', isAdmin: true };
 const empleado: TemplateActor = { tenantId: 'T', actorId: 'maria', name: 'María Pérez', email: 'maria@x.mx', isAdmin: false };
 
-async function setup(over: { published?: boolean; tenantId?: string } = {}) {
+async function setup(over: { published?: boolean; tenantId?: string; objectKey?: string } = {}) {
   const pdf = await basePdf();
   const row = {
     id: 'tpl1',
     tenantId: over.tenantId ?? 'T',
     name: 'Vacaciones',
     published: over.published ?? true,
-    objectKey: 'k',
+    objectKey: over.objectKey ?? 'templates/T/2026-10-01/uuid-base.pdf',
     enc: {},
     pageCount: 2,
     fields,
@@ -206,6 +206,15 @@ describe('aislamiento y visibilidad', () => {
     await expect(svc.get('tpl1', empleado)).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.instantiate('tpl1', { values: {} }, empleado)).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.get('tpl1', admin)).resolves.toMatchObject({ id: 'tpl1' });
+  });
+
+  it('defensa en profundidad: una fila con clave de OTRO tenant da 404 y no toca el storage', async () => {
+    const { svc, storage } = await setup({ objectKey: 'templates/OTRO/2026-10-01/uuid-ajeno.pdf' });
+    await expect(svc.getPdf('tpl1', empleado)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.instantiate('tpl1', { values: { nombre: 'María Pérez', dias: 3 }, askedSigners: { jefe: { signerId: 'carlos' } } }, empleado)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.remove('tpl1', admin)).rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.getObject).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 
   it('el detalle nunca expone objectKey, enc ni tenantId', async () => {

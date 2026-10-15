@@ -1,6 +1,10 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { PageQueryDto } from '../common/pagination';
-import { IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { bpmnToFlow } from '../flow/bpmn-to-flow';
+import { validateFlow } from '../flow/flow';
+import type { FlowVariable } from '../flow/flow.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -47,6 +51,20 @@ class SaveFlowDto {
   flow!: Record<string, unknown>;
 }
 
+class ValidateFlowDto {
+  @IsObject()
+  flow!: Record<string, unknown>;
+}
+
+class FromBpmnDto {
+  @IsString() @MinLength(10) @MaxLength(2_000_000)
+  xml!: string;
+
+  /** Variables ya definidas (p. ej. las del flujo anterior), para no perderlas al convertir. */
+  @IsOptional() @IsArray() @Type(() => Object)
+  variables?: unknown[];
+}
+
 class DecideDto {
   @IsOptional() @IsString() @MaxLength(80)
   tipo?: string;
@@ -74,61 +92,81 @@ export class ProcessController {
 
   // Catálogo de plataforma (no por tenant): lectura abierta, escritura solo admin.
   @Get('process-definitions')
-  list(@Query() query: ListProcessQueryDto) {
-    if (query.published === 'true') return this.process.listPublished();
-    return this.process.list(query);
+  list(@Query() query: ListProcessQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    if (query.published === 'true') return this.process.listPublished(user.tenantId);
+    return this.process.list(user.tenantId, query);
+  }
+
+  /** Valida un flujo sin guardarlo (mismos errores que al crearlo). */
+  @Roles('admin')
+  @Post('flows/validate')
+  validateFlow(@Body() body: ValidateFlowDto) {
+    const errors = validateFlow(body.flow);
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Convierte un diagrama BPMN (p. ej. el del modelador) en un flujo ejecutable, sin guardarlo.
+   * Si no se puede, devuelve `flow: null` y los motivos en `errors`.
+   */
+  @Roles('admin')
+  @Post('flows/from-bpmn')
+  fromBpmn(@Body() body: FromBpmnDto) {
+    const variables = (body.variables ?? []).filter((v): v is FlowVariable => typeof v === 'object' && v !== null);
+    const { flow, errors, warnings } = bpmnToFlow(body.xml, { variables });
+    return { flow: flow ?? null, errors, warnings };
   }
 
   @Roles('admin')
   @Post('process-definitions')
-  create(@Body() body: CreateFlowDto) {
-    return this.process.createFromFlow(body);
+  create(@Body() body: CreateFlowDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.createFromFlow(user.tenantId, body);
   }
 
   @Roles('admin')
   @Put('process-definitions/:key/flow')
-  saveFlow(@Param('key') key: string, @Body() body: SaveFlowDto) {
-    return this.process.saveFlow(key, body);
+  saveFlow(@Param('key') key: string, @Body() body: SaveFlowDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.saveFlow(key, user.tenantId, body);
   }
 
   @Roles('admin')
   @Post('process-definitions/:key/versions/:version/publish')
-  publish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number) {
-    return this.process.publish(key, version);
+  publish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.publish(key, version, user.tenantId);
   }
 
   @Roles('admin')
   @Post('process-definitions/:key/versions/:version/unpublish')
-  unpublish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number) {
-    return this.process.unpublish(key, version);
+  unpublish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.unpublish(key, version, user.tenantId);
   }
 
   @Get('process-definitions/:key')
-  get(@Param('key') key: string) {
-    return this.process.getLatest(key);
+  get(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.getLatest(key, user.tenantId);
   }
 
   @Get('process-definitions/:key/bpmn')
-  async bpmn(@Param('key') key: string) {
-    const def = await this.process.getLatest(key);
+  async bpmn(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    const def = await this.process.getLatest(key, user.tenantId);
     return { xml: def.bpmnXml, key: def.key, version: def.version, name: def.name };
   }
 
   @Get('process-definitions/:key/dmn')
-  async dmn(@Param('key') key: string) {
-    const def = await this.process.getLatest(key);
+  async dmn(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    const def = await this.process.getLatest(key, user.tenantId);
     return { xml: def.dmnXml, key: def.key, version: def.version };
   }
 
   @Roles('admin')
   @Put('process-definitions/:key')
-  save(@Param('key') key: string, @Body() body: SaveProcessDto) {
-    return this.process.saveXml(key, body);
+  save(@Param('key') key: string, @Body() body: SaveProcessDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.saveXml(key, user.tenantId, body);
   }
 
   @Post('process-definitions/:key/decide')
-  decide(@Param('key') key: string, @Body() body: DecideDto) {
-    return this.process.decide({ tipo: body.tipo ?? 'contrato', ...(body.context ?? {}) }, body.processKey ?? key);
+  decide(@Param('key') key: string, @Body() body: DecideDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.decide({ tipo: body.tipo ?? 'contrato', ...(body.context ?? {}) }, body.processKey ?? key, user.tenantId);
   }
 
   @Get('process-audit')

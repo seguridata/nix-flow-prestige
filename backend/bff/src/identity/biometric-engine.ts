@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { ConcurrencyLimiter, envInt } from './concurrency-limiter';
 
 export const BIOMETRIC_ENGINE = Symbol('BIOMETRIC_ENGINE');
 
@@ -175,7 +176,19 @@ export class LocalFaceBiometricEngine implements BiometricEngine {
     return sum2 / n - mean * mean;
   }
 
-  async analyze(input: BiometricInput): Promise<BiometricResult> {
+  /** Cálculo pesado (CPU/tensores) acotado: `BIOMETRIC_MAX_CONCURRENCY` (default 2) y cola corta. */
+  private readonly limiter = new ConcurrencyLimiter(
+    'Motor biométrico',
+    envInt('BIOMETRIC_MAX_CONCURRENCY', 2, 1),
+    envInt('BIOMETRIC_MAX_QUEUE', 10, 0),
+    10,
+  );
+
+  analyze(input: BiometricInput): Promise<BiometricResult> {
+    return this.limiter.run(() => this.doAnalyze(input));
+  }
+
+  private async doAnalyze(input: BiometricInput): Promise<BiometricResult> {
     const mods = await this.load();
     if (!mods) return new NoopBiometricEngine().analyze();
     const { faceapi, jpeg } = mods;

@@ -8,6 +8,7 @@ import {
   readSession,
   sessionStoreEnabled,
 } from "./session-store";
+import { resolveTenant } from "./tenant-claim";
 
 /**
  * OIDC (Authorization Code + PKCE) contra Keycloak, patrón BFF: el navegador
@@ -147,7 +148,7 @@ export function sessionFromTokens(t: TokenResponse): Session {
     name: c.name,
     email: c.email,
     roles: c.realm_access?.roles ?? [],
-    tenantId: c.tenant ?? "seguridata",
+    tenantId: resolveTenant(c.tenant),
     accessToken: t.access_token,
     refreshToken: t.refresh_token,
     idToken: t.id_token,

@@ -1,19 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getValidSession } from "@/libs/auth";
+import { filterRequestHeaders } from "@/libs/proxy-headers";
 
 export const dynamic = "force-dynamic";
 
 const BFF_URL = process.env.BFF_URL ?? "http://localhost:3000";
-
-// Cabeceras que no se reenvían tal cual (las gestiona fetch/host).
-const STRIP = new Set([
-  "host",
-  "connection",
-  "content-length",
-  "transfer-encoding",
-  "accept-encoding",
-  "cookie",
-]);
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const session = await getValidSession();
@@ -24,10 +15,10 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const { path } = await ctx.params;
   const target = `${BFF_URL}/${(path ?? []).join("/")}${req.nextUrl.search}`;
 
-  const headers = new Headers();
-  req.headers.forEach((v, k) => {
-    if (!STRIP.has(k.toLowerCase())) headers.set(k, v);
-  });
+  // Lista blanca de entrada: nada de x-forwarded-*, x-real-ip, x-user-*, cookies, etc.
+  const headers = filterRequestHeaders(req.headers);
+  // El body se reenvía ya leído; fetch recalcula la longitud.
+  headers.delete("content-length");
   headers.set("authorization", `Bearer ${session.accessToken}`);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
@@ -58,6 +49,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       resHeaders.set(k, v);
     }
   });
+  resHeaders.set("cache-control", "private, no-store");
   return new NextResponse(upstream.body, { status: upstream.status, headers: resHeaders });
 }
 

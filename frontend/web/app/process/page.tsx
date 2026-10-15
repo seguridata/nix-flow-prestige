@@ -13,6 +13,9 @@ import { apiClient } from "@/services/api-client";
 import { cn } from "@/libs/utils";
 import { Group, Panel, Separator as ResizeSeparator } from "react-resizable-panels";
 import { Timeline } from "@/components/ui/timeline";
+import { useSession } from "@/store/session-store";
+import { describeWhen, describeWho, type Flow } from "@/libs/flow";
+import { convertBpmnToFlow, createFlowDefinition, saveFlowDefinition, type BpmnToFlowResult } from "@/services/formats-service";
 
 interface ProcessDef {
   id: string;
@@ -22,6 +25,7 @@ interface ProcessDef {
   version: number;
   bpmnXml: string;
   dmnXml?: string | null;
+  flow?: Flow | null;
 }
 
 interface WorkflowRun {
@@ -42,6 +46,9 @@ export default function ProcessPage() {
   const [selectedKey, setSelectedKey] = useState("contrato-dos-partes");
   const [tipo, setTipo] = useState("contrato");
   const [saveFn, setSaveFn] = useState<(() => Promise<string>) | null>(null);
+  const { roles } = useSession();
+  const isAdmin = roles.includes("admin");
+  const [conversion, setConversion] = useState<BpmnToFlowResult | null>(null);
 
   const defs = useQuery({
     queryKey: ["process-definitions"],
@@ -71,6 +78,28 @@ export default function ProcessPage() {
       queryClient.invalidateQueries({ queryKey: ["process-definitions"] });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "No se pudo guardar"),
+  });
+
+  const convert = useMutation({
+    mutationFn: async () => {
+      if (!saveFn) throw new Error("El modeler aún no está listo");
+      return convertBpmnToFlow(await saveFn(), selected?.flow?.variables);
+    },
+    onSuccess: (r) => setConversion(r),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "No se pudo convertir el diagrama"),
+  });
+  const saveAsFlow = useMutation({
+    mutationFn: async (flow: Flow) => {
+      if (selected?.flow) return saveFlowDefinition(selected.key, { flow });
+      return createFlowDefinition({ name: `${selected?.name ?? "Flujo"} (desde diagrama)`, flow });
+    },
+    onSuccess: () => {
+      toast.success("Flujo guardado como borrador. Publícalo desde Flujos.");
+      setConversion(null);
+      queryClient.invalidateQueries({ queryKey: ["process-definitions"] });
+      queryClient.invalidateQueries({ queryKey: ["flows"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "No se pudo guardar el flujo"),
   });
 
   const tabs: { id: Tab; label: string }[] = [
@@ -103,6 +132,11 @@ export default function ProcessPage() {
                 </option>
               ))}
             </select>
+            {tab === "diagrama" && isAdmin ? (
+              <Button variant="outline" onClick={() => convert.mutate()} disabled={convert.isPending || !saveFn}>
+                {convert.isPending ? "Revisando…" : "Guardar como flujo"}
+              </Button>
+            ) : null}
             {tab === "diagrama" ? (
               <Button onClick={() => save.mutate()} disabled={save.isPending || !saveFn}>
                 {save.isPending ? "Publicando…" : "Publicar versión"}
@@ -158,6 +192,52 @@ export default function ProcessPage() {
               </Group>
             ) : (
               <div className="h-[68vh] animate-pulse bg-muted" />
+            )}
+          </Card>
+        ) : null}
+
+        {tab === "diagrama" && conversion ? (
+          <Card className="mt-4 p-5" role="status">
+            {conversion.flow ? (
+              <>
+                <h2 className="text-sm font-semibold">
+                  Este diagrama se puede ejecutar: {conversion.flow.steps.length}{" "}
+                  {conversion.flow.steps.length === 1 ? "paso" : "pasos"}
+                </h2>
+                <ol className="mt-3 space-y-1 text-sm">
+                  {conversion.flow.steps.map((s, i) => (
+                    <li key={s.id}>
+                      <span className="font-medium">{i + 1}. {s.label}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {s.role === "REVISOR" ? "Revisa" : "Firma"}: {describeWho(s.who)}
+                        {s.when?.length ? ` · ${describeWhen(s.when, conversion.flow!.variables)}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+                {conversion.warnings.length ? (
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                    {conversion.warnings.map((w) => <li key={w}>{w}</li>)}
+                  </ul>
+                ) : null}
+                <div className="mt-4 flex gap-2">
+                  <Button onClick={() => saveAsFlow.mutate(conversion.flow!)} disabled={saveAsFlow.isPending}>
+                    {saveAsFlow.isPending ? "Guardando…" : "Guardar como borrador"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setConversion(null)}>Cerrar</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-sm font-semibold">Este diagrama todavía no se puede ejecutar</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Prestige ejecuta pasos en línea con un único fin. Ajusta el diagrama y vuelve a intentarlo.
+                </p>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+                  {conversion.errors.map((e) => <li key={e}>{e}</li>)}
+                </ul>
+                <Button className="mt-4" variant="outline" onClick={() => setConversion(null)}>Cerrar</Button>
+              </>
             )}
           </Card>
         ) : null}
