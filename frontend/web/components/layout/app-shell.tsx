@@ -30,6 +30,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
+import { ChatPanel } from "@/components/chat/chat-panel";
 import { CommandPalette, useCommandPalette } from "@/components/command/command-palette";
 
 /** `roles`: la entrada solo se muestra si el usuario tiene alguno (espeja los @Roles del BFF). */
@@ -180,6 +181,7 @@ export function AppShell({
           {children}
         </motion.main>
       </div>
+      {roles.includes("admin") ? <ChatPanel /> : null}
       <CommandPalette open={palette.open} onOpenChange={palette.setOpen} />
     </div>
   );
