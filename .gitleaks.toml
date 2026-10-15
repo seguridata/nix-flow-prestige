@@ -14,6 +14,7 @@ description = "Falsos positivos conocidos en historial git"
 # permanece en el historial de git y gitleaks lo sigue detectando ahi.
 commits = [
   "36058a7619a4a4693169c4a2563f7c2a2807201c",
+  "3e2bf39ac0ecdeb73317e1c5dec40b45d13327d3", # frase PKI de prueba en un spec (no es un secreto); el valor ya se corrigió a la de ejemplo documentada
 ]
 
 # Formato propio de Prestige. Las reglas genéricas no distinguen un
