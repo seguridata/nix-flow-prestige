@@ -28,6 +28,21 @@ export function genReqId(
   return id;
 }
 
+/**
+ * Middleware temprano (main.ts): fija el id de correlación en `req.id` y en la respuesta ANTES del logger.
+ * pino-http solo llama a `genReqId` si `req.id` está vacío, así que no basta con confiar en él.
+ */
+export function correlationMiddleware(
+  req: { headers?: Record<string, unknown>; id?: unknown },
+  res: { setHeader?: (name: string, value: string) => unknown },
+  next: () => void,
+): void {
+  const id = resolveCorrelationId(req.headers?.[CORRELATION_HEADER]);
+  req.id = id;
+  res.setHeader?.(CORRELATION_HEADER, id);
+  next();
+}
+
 /** `customProps`: agrega tenantId y actorId cuando la petición ya tiene usuario. */
 export function logCustomProps(req: { user?: { tenantId?: unknown; actorId?: unknown } }): Record<string, string> {
   const props: Record<string, string> = {};

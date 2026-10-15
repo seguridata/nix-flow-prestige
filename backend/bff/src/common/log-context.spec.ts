@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { genReqId, ignoreHealthLog, isSafeCorrelationId, logCustomProps, resolveCorrelationId } from './log-context';
+import { correlationMiddleware, genReqId, ignoreHealthLog, isSafeCorrelationId, logCustomProps, resolveCorrelationId } from './log-context';
 
 describe('log-context', () => {
   it('acepta ids seguros y rechaza los inseguros', () => {
@@ -37,5 +37,22 @@ describe('log-context', () => {
     }
     expect(ignoreHealthLog({ url: '/documents' })).toBe(false);
     expect(ignoreHealthLog({ url: '/operations/health-other' })).toBe(false);
+  });
+});
+
+describe('correlationMiddleware', () => {
+  it('fija req.id y la cabecera de respuesta antes del logger', () => {
+    const req: { headers: Record<string, unknown>; id?: unknown } = { headers: { 'x-correlation-id': 'abc-123' } };
+    const set: [string, string][] = [];
+    const next = vi.fn();
+    correlationMiddleware(req, { setHeader: (n, v) => set.push([n, v]) }, next);
+    expect(req.id).toBe('abc-123');
+    expect(set).toEqual([['x-correlation-id', 'abc-123']]);
+    expect(next).toHaveBeenCalledOnce();
+  });
+  it('genera un id si el recibido no es seguro', () => {
+    const req: { headers: Record<string, unknown>; id?: unknown } = { headers: { 'x-correlation-id': 'a b <script>' } };
+    correlationMiddleware(req, {}, () => undefined);
+    expect(req.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

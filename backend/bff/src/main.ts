@@ -19,6 +19,7 @@ import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { assertRuntimeSecrets } from './config/runtime-secrets';
 import { envPositiveInt } from './common/env-number';
+import { correlationMiddleware } from './common/log-context';
 
 /**
  * Bootstrap del BFF de Prestige.
@@ -42,6 +43,7 @@ async function bootstrap() {
   for (const warning of secrets.warnings) app.get(Logger).warn(warning);
 
   app.set('trust proxy', 1);
+  app.use(correlationMiddleware); // id de correlación en req.id y en la respuesta, antes que el logger
   app.use(helmet());
   app.use(
     compression({
