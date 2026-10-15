@@ -25,7 +25,7 @@ beforeEach(() => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   dir = mkdtempSync(join(base, 'run-'));
   process.env.PKI_DIR = dir;
-  process.env.PKI_PASSPHRASE = 'frase-de-prueba';
+  process.env.PKI_PASSPHRASE = 'prestige-pki-dev';
   process.env.NODE_ENV = 'test';
 });
 
@@ -61,7 +61,7 @@ describe('SoftwareKeyCustodian', () => {
     installCa();
     const m = await new SoftwareKeyCustodian().getSigningMaterial('luis', 'Luis', 't1');
     const asn1 = forge.asn1.fromDer(forge.util.createBuffer(m.p12!.toString('binary')));
-    const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, 'frase-de-prueba');
+    const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, 'prestige-pki-dev');
     const bags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag];
     expect(bags?.length).toBe(1);
   }, 60_000);
