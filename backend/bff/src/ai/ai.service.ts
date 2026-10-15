@@ -5,6 +5,8 @@ import type { Flow } from '../flow/flow.types';
 import { AiQuotaService } from './ai-quota.service';
 import { reviewFlowWithAi } from './flow-review-ai';
 import { proposeFlow } from './flow-proposal';
+import { PdfLayoutError } from './pdf-layout';
+import { proposeTemplate } from './template-proposal';
 import { reviewFlow, type Finding } from './flow-review';
 import { LLM_PROVIDER, LlmProviderError, type LlmProvider } from './llm.types';
 import { maskPii } from './pii-mask';
@@ -17,6 +19,7 @@ export interface AiActor {
 
 export const MIN_TEXT = 20;
 export const MAX_TEXT = 8000;
+export const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 /**
  * IA para armar y revisar flujos. Principios, todos por tenant:
@@ -93,5 +96,42 @@ export class AiService {
     const ai = await this.guarded(() => reviewFlowWithAi(this.provider, JSON.parse(masked.text) as Flow));
     await this.record(actor, 'AI_FLOW_REVIEWED', { model: ai.model, found: ai.findings.length, masked: masked.counts, tokens: ai.usage });
     return { findings: [...findings, ...ai.findings], ai: true };
+  }
+
+  /**
+   * PDF con campos de formulario → formato completo para revisar. Al modelo solo le llega la estructura
+   * de los campos y la descripción (enmascarada), nunca el contenido del PDF. No se guarda nada.
+   */
+  async templateFromPdf(actor: AiActor, pdf: Buffer | undefined, description: string) {
+    if (!pdf || pdf.length === 0) throw new BadRequestException('Sube un archivo PDF.');
+    if (pdf.length > MAX_PDF_BYTES) throw new BadRequestException('El PDF admite hasta 10 MB.');
+    if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new BadRequestException('El archivo no es un PDF.');
+    if (description.length > 2000) throw new BadRequestException('La descripción admite hasta 2000 caracteres.');
+
+    const masked = maskPii(description);
+    let result;
+    try {
+      result = await this.guarded(() => proposeTemplate(this.provider, pdf, masked.text, () => this.quota.consume(actor.tenantId)));
+    } catch (e) {
+      if (e instanceof PdfLayoutError) throw new BadRequestException(e.message);
+      throw e;
+    }
+    if (result.attempts > 0) {
+      await this.record(actor, 'AI_TEMPLATE_PROPOSED', {
+        model: result.model,
+        attempts: result.attempts,
+        ok: Boolean(result.meta),
+        candidates: result.candidates,
+        pdfBytes: pdf.length,
+        masked: masked.counts,
+        tokens: result.usage,
+      });
+    }
+    return {
+      meta: result.meta ?? null,
+      errors: result.errors,
+      warnings: result.warnings,
+      info: { model: result.model ?? null, attempts: result.attempts, candidates: result.candidates },
+    };
   }
 }

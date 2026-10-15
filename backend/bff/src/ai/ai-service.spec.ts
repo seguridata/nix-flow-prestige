@@ -95,6 +95,69 @@ describe('AiService.flowFromText', () => {
   });
 });
 
+describe('AiService.templateFromPdf', () => {
+  async function pdf(withField = true): Promise<Buffer> {
+    const { PDFDocument } = await import('pdf-lib');
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([600, 800]);
+    if (withField) {
+      const form = doc.getForm();
+      form.createTextField('nombre').addToPage(page, { x: 50, y: 700, width: 200, height: 20 });
+      form.createTextField('firma').addToPage(page, { x: 50, y: 100, width: 200, height: 50 });
+    }
+    return Buffer.from(await doc.save());
+  }
+  // Los candidatos se ordenan por posición: c1 = «nombre» (arriba), c2 = «firma» (abajo).
+  const reply = {
+    name: 'Formato de prueba',
+    fields: [{ candidate: 'c1', label: 'Nombre', type: 'text', required: true }],
+    signatureBoxes: [{ candidate: 'c2', stepId: 'firma' }],
+    flow: { order: 'SECUENCIAL', slaHours: 24, steps: [{ id: 'firma', label: 'Firma', role: 'FIRMANTE', who: { type: 'initiator' } }] },
+  };
+
+  it('propone un formato, audita con el tenant y no guarda el contenido', async () => {
+    const { svc, audit } = setup(JSON.stringify(reply));
+    const r = await svc.templateFromPdf(actor('t7'), await pdf(), 'Formato con CURP GOMA800101HDFRRN09');
+    expect(r.errors).toEqual([]);
+    expect(r.meta?.fields[0]).toMatchObject({ key: 'nombre', page: 1 });
+    const call = audit.append.mock.calls[0]![0];
+    expect(call).toMatchObject({ tenantId: 't7', action: 'AI_TEMPLATE_PROPOSED' });
+    expect(call.payload.masked).toMatchObject({ CURP: 1 });
+  });
+
+  it('rechaza lo que no es PDF sin gastar cuota ni llamar al modelo', async () => {
+    const { svc, calls } = setup();
+    await expect(svc.templateFromPdf(actor('t'), Buffer.from('hola mundo'), '')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.templateFromPdf(actor('t'), undefined, '')).rejects.toBeInstanceOf(BadRequestException);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('un PDF sin campos no llama al modelo ni gasta cuota y explica por qué', async () => {
+    const { svc, calls, audit } = setup();
+    for (let i = 0; i < 5; i++) {
+      const r = await svc.templateFromPdf(actor('sc'), await pdf(false), '');
+      expect(r.meta).toBeNull();
+      expect(r.errors.join(' ')).toContain('no tiene campos');
+    }
+    expect(calls).toHaveLength(0);
+    expect(audit.append).not.toHaveBeenCalled();
+  });
+
+  it('un PDF corrupto con cabecera válida es un 400', async () => {
+    const { svc } = setup();
+    await expect(svc.templateFromPdf(actor('t'), Buffer.from('%PDF-1.7 basura'), '')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('respeta la cuota por tenant', async () => {
+    const { svc } = setup(JSON.stringify(reply));
+    const bytes = await pdf();
+    await svc.templateFromPdf(actor('q'), bytes, '');
+    await svc.templateFromPdf(actor('q'), bytes, '');
+    await expect(svc.templateFromPdf(actor('q'), bytes, '')).rejects.toBeInstanceOf(HttpException);
+    await expect(svc.templateFromPdf(actor('otro'), bytes, '')).resolves.toBeDefined();
+  });
+});
+
 describe('AiService.review', () => {
   it('sin useAi solo corre reglas y no toca cuota ni modelo', async () => {
     const { svc, calls } = setup();

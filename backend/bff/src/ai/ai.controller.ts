@@ -1,9 +1,10 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
-import { AiService, MAX_TEXT, type AiActor } from './ai.service';
+import { AiService, MAX_PDF_BYTES, MAX_TEXT, type AiActor } from './ai.service';
 
 class FlowFromTextDto {
   /** El largo mínimo lo valida el servicio con un mensaje en español. */
@@ -40,5 +41,17 @@ export class AiController {
   @Post('flows/review')
   review(@Body() body: ReviewFlowDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ai.review(actorOf(user), body.flow, body.useAi === true);
+  }
+
+  /** Multipart: `file` (PDF con campos de formulario) y, opcional, `description`. No guarda nada. */
+  @Roles('admin')
+  @Post('templates/from-pdf')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PDF_BYTES } }))
+  templateFromPdf(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('description') description: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ai.templateFromPdf(actorOf(user), file?.buffer, typeof description === 'string' ? description : '');
   }
 }
