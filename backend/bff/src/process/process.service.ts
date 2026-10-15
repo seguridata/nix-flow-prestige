@@ -12,11 +12,53 @@ import {
   ONBOARDING_BPMN,
   SLA_DMN,
 } from './defaults';
+import {
+  ADQUISICIONES_BPMN,
+  PROVEEDORES_ESTRATEGICOS_BPMN,
+  RENOVACION_LICENCIAS_BPMN,
+} from './adquisiciones';
+import { ADQUISICIONES_FLOW, PROVEEDORES_ESTRATEGICOS_FLOW, RENOVACION_LICENCIAS_FLOW } from './adquisiciones.flows';
 
 /** Dueño de las definiciones sembradas por el sistema: las ven todos los tenants y ninguno puede modificarlas. */
 export const PLATFORM_TENANT = 'platform';
 
-const SEEDS = [
+const SEEDS: Array<{
+  key: string;
+  name: string;
+  description: string;
+  bpmnXml: string;
+  dmnXml: string;
+  decisionRules: Prisma.InputJsonValue;
+  /** Flujo ejecutable por defecto; si falta, la definición solo trae el diagrama. */
+  flow?: Flow;
+}> = [
+  {
+    key: 'adquisiciones-gastos',
+    name: 'Proceso de Adquisiciones (Gastos)',
+    description: 'SD-ADMINFINANZAS-03 v08: solicitud, cotizaciones, orden de compra, compra, recepción, factura y pago. El flujo se bifurca por tipo de gasto.',
+    bpmnXml: ADQUISICIONES_BPMN,
+    dmnXml: SLA_DMN,
+    decisionRules: DEFAULT_DECISION_RULES as Prisma.InputJsonValue,
+    flow: ADQUISICIONES_FLOW,
+  },
+  {
+    key: 'renovacion-licenciamiento',
+    name: 'Subproceso: Renovación de licenciamiento',
+    description: 'Monitoreo de vencimientos, solicitud con 60 días y validación contra presupuesto.',
+    bpmnXml: RENOVACION_LICENCIAS_BPMN,
+    dmnXml: SLA_DMN,
+    decisionRules: DEFAULT_DECISION_RULES as Prisma.InputJsonValue,
+    flow: RENOVACION_LICENCIAS_FLOW,
+  },
+  {
+    key: 'proveedores-estrategicos',
+    name: 'Subproceso: Gestión de proveedores estratégicos',
+    description: 'Revisión anual de desempeño, negociación anual y actualización de la lista aprobada.',
+    bpmnXml: PROVEEDORES_ESTRATEGICOS_BPMN,
+    dmnXml: SLA_DMN,
+    decisionRules: DEFAULT_DECISION_RULES as Prisma.InputJsonValue,
+    flow: PROVEEDORES_ESTRATEGICOS_FLOW,
+  },
   {
     key: 'contrato-dos-partes',
     name: 'Contrato corporativo de dos partes',
@@ -62,9 +104,20 @@ export class ProcessService implements OnModuleInit {
         where: { tenantId: PLATFORM_TENANT, key: seed.key },
         orderBy: { version: 'desc' },
       });
-      if (!existing) {
+      // Sin definición, se crea. Con una que aún no trae flujo y una semilla que sí, se agrega una versión nueva con
+      // el flujo (las de la plataforma no se editan; la versión anterior queda intacta).
+      const needsFlow = !!existing && !existing.flow && !!seed.flow;
+      if (!existing || needsFlow) {
+        const { flow, ...rest } = seed;
         try {
-          await this.prisma.processDefinition.create({ data: { ...seed, tenantId: PLATFORM_TENANT } });
+          await this.prisma.processDefinition.create({
+            data: {
+              ...rest,
+              tenantId: PLATFORM_TENANT,
+              version: existing ? existing.version + 1 : 1,
+              ...(flow ? { flow: flow as unknown as Prisma.InputJsonValue } : {}),
+            },
+          });
         } catch (error) {
           // Arranques paralelos (varias réplicas): @@unique([tenantId, key, version]) → ya lo creó otra.
           if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
