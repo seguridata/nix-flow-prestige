@@ -330,6 +330,7 @@ export class OnboardingService {
         'Onboarding en revisión',
         `${current.fullName} ya tiene INE y prueba de vida. Falta habilitar la firma.`,
         `/onboarding/${id}`,
+        current.tenantId,
       );
     }
     return publicView(updated);
@@ -433,6 +434,7 @@ export class OnboardingService {
       'Identidad habilitada',
       'Ya puedes firmar documentos en Prestige.',
       '/inbox',
+      current.tenantId,
     );
     await this.webhooks
       .emit(

@@ -5,6 +5,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { AiService, MAX_PDF_BYTES, MAX_TEXT, type AiActor } from './ai.service';
+import { Throttle } from '@nestjs/throttler';
+import { AI_THROTTLE } from '../common/throttle-tracker';
 
 class FlowFromTextDto {
   /** El largo mínimo lo valida el servicio con un mensaje en español. */
@@ -28,6 +30,7 @@ const actorOf = (u: AuthenticatedUser): AiActor => ({ tenantId: u.tenantId, acto
  * revisar y, si conviene, crear como borrador con las rutas de `process-definitions`.
  */
 @Controller('ai')
+@Throttle(AI_THROTTLE)
 export class AiController {
   constructor(private readonly ai: AiService) {}
 

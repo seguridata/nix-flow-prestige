@@ -43,8 +43,13 @@ export async function seedHumanTasks(input: ContratoWorkflowInput) {
   });
 }
 
-export async function markExpired(signatureRequestId: string) {
-  return post('/internal/workflows/expire', { signatureRequestId });
+/**
+ * `tenantId` viaja en el body (queda firmado por el HMAC) para que el BFF
+ * verifique que la solicitud pertenece a ese tenant. Opcional: los workflows
+ * en curso anteriores a este cambio no lo traen y el BFF lo deduce de la BD.
+ */
+export async function markExpired(signatureRequestId: string, tenantId?: string) {
+  return post('/internal/workflows/expire', { signatureRequestId, ...(tenantId ? { tenantId } : {}) });
 }
 
 /**
@@ -55,6 +60,6 @@ export async function sendNudge(command: NudgeCommand) {
   return post('/internal/workflows/nudge', command);
 }
 
-export async function sealEvidence(signatureRequestId: string) {
-  return post('/internal/workflows/seal-evidence', { signatureRequestId });
+export async function sealEvidence(signatureRequestId: string, tenantId?: string) {
+  return post('/internal/workflows/seal-evidence', { signatureRequestId, ...(tenantId ? { tenantId } : {}) });
 }

@@ -19,6 +19,8 @@ import { DocumentsService, type PublicDocument } from './documents.service';
 import type { Page } from '../common/pagination';
 import { CreateDocumentDto, ListDocumentsQueryDto } from './dto';
 import { fixMulterFilename } from './multer-filename';
+import { Throttle } from '@nestjs/throttler';
+import { UPLOAD_THROTTLE } from '../common/throttle-tracker';
 
 const MAX_PDF_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -32,6 +34,7 @@ export class DocumentsController {
    * object storage; nunca viaja ni se persiste como base64.
    */
   @Roles('sender', 'admin')
+  @Throttle(UPLOAD_THROTTLE)
   @Post()
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PDF_BYTES } }))
   create(

@@ -154,7 +154,7 @@ export class SignatureRequestsService {
   private async notifyNextInSequence(request: {
     id: string;
     documentId: string;
-    tenantId?: string;
+    tenantId: string;
     signers: { signerId: string; name: string | null; status: string; sortOrder: number }[];
   }) {
     const next = [...request.signers]

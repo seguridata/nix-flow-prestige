@@ -69,7 +69,7 @@ export class CollaborationService {
     return finishPage(rows, args);
   }
 
-  async notify(userId: string, title: string, body: string, href?: string, tenantId?: string) {
+  async notify(userId: string, title: string, body: string, href: string | undefined, tenantId: string) {
     return this.prisma.userNotification.create({
       data: { userId, title, body, href, tenantId },
     });

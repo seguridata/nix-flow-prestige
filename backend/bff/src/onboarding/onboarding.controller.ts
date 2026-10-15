@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PageQueryDto } from '../common/pagination';
+import { Throttle } from '@nestjs/throttler';
+import { ONBOARDING_THROTTLE } from '../common/throttle-tracker';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { StepUp } from '../auth/step-up.decorator';
@@ -90,6 +92,7 @@ export class OnboardingController {
   }
 
   /** INE por `multipart/form-data`: `file` (imagen) + `part` (front|back). */
+  @Throttle(ONBOARDING_THROTTLE)
   @Post(':id/ine')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMG_BYTES } }))
   ine(
@@ -106,6 +109,7 @@ export class OnboardingController {
   }
 
   /** Prueba de vida por `multipart/form-data`: `file` (selfie). */
+  @Throttle(ONBOARDING_THROTTLE)
   @Post(':id/liveness')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMG_BYTES } }))
   liveness(

@@ -51,7 +51,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
       at: new Date().toISOString(),
       ...(status < 500 ? this.validationErrors(exception) : {}),
     };
+    // 503 por saturación (p. ej. OCR): el servicio informa en cuánto reintentar y se devuelve como cabecera estándar.
+    const retryAfter = this.retryAfterSeconds(exception);
+    if (retryAfter) res.setHeader('Retry-After', String(retryAfter));
     res.status(status).json(body);
+  }
+
+  private retryAfterSeconds(exception: unknown): number | undefined {
+    if (!(exception instanceof HttpException)) return undefined;
+    const r = exception.getResponse();
+    const n = typeof r === 'object' && r !== null ? (r as { retryAfterSeconds?: unknown }).retryAfterSeconds : undefined;
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.ceil(n) : undefined;
   }
 
   /** Pasa tal cual la lista `errors` (de strings) que algunos servicios adjuntan a un 4xx. */
