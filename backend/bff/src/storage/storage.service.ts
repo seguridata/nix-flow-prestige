@@ -137,18 +137,27 @@ export class StorageService {
     return this.client;
   }
 
-  /** Sube `bytes` cifrados bajo `<prefix>/<yyyy-mm-dd>/<uuid>-<filename>`. */
+  /**
+   * Sube `bytes` cifrados bajo `<prefix>/<yyyy-mm-dd>/<uuid>-<filename>`.
+   * Con `tenantId` el contenido se cifra con el tenant como AAD de GCM
+   * (`enc.aad = 'tenant'`): solo ese tenant puede descifrarlo. Sin `tenantId`
+   * (solo scripts antiguos) se escribe sin AAD y se avisa en el log.
+   */
   async putObject(opts: {
     prefix: string;
     filename: string;
     bytes: Buffer;
     contentType: string;
+    tenantId?: string;
   }): Promise<StoredObject> {
     const client = this.require();
+    if (!opts.tenantId) {
+      this.log.warn(`putObject sin tenantId: "${opts.prefix}" se cifra sin AAD de tenant`);
+    }
     const sha256 = createHash('sha256').update(opts.bytes).digest('hex');
     const safeName = opts.filename.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'objeto';
     const objectKey = `${opts.prefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${safeName}`;
-    const { ciphertext, enc } = encryptObject(opts.bytes);
+    const { ciphertext, enc } = encryptObject(opts.bytes, { tenantId: opts.tenantId });
 
     await client.send(
       new PutObjectCommand({
@@ -167,18 +176,26 @@ export class StorageService {
     return { objectKey, sha256, sizeBytes: opts.bytes.length, enc };
   }
 
-  /** Descarga y descifra el objeto; devuelve el contenido en claro. */
-  async getObject(objectKey: string, enc: EncMeta): Promise<Buffer> {
+  /**
+   * Descarga y descifra el objeto; devuelve el contenido en claro. Valida que la
+   * clave sea del tenant (`assertTenantKey`, 404 si no) y, si el objeto se
+   * cifró con AAD de tenant, el descifrado falla con un tenant distinto.
+   * Objetos antiguos sin AAD (`enc.aad` ausente) siguen siendo legibles.
+   */
+  async getObject(objectKey: string, enc: EncMeta, tenantId: string): Promise<Buffer> {
+    assertTenantKey(tenantId, objectKey);
     const client = this.require();
     const res = await client.send(
       new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }),
     );
     if (!res.Body) throw new ServiceUnavailableException(`Objeto ${objectKey} sin cuerpo`);
     const ciphertext = Buffer.from(await res.Body.transformToByteArray());
-    return decryptObject(ciphertext, enc);
+    return decryptObject(ciphertext, enc, { tenantId });
   }
 
-  async deleteObject(objectKey: string): Promise<void> {
+  /** Borra el objeto tras validar que la clave es del tenant (`assertTenantKey`). */
+  async deleteObject(objectKey: string, tenantId: string): Promise<void> {
+    assertTenantKey(tenantId, objectKey);
     const client = this.require();
     await client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
   }

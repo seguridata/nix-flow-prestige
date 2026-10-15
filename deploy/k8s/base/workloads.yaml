@@ -14,7 +14,8 @@ spec:
     spec:
       serviceAccountName: prestige
       terminationGracePeriodSeconds: 45
-      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      # fsGroup: el Secret de la PKI se monta 0440 y el volumen de firmantes debe ser escribible por el usuario 1000.
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: bff
           image: prestige-bff:latest   # fijar por digest en el overlay
@@ -25,6 +26,10 @@ spec:
           env:
             - { name: NODE_ENV, value: production }
             - { name: RUN_MIGRATIONS, value: "false" }   # las migraciones corren en el Job prestige-migrate
+            # PKI: misma para todas las réplicas (Secret solo lectura). En producción NO se genera CA (el BFF falla cerrado).
+            - { name: PKI_DIR, value: ./pki }
+            - { name: PKI_SIGNERS_DIR, value: /var/lib/prestige/signers }   # P12 por firmante: volumen RWX compartido
+            - { name: KEY_CUSTODIAN, value: software }   # "pkcs11" = KMS/HSM; ver deploy/k8s/README.md y MasterPlan/P2-KMS.md
           resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
           startupProbe: { httpGet: { path: /operations/health/live, port: http }, periodSeconds: 5, failureThreshold: 30 }
@@ -35,10 +40,23 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: tesseract, mountPath: /tmp/tesseract }
             - { name: pki, mountPath: /app/backend/bff/pki, readOnly: true }
+            - { name: signers, mountPath: /var/lib/prestige/signers }
       volumes:
         - { name: tmp, emptyDir: {} }
         - { name: tesseract, emptyDir: {} }
-        - { name: pki, secret: { secretName: prestige-pki } }   # PKI como Secret (o KMS/PKCS#11 con KEY_CUSTODIAN=pkcs11)
+        # PKI como Secret de solo lectura (ver deploy/k8s/pki/pki-secret.example.yaml y el README). Las claves del Secret
+        # no pueden llevar "/": `items` las coloca en ca/ como espera el custodio. La llave de la CA raíz NO se monta.
+        - name: pki
+          secret:
+            secretName: prestige-pki
+            defaultMode: 0440
+            items:
+              - { key: root.cert.pem, path: ca/root.cert.pem }
+              - { key: intermediate.cert.pem, path: ca/intermediate.cert.pem }
+              - { key: intermediate.key.pem, path: ca/intermediate.key.pem }
+              - { key: manifest-signing.key.pem, path: manifest-signing.key.pem }
+              - { key: manifest-signing.pub.pem, path: manifest-signing.pub.pem }
+        - { name: signers, persistentVolumeClaim: { claimName: prestige-signers } }
       topologySpreadConstraints:
         - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app: bff } } }
 ---

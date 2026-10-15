@@ -72,7 +72,7 @@ export class DocumentTemplatesService {
   async getPdf(id: string, actor: TemplateActor): Promise<{ bytes: Buffer; filename: string }> {
     const t = await this.visible(id, actor);
     assertTenantKey(actor.tenantId, t.objectKey);
-    const bytes = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta);
+    const bytes = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta, actor.tenantId);
     return { bytes, filename: `${t.name}.pdf` };
   }
 
@@ -95,6 +95,7 @@ export class DocumentTemplatesService {
       filename: `${meta.name}.pdf`,
       bytes: file.buffer,
       contentType: 'application/pdf',
+      tenantId: actor.tenantId,
     });
     const created = await this.prisma.documentTemplate.create({
       data: {
@@ -145,7 +146,7 @@ export class DocumentTemplatesService {
     const t = await this.visible(id, actor);
     assertTenantKey(actor.tenantId, t.objectKey); // antes de borrar la fila: no se toca un objeto ajeno
     await this.prisma.documentTemplate.delete({ where: { id } });
-    await this.storage.deleteObject(t.objectKey).catch((e: Error) => this.log.warn(`No se pudo borrar ${t.objectKey}: ${e.message}`));
+    await this.storage.deleteObject(t.objectKey, actor.tenantId).catch((e: Error) => this.log.warn(`No se pudo borrar ${t.objectKey}: ${e.message}`));
   }
 
   async bpmn(id: string, actor: TemplateActor) {
@@ -184,7 +185,7 @@ export class DocumentTemplatesService {
 
     // 2) PDF rellenado.
     assertTenantKey(actor.tenantId, t.objectKey);
-    const base = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta);
+    const base = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta, actor.tenantId);
     const filled = await fillPdf(base, fields, clean);
 
     // 3) Expediente (nuevo o uno propio) y documento.

@@ -183,8 +183,8 @@ export class OnboardingService {
     return found;
   }
 
-  private async store(prefix: string, filename: string, bytes: Buffer, contentType: string): Promise<StoredRef> {
-    const s = await this.storage.putObject({ prefix, filename, bytes, contentType });
+  private async store(prefix: string, filename: string, bytes: Buffer, contentType: string, tenantId: string): Promise<StoredRef> {
+    const s = await this.storage.putObject({ prefix, filename, bytes, contentType, tenantId });
     return { key: s.objectKey, sha256: s.sha256, size: s.sizeBytes, enc: s.enc };
   }
 
@@ -195,7 +195,7 @@ export class OnboardingService {
    */
   private readRef(ref: StoredRef, tenantId: string): Promise<Buffer> {
     assertTenantKey(tenantId, ref.key);
-    return this.storage.getObject(ref.key, ref.enc);
+    return this.storage.getObject(ref.key, ref.enc, tenantId);
   }
 
   async attachIne(
@@ -212,10 +212,10 @@ export class OnboardingService {
     }
 
     const ineFront: StoredRef | null = body.front?.length
-      ? await this.store(`onboarding/${body.tenantId}/ine`, `${id}-frente.jpg`, body.front, 'image/jpeg')
+      ? await this.store(`onboarding/${body.tenantId}/ine`, `${id}-frente.jpg`, body.front, 'image/jpeg', body.tenantId)
       : (current.ineFront as unknown as StoredRef | null);
     const ineBack: StoredRef | null = body.back?.length
-      ? await this.store(`onboarding/${body.tenantId}/ine`, `${id}-reverso.jpg`, body.back, 'image/jpeg')
+      ? await this.store(`onboarding/${body.tenantId}/ine`, `${id}-reverso.jpg`, body.back, 'image/jpeg', body.tenantId)
       : (current.ineBack as unknown as StoredRef | null);
 
     // ineHash: SHA-256 del conjunto ordenado de hashes de frente+reverso presentes.
@@ -272,7 +272,7 @@ export class OnboardingService {
     if (!body.selfie?.length) throw new BadRequestException('Se requiere una captura de prueba de vida');
     if (body.selfie.length < 2_000) throw new BadRequestException('La captura es demasiado pequeña');
 
-    const selfie = await this.store(`onboarding/${body.tenantId}/selfie`, `${id}-selfie.jpg`, body.selfie, 'image/jpeg');
+    const selfie = await this.store(`onboarding/${body.tenantId}/selfie`, `${id}-selfie.jpg`, body.selfie, 'image/jpeg', body.tenantId);
     const livenessHash = selfie.sha256;
 
     // M16 — puerto BiometricEngine (noop|local face-api|remote). Nunca lanza:

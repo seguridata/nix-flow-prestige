@@ -7,9 +7,8 @@ type Task = { id: string; tenantId: string | null; signerId: string; claimedBy: 
 function make(tasks: Task[], opts: { members?: string[]; requests?: Array<{ id: string; tenantId: string }> } = {}) {
   const prisma = {
     humanTask: {
-      findFirst: async ({ where }: { where: { id: string; OR: Array<{ tenantId: string | null }> } }) => {
-        const tenant = where.OR[0].tenantId;
-        return tasks.find((t) => t.id === where.id && t.tenantId === tenant) ?? null;
+      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) => {
+        return tasks.find((t) => t.id === where.id && t.tenantId === where.tenantId) ?? null;
       },
       updateMany: vi.fn(async ({ where }: { where: { id: string } }) => {
         const t = tasks.find((x) => x.id === where.id)!;

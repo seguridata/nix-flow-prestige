@@ -55,6 +55,7 @@ export class SignatureReconcileService {
         pdfBytes = await this.storage.getObject(
           req.document.objectKey,
           req.document.enc as unknown as EncMeta,
+          req.tenantId,
         );
       } catch {
         continue;

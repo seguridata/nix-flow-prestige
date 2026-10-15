@@ -38,7 +38,7 @@ export class CollaborationService {
   async listComments(documentId: string, tenantId: string) {
     await this.assertDocumentInTenant(documentId, tenantId);
     return this.prisma.documentComment.findMany({
-      where: { documentId, OR: [{ tenantId }, { tenantId: null }] },
+      where: { documentId, tenantId },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -55,14 +55,13 @@ export class CollaborationService {
   }
 
   /**
-   * Notificaciones del usuario. `tenantId` null = filas anteriores al
-   * particionado por tenant (o emitidas sin contexto); siguen siendo del
-   * usuario, por eso el filtro principal es `userId`.
+   * Notificaciones del usuario dentro de su tenant. Las filas heredadas sin
+   * tenant (UserNotification.tenantId sigue nullable) ya no se listan.
    */
   async listNotifications(userId: string, tenantId: string, page?: PageQueryDto) {
     const args = pageArgs(page);
     const rows = await this.prisma.userNotification.findMany({
-      where: { userId, OR: [{ tenantId }, { tenantId: null }] },
+      where: { userId, tenantId },
       orderBy: STABLE_ORDER,
       ...prismaPage(args),
     });
@@ -78,7 +77,7 @@ export class CollaborationService {
   /** Sólo marca si la notificación es del usuario (y tenant); si no, 404. */
   async markRead(id: string, userId: string, tenantId: string) {
     const res = await this.prisma.userNotification.updateMany({
-      where: { id, userId, OR: [{ tenantId }, { tenantId: null }] },
+      where: { id, userId, tenantId },
       data: { read: true },
     });
     if (res.count === 0) throw new NotFoundException('Notificación no encontrada');
@@ -87,7 +86,7 @@ export class CollaborationService {
 
   async markAllRead(userId: string, tenantId: string) {
     await this.prisma.userNotification.updateMany({
-      where: { userId, read: false, OR: [{ tenantId }, { tenantId: null }] },
+      where: { userId, read: false, tenantId },
       data: { read: true },
     });
     return { ok: true };
@@ -147,7 +146,7 @@ export class CollaborationService {
   async listWatchers(signatureRequestId: string, tenantId: string) {
     await this.assertSignatureRequestInTenant(signatureRequestId, tenantId);
     return this.prisma.processWatcher.findMany({
-      where: { signatureRequestId, OR: [{ tenantId }, { tenantId: null }] },
+      where: { signatureRequestId, tenantId },
     });
   }
 }

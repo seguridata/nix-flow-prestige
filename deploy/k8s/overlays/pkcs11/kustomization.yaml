@@ -1,0 +1,28 @@
+# Overlay KMS/HSM: el BFF firma con PKCS#11 (KEY_CUSTODIAN=pkcs11) y la llave privada de los firmantes no sale del token.
+#   kubectl apply -k deploy/k8s/overlays/pkcs11
+# Requisitos (ver deploy/k8s/README.md y MasterPlan/P2-KMS.md):
+#  - la imagen del BFF debe incluir el módulo PKCS#11 del proveedor y el paquete graphene-pk11 (hoy no está en package.json);
+#  - Secret prestige-pkcs11 con la clave PKCS11_PIN;
+#  - sigue haciendo falta el Secret prestige-pki para manifest-signing.* (la llave Ed25519 del manifiesto no está en el HSM).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target: { kind: Deployment, name: bff }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: { name: bff }
+      spec:
+        template:
+          spec:
+            containers:
+              - name: bff
+                env:
+                  - { name: KEY_CUSTODIAN, value: pkcs11 }
+                  - { name: PKCS11_MODULE, value: /opt/pkcs11/CHANGE_ME.so }
+                  - { name: PKCS11_SLOT, value: "0" }
+                  - { name: PKCS11_KEY_LABEL, value: CHANGE_ME }
+                  - name: PKCS11_PIN
+                    valueFrom: { secretKeyRef: { name: prestige-pkcs11, key: PKCS11_PIN } }

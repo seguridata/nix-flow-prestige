@@ -529,10 +529,10 @@ export class EvidenceService {
     if (!doc) throw new NotFoundException('El documento del manifiesto ya no existe');
     assertTenantKey(tenantId, doc.objectKey);
     if (doc.presentedObjectKey) assertTenantKey(tenantId, doc.presentedObjectKey);
-    const canonical = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta);
+    const canonical = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta, tenantId);
     const signedPdf =
       doc.presentedObjectKey && doc.presentedEnc
-        ? await this.storage.getObject(doc.presentedObjectKey, doc.presentedEnc as unknown as EncMeta)
+        ? await this.storage.getObject(doc.presentedObjectKey, doc.presentedEnc as unknown as EncMeta, tenantId)
         : canonical;
 
     const files: EvidenceDossier['files'] = [

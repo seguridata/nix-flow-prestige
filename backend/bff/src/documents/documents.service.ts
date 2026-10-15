@@ -118,6 +118,7 @@ export class DocumentsService {
       filename,
       bytes,
       contentType: 'application/pdf',
+      tenantId,
     });
     if (stored.sha256 !== sha256) {
       throw new ConflictException({
@@ -167,7 +168,7 @@ export class DocumentsService {
     if (!current) throw new NotFoundException(`Documento ${id} no encontrado`);
 
     assertTenantKey(tenantId, current.objectKey);
-    const bytes = await this.storage.getObject(current.objectKey, current.enc as unknown as EncMeta);
+    const bytes = await this.storage.getObject(current.objectKey, current.enc as unknown as EncMeta, tenantId);
     const live = sha256Hex(bytes);
     if (live !== current.hash) {
       throw new ConflictException({
@@ -248,7 +249,7 @@ export class DocumentsService {
     });
     if (!doc) throw new NotFoundException(`Documento ${id} no encontrado`);
     assertTenantKey(tenantId, doc.objectKey);
-    const bytes = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta);
+    const bytes = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta, tenantId);
     return { bytes, mimeType: doc.mimeType, filename: doc.filename, hash: doc.hash };
   }
 
@@ -268,7 +269,7 @@ export class DocumentsService {
       throw new NotFoundException(`Documento ${id} no tiene copia firmada`);
     }
     assertTenantKey(tenantId, doc.presentedObjectKey);
-    const bytes = await this.storage.getObject(doc.presentedObjectKey, doc.presentedEnc as unknown as EncMeta);
+    const bytes = await this.storage.getObject(doc.presentedObjectKey, doc.presentedEnc as unknown as EncMeta, tenantId);
     return {
       bytes,
       mimeType: doc.mimeType,

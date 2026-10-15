@@ -103,3 +103,14 @@ spec:
     - to: [{ podSelector: { matchExpressions: [{ key: app, operator: In, values: [bff] }] } }]
     - to: [{ ipBlock: { cidr: 0.0.0.0/0, except: [169.254.169.254/32] } }]   # AJUSTAR: CIDR de Postgres/Redis/Temporal/S3/IdP
       ports: [{ port: 5432 }, { port: 6379 }, { port: 7233 }, { port: 443 }, { port: 587 }]
+---
+# P12 de los firmantes (se emiten en runtime, uno por tenant y firmante). RWX para que todas las réplicas del BFF vean los
+# mismos archivos; sin esto cada réplica emitiría un certificado distinto al mismo firmante. Con KEY_CUSTODIAN=pkcs11 no se usa.
+# Ajustar storageClassName a una clase RWX del clúster (NFS/Filestore/EFS/Azure Files) y cifrarla en reposo.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: prestige-signers }
+spec:
+  accessModes: [ReadWriteMany]
+  resources: { requests: { storage: 5Gi } }
+  # storageClassName: AJUSTAR_RWX

@@ -1,0 +1,89 @@
+{
+  "realm": "prestige",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "displayName": "Prestige",
+  "loginTheme": "prestige",
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "es"
+  ],
+  "defaultLocale": "es",
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      {
+        "name": "signer",
+        "description": "Puede firmar y revisar documentos"
+      },
+      {
+        "name": "sender",
+        "description": "Puede crear casos y enviar solicitudes de firma"
+      },
+      {
+        "name": "rh",
+        "description": "Recursos Humanos: opera el onboarding e identidad"
+      },
+      {
+        "name": "auditor",
+        "description": "Solo lectura: expedientes, evidencia y auditoría"
+      },
+      {
+        "name": "admin",
+        "description": "Administración: procesos, políticas, tenants"
+      },
+      {
+        "name": "platform_admin",
+        "description": "Operador de plataforma (control-plane multi-tenant). Solo SeguriData."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "prestige-web",
+      "name": "Prestige Web",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://prestige.example.com/*"
+      ],
+      "webOrigins": [
+        "https://prestige.example.com"
+      ],
+      "protocolMappers": [
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "auth_time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "AUTH_TIME",
+            "claim.name": "auth_time",
+            "jsonType.label": "long",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

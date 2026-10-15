@@ -1,6 +1,7 @@
 /**
- * Backfill de tenantId para NotificationOutbox y UserNotification (la
- * migración p1_tenant_scoping no pudo derivarlo: no tienen padre directo).
+ * Backfill de tenantId para UserNotification (la migración p1_tenant_scoping no pudo
+ * derivarlo: no tiene padre directo). NotificationOutbox.tenantId ya es NOT NULL
+ * (migración 20261016100000) y no necesita backfill.
  *
  *   cd backend/bff
  *   bun run backfill:tenant-ids -- --dry-run   (cuenta por regla, no escribe)
@@ -15,12 +16,9 @@ import { PrismaClient } from '@prisma/client';
 import {
   BATCH_SIZE,
   NOTIFICATION_RULES,
-  OUTBOX_RULES,
   USAGE,
   collectNotificationKeys,
-  collectOutboxKeys,
   deriveNotificationTenant,
-  deriveOutboxTenant,
   formatSummary,
   newSummary,
   normEmail,
@@ -108,31 +106,6 @@ async function apply(items: { id: string; d: Derivation }[], update: Updater, dr
   for (const [tenantId, ids] of byTenant) await update(tenantId, ids);
 }
 
-async function runOutbox(dryRun: boolean) {
-  const summary = newSummary();
-  let cursor: string | undefined;
-  for (;;) {
-    const rows = await prisma.notificationOutbox.findMany({
-      where: { tenantId: null },
-      select: { id: true, toAddress: true, dedupeKey: true, payload: true },
-      orderBy: { id: 'asc' },
-      take: BATCH_SIZE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-    if (rows.length === 0) break;
-    const lk = await buildLookups(collectOutboxKeys(rows));
-    const items = rows.map((r) => ({ id: r.id, d: deriveOutboxTenant(r, lk) }));
-    for (const it of items) record(summary, it.d);
-    await apply(
-      items,
-      (tenantId, ids) => prisma.notificationOutbox.updateMany({ where: { id: { in: ids }, tenantId: null }, data: { tenantId } }),
-      dryRun,
-    );
-    cursor = rows[rows.length - 1].id;
-  }
-  return summary;
-}
-
 async function runNotifications(dryRun: boolean) {
   const summary = newSummary();
   let cursor: string | undefined;
@@ -173,12 +146,10 @@ async function main() {
   const { dryRun } = args;
   console.log(dryRun ? '[dry-run] No se escribirá nada en la BD.' : 'Aplicando backfill de tenantId...');
   try {
-    const outbox = await runOutbox(dryRun);
     const notifs = await runNotifications(dryRun);
     console.log('');
-    console.log(formatSummary('NotificationOutbox', outbox, OUTBOX_RULES, dryRun));
     console.log(formatSummary('UserNotification', notifs, NOTIFICATION_RULES, dryRun));
-    const pend = outbox.ambiguas + outbox.sinPistas + notifs.ambiguas + notifs.sinPistas;
+    const pend = notifs.ambiguas + notifs.sinPistas;
     console.log(
       `\nResumen: ${pend} fila(s) permanecen con tenantId NULL (ambiguas o sin pistas); asignar a mano si procede.`,
     );
