@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import {
   DeleteObjectCommand,
@@ -15,6 +15,48 @@ export interface StoredObject {
   sha256: string; // hash del contenido EN CLARO (es el `hash` del documento)
   sizeBytes: number;
   enc: EncMeta;
+}
+
+/** Prefijos de clave que llevan el tenant como SEGUNDO segmento: `<prefijo>/<tenant>/...`. */
+const TENANT_KEY_PREFIXES = new Set(['documents', 'templates', 'evidence', 'presented', 'onboarding']);
+
+/**
+ * Claves guardadas ANTES de que el tenant formara parte de la clave. Siguen
+ * siendo datos válidos (la fila que las referencia ya se consultó filtrada por
+ * tenant), así que se aceptan —con aviso— y no se bloquean descargas existentes:
+ *  - `documents/<yyyy-mm-dd>/<uuid>-<nombre>`: documentos previos a 5659271 y
+ *    el script `prisma/scripts/backfill-storage.ts` (prefijo plano 'documents').
+ *  - `legacy/pendiente-de-backfill/<id>`: marcador de la migración de de-base64.
+ *  - `onboarding/(ine|selfie)/<yyyy-mm-dd>/...`: INE/selfie previos a llevar tenant.
+ */
+const LEGACY_KEY_PATTERNS: RegExp[] = [
+  /^documents\/\d{4}-\d{2}-\d{2}\//,
+  /^legacy\/pendiente-de-backfill\//,
+  /^onboarding\/(ine|selfie)\/\d{4}-\d{2}-\d{2}\//,
+];
+
+const keyLog = new Logger('StorageTenantKey');
+
+/**
+ * Defensa en profundidad: exige que una clave de objeto guardada en una fila
+ * pertenezca al tenant que la pide (`documents|templates|evidence|presented|
+ * onboarding/<tenantId>/...`). Las consultas por fila ya filtran por tenant;
+ * esto evita leer/borrar un objeto ajeno si una fila quedara corrupta o mal
+ * escrita. Si no cumple: error CLARO en el log (con tenant y clave) y
+ * `NotFoundException` (404) al usuario, sin revelar nada. Las claves antiguas
+ * sin tenant (ver `LEGACY_KEY_PATTERNS`) se aceptan con aviso.
+ */
+export function assertTenantKey(tenantId: string, objectKey: string): void {
+  const segments = typeof objectKey === 'string' ? objectKey.split('/') : [];
+  // Sin segmentos vacíos ni '.'/'..' (nada de recorridos de ruta).
+  const wellFormed = segments.length >= 3 && segments.every((s) => s !== '' && s !== '.' && s !== '..');
+  if (wellFormed && tenantId.length > 0 && TENANT_KEY_PREFIXES.has(segments[0]) && segments[1] === tenantId) return;
+  if (wellFormed && LEGACY_KEY_PATTERNS.some((re) => re.test(objectKey))) {
+    keyLog.warn(`Clave de storage antigua sin tenant (se permite): ${objectKey} (tenant ${tenantId})`);
+    return;
+  }
+  keyLog.error(`Clave de storage NO pertenece al tenant "${tenantId}": ${objectKey}. Acceso denegado.`);
+  throw new NotFoundException('Archivo no encontrado');
 }
 
 /**

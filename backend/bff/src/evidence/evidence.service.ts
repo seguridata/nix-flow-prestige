@@ -4,7 +4,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { createHash, randomBytes } from 'crypto';
 import { Prisma, type EvidenceManifest, type Signer } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
+import { StorageService, assertTenantKey } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { ManifestSigner } from './manifest-signer';
 import { requestTimestamp, verifyTimestampToken } from '../signing/tsa/rfc3161';
@@ -338,22 +338,36 @@ export class EvidenceService {
     };
   }
 
-  async findByRequest(signatureRequestId: string, tenantId?: string): Promise<EvidenceManifest | null> {
+  async findByRequest(signatureRequestId: string, tenantId: string): Promise<EvidenceManifest | null> {
+    // Falla cerrado: sin tenant no se devuelve nada (antes se omitía la comparación).
+    if (!tenantId) return null;
     const found = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
-    if (found && tenantId && found.tenantId !== tenantId) return null;
+    if (found && found.tenantId !== tenantId) return null;
     return found;
   }
 
-  async findByManifestId(manifestId: string, tenantId?: string): Promise<EvidenceManifest> {
+  async findByManifestId(manifestId: string, tenantId: string): Promise<EvidenceManifest> {
     const found = await this.prisma.evidenceManifest.findUnique({ where: { manifestId } });
-    if (!found || (tenantId && found.tenantId !== tenantId)) {
+    if (!found || !tenantId || found.tenantId !== tenantId) {
       throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
     }
     return found;
   }
 
+  /**
+   * SIN filtro de tenant. Existe SÓLO para el verificador público
+   * (`GET /evidence/:manifestId/verify`): el manifiesto es verificable por
+   * cualquiera por diseño y sólo devuelve `{ valid, mismatches }`, sin PII.
+   * Nunca usarlo para devolver el manifiesto ni el documento.
+   */
+  private async findByManifestIdUnscoped(manifestId: string): Promise<EvidenceManifest> {
+    const found = await this.prisma.evidenceManifest.findUnique({ where: { manifestId } });
+    if (!found) throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
+    return found;
+  }
+
   async verify(manifestId: string): Promise<EvidenceVerificationResult> {
-    const manifest = await this.findByManifestId(manifestId);
+    const manifest = await this.findByManifestIdUnscoped(manifestId);
 
     const request = await this.prisma.signatureRequest.findUnique({
       where: { id: manifest.signatureRequestId },
@@ -499,7 +513,7 @@ export class EvidenceService {
    * Ed25519 + clave pública + token TSA + CA + verificador offline. Todo lo
    * necesario para validar sin el BFF.
    */
-  async buildDossier(manifestId: string, tenantId?: string): Promise<EvidenceDossier> {
+  async buildDossier(manifestId: string, tenantId: string): Promise<EvidenceDossier> {
     const m = await this.findByManifestId(manifestId, tenantId);
     const doc = await this.prisma.document.findUnique({
       where: { id: m.documentId },
@@ -513,6 +527,8 @@ export class EvidenceService {
       },
     });
     if (!doc) throw new NotFoundException('El documento del manifiesto ya no existe');
+    assertTenantKey(tenantId, doc.objectKey);
+    if (doc.presentedObjectKey) assertTenantKey(tenantId, doc.presentedObjectKey);
     const canonical = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta);
     const signedPdf =
       doc.presentedObjectKey && doc.presentedEnc

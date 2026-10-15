@@ -348,7 +348,7 @@ const SIGN = { method: 'DIGITAL' as const, consentAccepted: true };
 describe('SignatureRequestsService.sign — orden secuencial', () => {
   it('rechaza la firma de un firmante posterior mientras haya uno anterior PENDIENTE', async () => {
     const { service, realtime } = makeService({ requests: [baseRequest()], signers: twoSigners() });
-    await expect(service.sign(REQUEST_ID, { signerId: 'segundo', ...SIGN })).rejects.toBeInstanceOf(
+    await expect(service.signFromPublicLink(REQUEST_ID, { signerId: 'segundo', ...SIGN })).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(realtime.notifyDocumentEvent).not.toHaveBeenCalled();
@@ -356,7 +356,7 @@ describe('SignatureRequestsService.sign — orden secuencial', () => {
 
   it('permite firmar al primer firmante y avanza la solicitud a EN_FIRMA', async () => {
     const { service, signers, realtime } = makeService({ requests: [baseRequest()], signers: twoSigners() });
-    const result = await service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN });
     expect(result.requestStatus).toBe('EN_FIRMA');
     expect(result.status).toBe('FIRMADO');
     expect(signers.get('signer-primero')?.status).toBe('FIRMADO');
@@ -369,7 +369,7 @@ describe('SignatureRequestsService.sign — orden secuencial', () => {
 
   it('no exige orden alguno cuando la solicitud es PARALELO', async () => {
     const { service } = makeService({ requests: [baseRequest({ order: 'PARALELO' })], signers: twoSigners() });
-    const result = await service.sign(REQUEST_ID, { signerId: 'segundo', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'segundo', ...SIGN });
     expect(result.requestStatus).toBe('EN_FIRMA');
   });
 });
@@ -383,7 +383,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
         signerRow({ signerId: 'segundo', sortOrder: 1 }),
       ],
     });
-    const result = await service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN });
     expect(result.requestStatus).toBe('EN_FIRMA');
     expect(signers.get('signer-primero')?.signedAt).toEqual(new Date('2026-01-01T10:00:00Z'));
     expect(realtime.notifyDocumentEvent).not.toHaveBeenCalled();
@@ -396,7 +396,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
       signers: [signerRow({ signerId: 'primero', status: 'FIRMADO', signedAt: new Date(), usedMethod: 'DIGITAL' })],
       manifest: true,
     });
-    const result = await service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN });
     expect(result.requestStatus).toBe('COMPLETADA');
     expect(requests.get(REQUEST_ID)?.status).toBe('COMPLETADA');
     expect(realtime.notifyDocumentEvent).not.toHaveBeenCalled();
@@ -409,7 +409,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
       requests: [baseRequest({ status: 'RECHAZADA' })],
       signers: [signerRow({ signerId: 'primero', status: 'RECHAZADO' })],
     });
-    const result = await service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN });
     expect(result.requestStatus).toBe('RECHAZADA');
     expect(realtime.notifyDocumentEvent).not.toHaveBeenCalled();
   });
@@ -419,7 +419,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
       requests: [baseRequest()],
       signers: [signerRow({ signerId: 'unico' })],
     });
-    const result = await service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
     expect(result.requestStatus).toBe('COMPLETADA');
     expect(realtime.notifyDocumentEvent).toHaveBeenCalledTimes(2);
     expect(realtime.notifyDocumentEvent).toHaveBeenNthCalledWith(1, DOCUMENT_ID, expect.objectContaining({ type: 'SIGNATURE_APPLIED' }));
@@ -434,7 +434,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
       signers: [signerRow({ signerId: 'unico', status: 'FIRMADO', signedAt: new Date(), usedMethod: 'DIGITAL' })],
       manifest: false,
     });
-    const result = await service.sign(REQUEST_ID, { signerId: 'unico', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', ...SIGN });
     expect(result.requestStatus).toBe('COMPLETADA');
     expect(workflow.signalSigned).toHaveBeenCalledWith(REQUEST_ID, 'unico');
     expect(evidence.generateForRequest).toHaveBeenCalledTimes(1);
@@ -448,7 +448,7 @@ describe('SignatureRequestsService.sign — respuesta mínima y efectos post-com
       { requests: [baseRequest({ order: 'PARALELO' })], signers: twoSigners() },
       { signedPdf: Buffer.from('%PDF-1.4 firmado') },
     );
-    const result = await service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN });
     expect(Object.keys(result).sort()).toEqual(['requestStatus', 'signedAt', 'status']);
     expect(result.status).toBe('FIRMADO');
     expect(result.signedAt).toBeInstanceOf(Date);
@@ -459,21 +459,21 @@ describe('SignatureRequestsService.sign — respuesta mínima y efectos post-com
     const ctx = makeService({ requests: [baseRequest()], signers: [signerRow({ signerId: 'unico' })] });
     ctx.workflow.signalSigned.mockRejectedValueOnce(new Error('temporal caído'));
     ctx.evidence.generateForRequest.mockRejectedValueOnce(new Error('storage caído'));
-    const result = await ctx.service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
+    const result = await ctx.service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
     expect(result.requestStatus).toBe('COMPLETADA');
     expect(ctx.signers.get('signer-unico')?.status).toBe('FIRMADO');
     // Sin evidencia: no se manda el correo de "completada" todavía.
     expect(ctx.mail.sendCompleted).not.toHaveBeenCalled();
 
     // El reintento del firmante (alreadySigned + COMPLETADA sin manifiesto) lo repara.
-    await ctx.service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
+    await ctx.service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
     expect(ctx.evidence.generateForRequest).toHaveBeenCalledTimes(2);
     expect(ctx.mail.sendCompleted).toHaveBeenCalledTimes(1);
   });
 
   it('la transacción de firma lleva timeout explícito y bloquea la fila del documento', async () => {
     const { service, calls } = makeService({ requests: [baseRequest()], signers: [signerRow({ signerId: 'unico' })] });
-    await service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
+    await service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' });
     expect(calls.txOptions[0]).toMatchObject({ timeout: 30_000 });
     expect(calls.queryRaw).toBe(1);
   });
@@ -486,7 +486,7 @@ describe('SignatureRequestsService.sign — FREEZE, hash y expiración', () => {
       signers: [signerRow({ signerId: 'unico' })],
       doc: { locked: false },
     });
-    const err = await service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' }).catch((e) => e);
+    const err = await service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' }).catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.getResponse()).toMatchObject({ error: 'DOCUMENT_NOT_FROZEN' });
     expect(signing.sign).not.toHaveBeenCalled();
@@ -497,7 +497,7 @@ describe('SignatureRequestsService.sign — FREEZE, hash y expiración', () => {
       { requests: [baseRequest()], signers: [signerRow({ signerId: 'unico' })] },
       { storageBytes: Buffer.from('%PDF-1.4 ALTERADO') },
     );
-    const err = await service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' }).catch((e) => e);
+    const err = await service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' }).catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.getResponse()).toMatchObject({ error: 'HASH_MISMATCH' });
     expect(signing.sign).not.toHaveBeenCalled();
@@ -510,7 +510,7 @@ describe('SignatureRequestsService.sign — FREEZE, hash y expiración', () => {
       requests: [baseRequest({ expiresAt: new Date(Date.now() - 1000) })],
       signers: [signerRow({ signerId: 'unico' })],
     });
-    await expect(service.sign(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' })).rejects.toBeInstanceOf(GoneException);
+    await expect(service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'DIGITAL' })).rejects.toBeInstanceOf(GoneException);
     expect(requests.get(REQUEST_ID)?.status).toBe('EXPIRADA');
     expect(signers.get('signer-unico')?.status).toBe('PENDIENTE');
     expect(signing.sign).not.toHaveBeenCalled();
@@ -519,7 +519,7 @@ describe('SignatureRequestsService.sign — FREEZE, hash y expiración', () => {
 
   it('rechaza un método no autorizado para la solicitud', async () => {
     const { service } = makeService({ requests: [baseRequest()], signers: [signerRow({ signerId: 'unico' })] });
-    await expect(service.sign(REQUEST_ID, { signerId: 'unico', method: 'BIOMETRICA' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', method: 'BIOMETRICA' })).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -531,8 +531,8 @@ describe('SignatureRequestsService.sign — concurrencia', () => {
       { signHook: () => new Promise((r) => setTimeout(r, 5)) },
     );
     const [a, b] = await Promise.all([
-      service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN }),
-      service.sign(REQUEST_ID, { signerId: 'segundo', ...SIGN }),
+      service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN }),
+      service.signFromPublicLink(REQUEST_ID, { signerId: 'segundo', ...SIGN }),
     ]);
     expect(signers.get('signer-primero')?.status).toBe('FIRMADO');
     expect(signers.get('signer-segundo')?.status).toBe('FIRMADO');
@@ -547,8 +547,8 @@ describe('SignatureRequestsService.sign — concurrencia', () => {
       { signHook: () => new Promise((r) => setTimeout(r, 5)) },
     );
     await Promise.all([
-      service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN }),
-      service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN }),
+      service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN }),
+      service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN }),
     ]);
     expect(signing.sign).toHaveBeenCalledTimes(1);
     expect(realtime.notifyDocumentEvent).toHaveBeenCalledTimes(1);
@@ -576,6 +576,36 @@ describe('SignatureRequestsService — aislamiento por tenant (A/B)', () => {
     expect(requests.get(REQUEST_ID)?.status).toBe('PENDIENTE');
     expect([...signers.values()].every((s) => s.status === 'PENDIENTE' && !s.delegatedTo)).toBe(true);
     expect(workflow.signalRejected).not.toHaveBeenCalled();
+  });
+
+  it('sin tenant (undefined o vacío) getOrThrow/getStatus fallan cerrado: ya no omiten el filtro', async () => {
+    const { service } = makeService(seed());
+    for (const t of [undefined, '']) {
+      await expect(service.getOrThrow(REQUEST_ID, t as unknown as string)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getStatus(REQUEST_ID, t as unknown as string)).rejects.toBeInstanceOf(NotFoundException);
+    }
+  });
+
+  it('list/listAll sin tenant devuelven vacío y NO consultan (Prisma ignora tenantId: undefined)', async () => {
+    const findMany = vi.fn(async () => [{ id: 'ajena' }]);
+    const svc = Object.create(SignatureRequestsService.prototype) as SignatureRequestsService;
+    (svc as unknown as { prisma: unknown }).prisma = { signatureRequest: { findMany } };
+    expect(await svc.listAll(undefined, undefined, undefined, undefined, undefined as unknown as string)).toEqual([]);
+    expect(await svc.listAll('x', undefined, undefined, undefined, '')).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+    await svc.listAll(undefined, undefined, undefined, undefined, 'tenant-a');
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect((findMany.mock.calls[0] as unknown as [{ where: { tenantId: string } }])[0].where.tenantId).toBe('tenant-a');
+  });
+
+  it('portal público: *FromPublicLink toma el tenant de la solicitud ligada al enlace (única vía sin tenant de sesión)', async () => {
+    const { service, signers } = makeService(seed());
+    await expect(service.recordConsentFromPublicLink(REQUEST_ID, { signerId: 'intruso' })).rejects.toBeInstanceOf(NotFoundException);
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN });
+    expect(result.status).toBe('FIRMADO');
+    await expect(service.rejectFromPublicLink(REQUEST_ID, { signerId: 'segundo' })).resolves.toBeTruthy();
+    expect([...signers.values()].find((s) => s.signerId === 'segundo')?.status).toBe('RECHAZADO');
+    await expect(service.signFromPublicLink('no-existe', { signerId: 'x', ...SIGN })).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('el tenant dueño (A) sí opera normalmente', async () => {
@@ -730,10 +760,10 @@ describe('SignatureRequestsService.delegate', () => {
     const { service, signers } = makeService({ requests: [baseRequest()], signers: twoSigners(), members });
     await service.delegate(REQUEST_ID, { fromSignerId: 'primero', toSignerId: 'suplente' }, 'seguridata');
 
-    await expect(service.sign(REQUEST_ID, { signerId: 'primero', ...SIGN })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.signFromPublicLink(REQUEST_ID, { signerId: 'primero', ...SIGN })).rejects.toBeInstanceOf(ForbiddenException);
     expect(signers.get('signer-primero')?.status).toBe('PENDIENTE');
 
-    const result = await service.sign(REQUEST_ID, { signerId: 'suplente', ...SIGN });
+    const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'suplente', ...SIGN });
     expect(result.status).toBe('FIRMADO');
     expect(signers.get('signer-primero')?.status).toBe('FIRMADO');
   });
@@ -839,7 +869,7 @@ describe('SignatureRequestsService.sign — métodos permitidos según el estado
       signers: withDigitalFirst(),
     });
     const err = await service
-      .sign(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png'))
+      .signFromPublicLink(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png'))
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.getResponse()).toMatchObject({
@@ -857,13 +887,13 @@ describe('SignatureRequestsService.sign — métodos permitidos según el estado
       requests: [visualRequest({ status: 'EN_FIRMA' })],
       signers: withDigitalFirst(),
     });
-    const out = await service.sign(REQUEST_ID, { signerId: 'segundo', method: 'ACCEPT', consentAccepted: true });
+    const out = await service.signFromPublicLink(REQUEST_ID, { signerId: 'segundo', method: 'ACCEPT', consentAccepted: true });
     expect(out.status).toBe('FIRMADO');
   });
 
   it('sin firma previa AUTOGRAFA sigue permitida', async () => {
     const { service, signing } = makeService({ requests: [visualRequest()], signers: twoSigners() });
-    const out = await service.sign(
+    const out = await service.signFromPublicLink(
       REQUEST_ID,
       { signerId: 'primero', method: 'AUTOGRAFA', consentAccepted: true },
       Buffer.from('png'),
@@ -875,7 +905,7 @@ describe('SignatureRequestsService.sign — métodos permitidos según el estado
   it('paralelo: AUTOGRAFA permitida antes de cualquier DIGITAL y bloqueada después', async () => {
     const before = makeService({ requests: [visualRequest({ order: 'PARALELO' })], signers: twoSigners() });
     await expect(
-      before.service.sign(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png')),
+      before.service.signFromPublicLink(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png')),
     ).resolves.toMatchObject({ status: 'FIRMADO' });
 
     const after = makeService({
@@ -883,7 +913,7 @@ describe('SignatureRequestsService.sign — métodos permitidos según el estado
       signers: withDigitalFirst(),
     });
     await expect(
-      after.service.sign(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png')),
+      after.service.signFromPublicLink(REQUEST_ID, { signerId: 'segundo', method: 'AUTOGRAFA', consentAccepted: true }, Buffer.from('png')),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -892,7 +922,7 @@ describe('SignatureRequestsService.sign — métodos permitidos según el estado
       requests: [visualRequest({ status: 'EN_FIRMA' })],
       signers: withDigitalFirst(),
     });
-    const status = await service.getStatus(REQUEST_ID);
+    const status = await service.getStatus(REQUEST_ID, 'seguridata');
     expect(status.allowedMethodsNow).toEqual(['DIGITAL', 'ACCEPT', 'PASSKEY']);
     expect(status.methods).toContain('AUTOGRAFA');
   });

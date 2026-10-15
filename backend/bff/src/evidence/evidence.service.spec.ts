@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { EvidenceService } from './evidence.service';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -38,7 +39,7 @@ function makeService(events: Record<string, unknown>[]) {
     evidenceManifest: { findUnique: async () => MANIFEST },
     document: {
       findUnique: async () => ({
-        objectKey: 'k1',
+        objectKey: 'documents/seguridata/c1/2026-10-01/uuid-contrato.pdf',
         enc: {},
         hash: MANIFEST.originalHash,
         filename: 'contrato.pdf',
@@ -157,5 +158,61 @@ describe('EvidenceService.verify (checks coherentes con valid)', () => {
     expect(r.checks.documentHash).toBe(true);
     expect(r.checks.presentedHash).toBe(true);
     expect(Object.values(r.checks).includes(false)).toBe(false);
+  });
+});
+
+describe('EvidenceService: el tenant es obligatorio y siempre filtra', () => {
+  function svcWith(docKey = 'documents/seguridata/c1/2026-10-01/uuid-contrato.pdf') {
+    const getObject = vi.fn(async () => Buffer.from('%PDF-1.4'));
+    const prisma = {
+      evidenceManifest: { findUnique: async () => MANIFEST },
+      document: {
+        findUnique: async () => ({
+          objectKey: docKey,
+          enc: {},
+          hash: MANIFEST.originalHash,
+          filename: 'c.pdf',
+          presentedObjectKey: null,
+          presentedEnc: null,
+        }),
+      },
+      processAuditEvent: { findMany: async () => [] },
+      signatureRequest: { findUnique: async () => null },
+    } as unknown as PrismaService;
+    const storage = { getObject } as unknown as StorageService;
+    const svc = new EvidenceService(prisma, { publicKeyPem: null } as unknown as ManifestSigner, storage, undefined as never, undefined as never);
+    return { svc, getObject };
+  }
+
+  it('findByManifestId: otro tenant, vacío o undefined => 404 (antes undefined omitía el filtro)', async () => {
+    const { svc } = svcWith();
+    await expect(svc.findByManifestId('man-1', 'otro')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.findByManifestId('man-1', '')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.findByManifestId('man-1', undefined as unknown as string)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.findByManifestId('man-1', 'seguridata')).resolves.toMatchObject({ manifestId: 'man-1' });
+  });
+
+  it('findByRequest: sólo devuelve el manifiesto del propio tenant', async () => {
+    const { svc } = svcWith();
+    expect(await svc.findByRequest('sr-1', 'otro')).toBeNull();
+    expect(await svc.findByRequest('sr-1', undefined as unknown as string)).toBeNull();
+    expect(await svc.findByRequest('sr-1', 'seguridata')).toMatchObject({ manifestId: 'man-1' });
+  });
+
+  it('buildDossier sin tenant da 404 y no lee storage', async () => {
+    const { svc, getObject } = svcWith();
+    await expect(svc.buildDossier('man-1', undefined as unknown as string)).rejects.toBeInstanceOf(NotFoundException);
+    expect(getObject).not.toHaveBeenCalled();
+  });
+
+  it('buildDossier: documento con clave de OTRO tenant => 404 sin leer el objeto', async () => {
+    const { svc, getObject } = svcWith('documents/otro/c1/2026-10-01/uuid-ajeno.pdf');
+    await expect(svc.buildDossier('man-1', 'seguridata')).rejects.toBeInstanceOf(NotFoundException);
+    expect(getObject).not.toHaveBeenCalled();
+  });
+
+  it('verify (verificador público por diseño) sigue funcionando sin tenant', async () => {
+    const { svc } = svcWith();
+    await expect(svc.verify('man-1')).resolves.toHaveProperty('valid');
   });
 });

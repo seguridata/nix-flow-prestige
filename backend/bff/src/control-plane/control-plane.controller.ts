@@ -163,6 +163,6 @@ export class ControlPlaneController {
   @Get('slo')
   sloSnapshot(@CurrentUser() user: AuthenticatedUser) {
     // Vista global solo para platform_admin; el resto ve únicamente su tenant.
-    return this.slo.snapshot(isPlatformAdmin(user) ? undefined : user.tenantId);
+    return isPlatformAdmin(user) ? this.slo.snapshotGlobal() : this.slo.snapshot(user.tenantId);
   }
 }

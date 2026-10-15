@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import type { DocumentTemplate, KycPolicy, Prisma, SignatureMethod } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
+import { StorageService, assertTenantKey } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
 import { DocumentsService } from '../documents/documents.service';
 import { SignatureRequestsService } from '../signature-requests/signature-requests.service';
@@ -71,6 +71,7 @@ export class DocumentTemplatesService {
 
   async getPdf(id: string, actor: TemplateActor): Promise<{ bytes: Buffer; filename: string }> {
     const t = await this.visible(id, actor);
+    assertTenantKey(actor.tenantId, t.objectKey);
     const bytes = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta);
     return { bytes, filename: `${t.name}.pdf` };
   }
@@ -142,6 +143,7 @@ export class DocumentTemplatesService {
 
   async remove(id: string, actor: TemplateActor): Promise<void> {
     const t = await this.visible(id, actor);
+    assertTenantKey(actor.tenantId, t.objectKey); // antes de borrar la fila: no se toca un objeto ajeno
     await this.prisma.documentTemplate.delete({ where: { id } });
     await this.storage.deleteObject(t.objectKey).catch((e: Error) => this.log.warn(`No se pudo borrar ${t.objectKey}: ${e.message}`));
   }
@@ -181,6 +183,7 @@ export class DocumentTemplatesService {
     if (input.folderId) await this.folders.assertOwned(input.folderId, { tenantId: actor.tenantId, ownerId: actor.actorId });
 
     // 2) PDF rellenado.
+    assertTenantKey(actor.tenantId, t.objectKey);
     const base = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta);
     const filled = await fillPdf(base, fields, clean);
 

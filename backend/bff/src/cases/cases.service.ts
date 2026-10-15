@@ -55,10 +55,12 @@ export class CasesService {
     });
   }
 
-  async list(tenantId?: string, page?: PageQueryDto): Promise<Case[] | Page<Case>> {
+  async list(tenantId: string, page?: PageQueryDto): Promise<Case[] | Page<Case>> {
     const args = pageArgs(page);
+    // Prisma ignora `tenantId: undefined` (equivale a SIN filtro): sin tenant, nada.
+    if (!tenantId) return finishPage([], args);
     const rows = await this.prisma.case.findMany({
-      where: tenantId ? { tenantId } : undefined,
+      where: { tenantId },
       orderBy: STABLE_ORDER,
       ...prismaPage(args),
     });
@@ -66,19 +68,21 @@ export class CasesService {
   }
 
   /** Carga en lote (una sola consulta) para evitar N+1 en la bandeja. */
-  async findManyByIds(ids: string[], tenantId?: string): Promise<Map<string, Case>> {
-    if (ids.length === 0) return new Map();
+  async findManyByIds(ids: string[], tenantId: string): Promise<Map<string, Case>> {
+    // Falla cerrado: sin tenant no se devuelve nada (jamás se omite el filtro).
+    if (!tenantId || ids.length === 0) return new Map();
     const rows = await this.prisma.case.findMany({
-      where: { id: { in: [...new Set(ids)] }, ...(tenantId ? { tenantId } : {}) },
+      where: { id: { in: [...new Set(ids)] }, tenantId },
     });
     return new Map(rows.map((r) => [r.id, r]));
   }
 
-  find(id: string, tenantId?: string): Promise<Case | null> {
-    return this.prisma.case.findFirst({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+  find(id: string, tenantId: string): Promise<Case | null> {
+    if (!tenantId) return Promise.resolve(null);
+    return this.prisma.case.findFirst({ where: { id, tenantId } });
   }
 
-  async getOrThrow(id: string, tenantId?: string): Promise<Case> {
+  async getOrThrow(id: string, tenantId: string): Promise<Case> {
     const found = await this.find(id, tenantId);
     if (!found) throw new NotFoundException(`Caso ${id} no encontrado`);
     return found;

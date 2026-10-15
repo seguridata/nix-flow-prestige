@@ -22,6 +22,9 @@ type Row = {
   enc: object;
 };
 
+const K1 = 'documents/seguridata/c1/2026-10-01/uuid-k1.pdf';
+const K1A = 'documents/tenant-a/c1/2026-10-01/uuid-k1.pdf';
+
 const auditSpy = vi.fn(async () => undefined);
 
 function makeService(opts: { docs: Record<string, Row>; bytesByKey: Record<string, Buffer> }) {
@@ -100,8 +103,8 @@ describe('DocumentsService — freeze e integridad', () => {
   it('freeze congela el documento y deja el canónico intacto', async () => {
     const bytes = Buffer.from('%PDF-1.4 contenido original');
     const hash = sha256Hex(bytes);
-    const docs = { 'doc-1': row({ id: 'doc-1', hash, objectKey: 'k1' }) };
-    const svc = makeService({ docs, bytesByKey: { k1: bytes } });
+    const docs = { 'doc-1': row({ id: 'doc-1', hash, objectKey: K1 }) };
+    const svc = makeService({ docs, bytesByKey: { [K1]: bytes } });
 
     const frozen = await svc.freeze('doc-1', 'seguridata', 'actor-1');
     expect(frozen.locked).toBe(true);
@@ -115,8 +118,8 @@ describe('DocumentsService — freeze e integridad', () => {
   it('dos freeze concurrentes congelan y auditan una sola vez (updateMany locked:false)', async () => {
     auditSpy.mockClear();
     const bytes = Buffer.from('%PDF-1.4 carrera');
-    const docs = { 'doc-1': row({ id: 'doc-1', hash: sha256Hex(bytes), objectKey: 'k1' }) };
-    const svc = makeService({ docs, bytesByKey: { k1: bytes } });
+    const docs = { 'doc-1': row({ id: 'doc-1', hash: sha256Hex(bytes), objectKey: K1 }) };
+    const svc = makeService({ docs, bytesByKey: { [K1]: bytes } });
 
     const [a, b] = await Promise.all([
       svc.freeze('doc-1', 'seguridata', 'actor-1'),
@@ -131,8 +134,8 @@ describe('DocumentsService — freeze e integridad', () => {
     const bytes = Buffer.from('%PDF-1.4 contenido');
     const hash = sha256Hex(bytes);
     const frozenAt = new Date('2026-02-02T00:00:00.000Z');
-    const docs = { 'doc-1': row({ id: 'doc-1', hash, objectKey: 'k1', locked: true, frozenAt }) };
-    const svc = makeService({ docs, bytesByKey: { k1: bytes } });
+    const docs = { 'doc-1': row({ id: 'doc-1', hash, objectKey: K1, locked: true, frozenAt }) };
+    const svc = makeService({ docs, bytesByKey: { [K1]: bytes } });
 
     const result = await svc.freeze('doc-1', 'seguridata', 'actor-1');
     expect(result.frozenAt).toEqual(frozenAt);
@@ -140,9 +143,9 @@ describe('DocumentsService — freeze e integridad', () => {
 
   it('freeze responde 409 HASH_MISMATCH si el objeto en storage no coincide con el hash registrado', async () => {
     const registeredHash = sha256Hex(Buffer.from('bytes esperados'));
-    const docs = { 'doc-1': row({ id: 'doc-1', hash: registeredHash, objectKey: 'k1' }) };
+    const docs = { 'doc-1': row({ id: 'doc-1', hash: registeredHash, objectKey: K1 }) };
     // El storage devuelve bytes distintos a los que el hash registrado describe.
-    const svc = makeService({ docs, bytesByKey: { k1: Buffer.from('bytes distintos') } });
+    const svc = makeService({ docs, bytesByKey: { [K1]: Buffer.from('bytes distintos') } });
 
     try {
       await svc.freeze('doc-1', 'seguridata', 'actor-1');
@@ -156,12 +159,40 @@ describe('DocumentsService — freeze e integridad', () => {
   });
 });
 
+describe('DocumentsService — clave de storage vs tenant', () => {
+  it('una fila cuya clave pertenece a OTRO tenant da 404 y no se lee ni se borra nada', async () => {
+    const bytes = Buffer.from('%PDF-1.4 x');
+    const docs = { 'doc-1': row({ id: 'doc-1', hash: sha256Hex(bytes), objectKey: K1A, tenantId: 'seguridata' }) };
+    const svc = makeService({ docs, bytesByKey: { [K1A]: bytes } });
+    await expect(svc.getContent('doc-1', 'seguridata')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.freeze('doc-1', 'seguridata', 'actor-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.getPresented('doc-1', 'seguridata')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('las claves antiguas sin tenant (documents/<fecha>/...) siguen descargándose', async () => {
+    const bytes = Buffer.from('%PDF-1.4 viejo');
+    const legacy = 'documents/2026-08-20/uuid-viejo.pdf';
+    const docs = { 'doc-1': row({ id: 'doc-1', hash: sha256Hex(bytes), objectKey: legacy }) };
+    const svc = makeService({ docs, bytesByKey: { [legacy]: bytes } });
+    const out = await svc.getContent('doc-1', 'seguridata');
+    expect(out.bytes.equals(bytes)).toBe(true);
+  });
+
+  it('findManyByIds / find sin tenant no devuelven nada', async () => {
+    const bytes = Buffer.from('%PDF-1.4 x');
+    const docs = { 'doc-1': row({ id: 'doc-1', hash: sha256Hex(bytes), objectKey: K1 }) };
+    const svc = makeService({ docs, bytesByKey: { [K1]: bytes } });
+    expect((await svc.findManyByIds(['doc-1'], undefined as unknown as string)).size).toBe(0);
+    expect(await svc.find('doc-1', '')).toBeNull();
+  });
+});
+
 describe('DocumentsService — aislamiento por tenant', () => {
   it('el tenant B no puede leer ni congelar un documento del tenant A (404)', async () => {
     const bytes = Buffer.from('%PDF-1.4 confidencial de A');
     const hash = sha256Hex(bytes);
-    const docs = { 'doc-a': row({ id: 'doc-a', hash, objectKey: 'k1', tenantId: 'tenant-a' }) };
-    const svc = makeService({ docs, bytesByKey: { k1: bytes } });
+    const docs = { 'doc-a': row({ id: 'doc-a', hash, objectKey: K1A, tenantId: 'tenant-a' }) };
+    const svc = makeService({ docs, bytesByKey: { [K1A]: bytes } });
 
     await expect(svc.get('doc-a', 'tenant-b')).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.freeze('doc-a', 'tenant-b', 'actor-1')).rejects.toBeInstanceOf(NotFoundException);

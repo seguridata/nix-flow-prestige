@@ -17,12 +17,22 @@ function grade(value: number, warn: number, crit: number, higherIsBad = true): L
 export class SloService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Vista de UN tenant: `tenantId` acota TODOS los conteos y es obligatorio. */
+  async snapshot(tenantId: string) {
+    if (!tenantId) throw new Error('SloService.snapshot requiere tenantId');
+    return this.compute(tenantId);
+  }
+
   /**
-   * `tenantId` acota TODOS los conteos a ese tenant. Sin él (solo
-   * `platform_admin`) la vista es global.
+   * Vista GLOBAL de plataforma (todos los tenants). SÓLO para `platform_admin`:
+   * el controller debe verificar el rol antes de llamarla.
    */
-  async snapshot(tenantId?: string) {
-    const t = tenantId ? { tenantId } : {};
+  async snapshotGlobal() {
+    return this.compute(null);
+  }
+
+  private async compute(tenantId: string | null) {
+    const t = tenantId === null ? {} : { tenantId };
     const since = new Date(Date.now() - 7 * 24 * 3600_000);
 
     const [total7d, completed7d, expired7d, brokenRuns, localRuns, outboxDlq, webhookDlq, overdueTasks] =
@@ -34,7 +44,7 @@ export class SloService {
         this.prisma.workflowRun.count({ where: { ...t, status: 'LOCAL' } }),
         this.prisma.notificationOutbox.count({ where: { ...t, status: 'DLQ' } }),
         this.prisma.webhookDelivery.count({
-          where: { status: 'DLQ', ...(tenantId ? { subscription: { tenantId } } : {}) },
+          where: { status: 'DLQ', ...(tenantId === null ? {} : { subscription: { tenantId } }) },
         }),
         this.prisma.humanTask.count({
           where: { ...t, status: { in: ['CREADA', 'ASIGNADA'] }, dueAt: { lt: new Date() } },
@@ -55,7 +65,7 @@ export class SloService {
       WHERE r."createdAt" >= ${since}
         AND r."status" = 'COMPLETADA'
         AND m."createdAt" >= r."createdAt"
-        ${tenantId ? Prisma.sql`AND r."tenantId" = ${tenantId}` : Prisma.empty}
+        ${tenantId === null ? Prisma.empty : Prisma.sql`AND r."tenantId" = ${tenantId}`}
     `);
     const avgSeconds = rows[0]?.avg_seconds;
     const avgHoursToComplete = avgSeconds === null || avgSeconds === undefined ? null : Number(avgSeconds) / 3600;

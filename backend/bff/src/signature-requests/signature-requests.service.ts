@@ -380,11 +380,11 @@ export class SignatureRequestsService {
 
   /** Listado paginado (ver `common/pagination`): array sin limit/cursor, `{items,nextCursor}` con ellos. */
   async list(
-    signerId?: string,
-    status?: string,
-    documentId?: string,
-    requestedBy?: string,
-    tenantId?: string,
+    signerId: string | undefined,
+    status: string | undefined,
+    documentId: string | undefined,
+    requestedBy: string | undefined,
+    tenantId: string,
     page?: PageQueryDto,
   ) {
     const args = pageArgs(page);
@@ -393,12 +393,21 @@ export class SignatureRequestsService {
   }
 
   /** Igual que `list` pero siempre array (tope 200); lo usa la bandeja (inbox). */
-  listAll(signerId?: string, status?: string, documentId?: string, requestedBy?: string, tenantId?: string) {
+  listAll(signerId: string | undefined, status: string | undefined, documentId: string | undefined, requestedBy: string | undefined, tenantId: string) {
     return this.findRequests({ signerId, status, documentId, requestedBy, tenantId }, prismaPage(pageArgs()));
   }
 
   private findRequests(
-    f: { signerId?: string; status?: string; documentId?: string; requestedBy?: string; tenantId?: string },
+    f: { signerId?: string; status?: string; documentId?: string; requestedBy?: string; tenantId: string },
+    pg: { take: number; skip?: number; cursor?: { id: string } },
+  ) {
+    // Prisma ignora `tenantId: undefined` (equivale a SIN filtro): sin tenant, nada.
+    if (!f.tenantId) return Promise.resolve([] as Awaited<ReturnType<typeof this.findRequestsRaw>>);
+    return this.findRequestsRaw(f, pg);
+  }
+
+  private findRequestsRaw(
+    f: { signerId?: string; status?: string; documentId?: string; requestedBy?: string; tenantId: string },
     pg: { take: number; skip?: number; cursor?: { id: string } },
   ) {
     return this.prisma.signatureRequest.findMany({
@@ -417,9 +426,26 @@ export class SignatureRequestsService {
     });
   }
 
-  async getOrThrow(id: string, tenantId?: string) {
+  async getOrThrow(id: string, tenantId: string) {
+    // Falla cerrado: sin tenant no hay filtro posible, así que se rechaza en vez de omitirlo.
+    if (!tenantId) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
     const found = await this.prisma.signatureRequest.findFirst({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId },
+      include: INCLUDE_SIGNERS,
+    });
+    if (!found) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
+    return found;
+  }
+
+  /**
+   * SIN filtro de tenant. Existe SÓLO para el portal público por token: el
+   * enlace de un solo uso (ya validado por el controller) es lo que identifica
+   * la solicitud y de ella sale el tenant. Nunca llamarlo con un id que venga
+   * de una sesión de usuario: ahí se usa `getOrThrow(id, tenantId)`.
+   */
+  async getOrThrowUnscoped(id: string) {
+    const found = await this.prisma.signatureRequest.findFirst({
+      where: { id },
       include: INCLUDE_SIGNERS,
     });
     if (!found) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
@@ -427,7 +453,7 @@ export class SignatureRequestsService {
   }
 
   /** Estado de la solicitud + `allowedMethodsNow` (métodos usables hoy según el estado del PDF). */
-  async getStatus(id: string, tenantId?: string) {
+  async getStatus(id: string, tenantId: string) {
     const found = await this.getOrThrow(id, tenantId);
     return { ...found, allowedMethodsNow: allowedMethodsForRequest(found) };
   }
@@ -499,14 +525,20 @@ export class SignatureRequestsService {
     }
   }
 
-  /**
-   * `tenantId` se omite SÓLO desde el portal público: ahí el enlace de un solo
-   * uso ya identifica la solicitud. Desde sesión, el controller siempre lo pasa.
-   */
+  /** Portal público por token: el tenant sale de la solicitud ligada al enlace (ver `getOrThrowUnscoped`). */
+  async recordConsentFromPublicLink(
+    id: string,
+    body: { signerId: string; ip?: string; userAgent?: string },
+  ) {
+    const request = await this.getOrThrowUnscoped(id);
+    return this.recordConsent(id, body, request.tenantId);
+  }
+
+  /** Desde sesión: el controller siempre pasa el tenant del usuario. */
   async recordConsent(
     id: string,
     body: { signerId: string; ip?: string; userAgent?: string },
-    tenantId?: string,
+    tenantId: string,
   ) {
     const request = await this.getOrThrow(id, tenantId);
     if (!this.resolveActor(request.signers, body.signerId)) {
@@ -520,7 +552,8 @@ export class SignatureRequestsService {
     id: string,
     body: { signerId: string; ip?: string; userAgent?: string },
   ) {
-    const request = await this.getOrThrow(id);
+    // Portal público por token (sin tenant de sesión): ver `getOrThrowUnscoped`.
+    const request = await this.getOrThrowUnscoped(id);
     await this.collab.audit({
       signatureRequestId: id,
       documentId: request.documentId,
@@ -569,8 +602,17 @@ export class SignatureRequestsService {
 
   /**
    * Devuelve SÓLO {status, signedAt, requestStatus}: ni el PDF firmado ni datos
-   * de otros firmantes. `tenantId` se omite únicamente desde el portal público.
+   * de otros firmantes. Desde el portal público se usa `signFromPublicLink`.
    */
+  async signFromPublicLink(
+    id: string,
+    body: Parameters<SignatureRequestsService['sign']>[1],
+    autographImage?: Buffer,
+  ): Promise<SignOutcome> {
+    const request = await this.getOrThrowUnscoped(id);
+    return this.sign(id, body, autographImage, request.tenantId);
+  }
+
   async sign(
     id: string,
     body: {
@@ -584,8 +626,8 @@ export class SignatureRequestsService {
       ip?: string;
       userAgent?: string;
     },
-    autographImage?: Buffer,
-    tenantId?: string,
+    autographImage: Buffer | undefined,
+    tenantId: string,
   ): Promise<SignOutcome> {
     const before = await this.getOrThrow(id, tenantId);
     const mine = this.resolveActor(before.signers, body.signerId);
@@ -1120,12 +1162,18 @@ export class SignatureRequestsService {
     });
   }
 
+  /** Portal público por token: el tenant sale de la solicitud ligada al enlace. */
+  async rejectFromPublicLink(id: string, body: { signerId: string; reason?: string }) {
+    const request = await this.getOrThrowUnscoped(id);
+    return this.reject(id, body, request.tenantId);
+  }
+
   /**
    * Rechazo por el propio firmante (o su delegado vigente). Sólo si su fila está
    * PENDIENTE/EN_PROCESO (nunca tras firmar) y, en orden SECUENCIAL, cuando ya
    * le toca el turno. El cambio de estado es atómico.
    */
-  async reject(id: string, body: { signerId: string; reason?: string }, tenantId?: string) {
+  async reject(id: string, body: { signerId: string; reason?: string }, tenantId: string) {
     const request = await this.getOrThrow(id, tenantId);
     if (CLOSED_REQUEST.includes(request.status)) return request;
 
@@ -1302,7 +1350,7 @@ export class SignatureRequestsService {
     requestId: string,
     documentId: string,
     signers: { signerId: string; name?: string | null }[],
-    tenantId?: string,
+    tenantId: string,
   ) {
     if (signers.length === 0) return;
     const now = new Date();

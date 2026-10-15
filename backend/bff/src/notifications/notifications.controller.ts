@@ -32,7 +32,7 @@ export class NotificationsController {
 
   @Post('dispatch')
   dispatch(@CurrentUser() user: AuthenticatedUser) {
-    return this.outbox.dispatchDue(25, user.tenantId);
+    return this.outbox.dispatchDueForTenant(25, user.tenantId);
   }
 
   @Post(':id/retry')

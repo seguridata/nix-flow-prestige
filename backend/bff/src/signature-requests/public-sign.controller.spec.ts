@@ -10,7 +10,7 @@ describe('PublicSignController.sign - respuesta publica', () => {
       consume: vi.fn(async () => undefined),
     };
     const signatureRequests = {
-      sign: vi.fn(async () => ({
+      signFromPublicLink: vi.fn(async () => ({
         status: 'FIRMADO',
         signedAt,
         requestStatus: 'COMPLETADA',
@@ -47,35 +47,35 @@ describe('PublicSignController.reject', () => {
   it('rechazo valido: usa el firmante del enlace, sin tenant, consume el enlace y responde solo {status}', async () => {
     const links = { resolve: vi.fn(async () => link), consume: vi.fn(async () => true) };
     const signatureRequests = {
-      reject: vi.fn(async () => ({ id: 'sr-1', signers: [{ signerId: 'otro' }], documentId: 'd' })),
+      rejectFromPublicLink: vi.fn(async () => ({ id: 'sr-1', signers: [{ signerId: 'otro' }], documentId: 'd' })),
     };
     const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
 
     const out = await ctrl.reject('tok', { reason: 'no procede', signerId: 'evil' } as never);
 
     expect(out).toEqual({ status: 'RECHAZADO' });
-    expect(signatureRequests.reject).toHaveBeenCalledWith('sr-1', { signerId: 'ana', reason: 'no procede' });
+    expect(signatureRequests.rejectFromPublicLink).toHaveBeenCalledWith('sr-1', { signerId: 'ana', reason: 'no procede' });
     expect(links.consume).toHaveBeenCalledWith('tok');
   });
 
   it('enlace reutilizado => 410 y no rechaza', async () => {
     const links = { resolve: vi.fn(async () => { throw new GoneException('Este enlace ya se utilizó'); }), consume: vi.fn() };
-    const signatureRequests = { reject: vi.fn() };
+    const signatureRequests = { rejectFromPublicLink: vi.fn() };
     const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
     await expect(ctrl.reject('tok', {} as never)).rejects.toBeInstanceOf(GoneException);
-    expect(signatureRequests.reject).not.toHaveBeenCalled();
+    expect(signatureRequests.rejectFromPublicLink).not.toHaveBeenCalled();
     expect(links.consume).not.toHaveBeenCalled();
   });
 
   it('enlace expirado => 410', async () => {
     const links = { resolve: vi.fn(async () => { throw new GoneException('Este enlace expiró'); }), consume: vi.fn() };
-    const ctrl = new PublicSignController(links as never, { reject: vi.fn() } as never, {} as never, {} as never);
+    const ctrl = new PublicSignController(links as never, { rejectFromPublicLink: vi.fn() } as never, {} as never, {} as never);
     await expect(ctrl.reject('tok', {} as never)).rejects.toMatchObject({ status: 410 });
   });
 
   it('firmante ya firmado => 409 y el enlace no se consume', async () => {
     const links = { resolve: vi.fn(async () => link), consume: vi.fn() };
-    const signatureRequests = { reject: vi.fn(async () => { throw new ConflictException('Ya firmaste'); }) };
+    const signatureRequests = { rejectFromPublicLink: vi.fn(async () => { throw new ConflictException('Ya firmaste'); }) };
     const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
     await expect(ctrl.reject('tok', {} as never)).rejects.toBeInstanceOf(ConflictException);
     expect(links.consume).not.toHaveBeenCalled();
@@ -83,7 +83,7 @@ describe('PublicSignController.reject', () => {
 
   it('enlace sin solicitud o de otro proposito => 400', async () => {
     const links = { resolve: vi.fn(async () => ({ ...link, signatureRequestId: null })), consume: vi.fn() };
-    const ctrl = new PublicSignController(links as never, { reject: vi.fn() } as never, {} as never, {} as never);
+    const ctrl = new PublicSignController(links as never, { rejectFromPublicLink: vi.fn() } as never, {} as never, {} as never);
     await expect(ctrl.reject('tok', {} as never)).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -141,7 +141,7 @@ describe('PublicSignController - bloqueo por token', () => {
 
   it('una firma rechazada suma un fallo y NO consume el enlace', async () => {
     const links = { resolve: vi.fn(async () => link), recordFailure: vi.fn(async () => undefined), consume: vi.fn() };
-    const signatureRequests = { sign: vi.fn(async () => { throw new BadRequestException('consentimiento requerido'); }) };
+    const signatureRequests = { signFromPublicLink: vi.fn(async () => { throw new BadRequestException('consentimiento requerido'); }) };
     const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
     await expect(ctrl.sign('tok', { method: 'ACCEPT' } as never, '1.1.1.1', 'ua', undefined)).rejects.toBeInstanceOf(BadRequestException);
     expect(links.recordFailure).toHaveBeenCalledWith('tok');
@@ -150,7 +150,7 @@ describe('PublicSignController - bloqueo por token', () => {
 
   it('un conflicto de estado (409) no cuenta como intento fallido', async () => {
     const links = { resolve: vi.fn(async () => link), recordFailure: vi.fn(), consume: vi.fn() };
-    const signatureRequests = { sign: vi.fn(async () => { throw new ConflictException('ya firmó'); }) };
+    const signatureRequests = { signFromPublicLink: vi.fn(async () => { throw new ConflictException('ya firmó'); }) };
     const ctrl = new PublicSignController(links as never, signatureRequests as never, {} as never, {} as never);
     await expect(ctrl.sign('tok', { method: 'ACCEPT' } as never, '1.1.1.1', 'ua', undefined)).rejects.toBeInstanceOf(ConflictException);
     expect(links.recordFailure).not.toHaveBeenCalled();

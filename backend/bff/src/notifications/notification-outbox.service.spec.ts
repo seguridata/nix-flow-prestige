@@ -237,3 +237,31 @@ describe('NotificationOutboxService', () => {
     expect(rows.get('b')?.status).toBe('DLQ');
   });
 });
+
+describe('NotificationOutboxService: alcance de tenant del despacho', () => {
+  beforeAll(() => {
+    process.env.STORAGE_MASTER_KEY = randomBytes(32).toString('base64');
+  });
+
+  it('dispatchDueForTenant filtra el claim por tenant en el SQL', async () => {
+    const { prisma, claimSqls } = fakePrisma([{ id: 'a', tenantId: 't1' }, { id: 'b', tenantId: 't2' }]);
+    const res = await new NotificationOutboxService(prisma, okMailer()).dispatchDueForTenant(25, 't1');
+    expect(claimSqls[0]).toMatch(/"tenantId" =/);
+    expect(res).toMatchObject({ sent: 1 });
+  });
+
+  it('dispatchDueForTenant sin tenant falla cerrado (no barre todos los tenants)', async () => {
+    const { prisma, claimSqls } = fakePrisma([{ id: 'a', tenantId: 't1' }]);
+    const svc = new NotificationOutboxService(prisma, okMailer());
+    await expect(svc.dispatchDueForTenant(25, '')).rejects.toThrow(/tenantId/);
+    await expect(svc.dispatchDueForTenant(25, undefined as unknown as string)).rejects.toThrow(/tenantId/);
+    expect(claimSqls).toHaveLength(0);
+  });
+
+  it('dispatchDue (worker de plataforma) es el barrido global explícito: sin filtro de tenant', async () => {
+    const { prisma, claimSqls } = fakePrisma([{ id: 'a', tenantId: 't1' }, { id: 'b', tenantId: 't2' }]);
+    const res = await new NotificationOutboxService(prisma, okMailer()).dispatchDue();
+    expect(claimSqls[0]).not.toMatch(/"tenantId" =/);
+    expect(res).toMatchObject({ sent: 2 });
+  });
+});

@@ -8,7 +8,7 @@ import {
 import type { Document } from '@prisma/client';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
+import { StorageService, assertTenantKey } from '../storage/storage.service';
 import { STABLE_ORDER, finishPage, pageArgs, prismaPage, type Page, type PageQueryDto } from '../common/pagination';
 import type { EncMeta } from '../storage/object-crypto';
 
@@ -166,6 +166,7 @@ export class DocumentsService {
     });
     if (!current) throw new NotFoundException(`Documento ${id} no encontrado`);
 
+    assertTenantKey(tenantId, current.objectKey);
     const bytes = await this.storage.getObject(current.objectKey, current.enc as unknown as EncMeta);
     const live = sha256Hex(bytes);
     if (live !== current.hash) {
@@ -217,7 +218,7 @@ export class DocumentsService {
   }
 
   /** Carga en lote (una sola consulta) para evitar N+1 en la bandeja. */
-  async findManyByIds(ids: string[], tenantId?: string): Promise<Map<string, PublicDocument>> {
+  async findManyByIds(ids: string[], tenantId: string): Promise<Map<string, PublicDocument>> {
     if (!tenantId || ids.length === 0) return new Map();
     const rows = await this.prisma.document.findMany({
       where: { id: { in: [...new Set(ids)] }, tenantId },
@@ -226,7 +227,7 @@ export class DocumentsService {
     return new Map(rows.map((r) => [r.id, publish(r)]));
   }
 
-  find(id: string, tenantId?: string): Promise<PublicDocument | null> {
+  find(id: string, tenantId: string): Promise<PublicDocument | null> {
     if (!tenantId) return Promise.resolve(null);
     return this.prisma.document
       .findFirst({ where: { id, tenantId }, select: ROW_SELECT })
@@ -246,6 +247,7 @@ export class DocumentsService {
       select: { objectKey: true, enc: true, mimeType: true, filename: true, hash: true },
     });
     if (!doc) throw new NotFoundException(`Documento ${id} no encontrado`);
+    assertTenantKey(tenantId, doc.objectKey);
     const bytes = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta);
     return { bytes, mimeType: doc.mimeType, filename: doc.filename, hash: doc.hash };
   }
@@ -265,6 +267,7 @@ export class DocumentsService {
     if (!doc?.presentedObjectKey || !doc.presentedEnc) {
       throw new NotFoundException(`Documento ${id} no tiene copia firmada`);
     }
+    assertTenantKey(tenantId, doc.presentedObjectKey);
     const bytes = await this.storage.getObject(doc.presentedObjectKey, doc.presentedEnc as unknown as EncMeta);
     return {
       bytes,
