@@ -173,7 +173,7 @@ export class SignerMailService {
     t: { subject: string; html: string },
     template: string,
     dedupeKey: string,
-    tenantId?: string,
+    tenantId: string,
     link?: string,
   ) {
     try {

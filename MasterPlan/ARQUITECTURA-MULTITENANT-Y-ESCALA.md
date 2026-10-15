@@ -40,7 +40,9 @@ graph TD
 | Ciclo de vida | Alta con políticas por defecto; suspender (pausa webhooks, DLQ) y reactivar | Hecho; **exportar y purgar no existen** |
 | Front | `QueryClient` se limpia al cambiar de tenant o usuario; proxy con lista blanca y `no-store` | Hecho; branding fijo "SeguriData" sin resolver |
 
-**Sin RLS en Postgres.** El aislamiento depende de que cada consulta filtre. Es el mayor riesgo estructural que queda (ver ADR-004).
+**Sin RLS en Postgres.** El aislamiento depende de que cada consulta filtre. Red de seguridad: la extensión `src/prisma/tenant-guard.ts` rechaza (`TENANT_GUARD=enforce`; por defecto solo en tests, `log` fuera) lecturas/escrituras masivas y altas sin `tenantId` (ver ADR-004). RLS sigue pendiente.
+
+`tenantId` es NOT NULL en todas las tablas de negocio salvo `UserNotification` (11 filas huérfanas sin tenant determinable; revisión manual). `OutOfOffice` es único por `(tenantId, userId)`.
 
 ## 3. Escala horizontal: estado
 
@@ -55,7 +57,7 @@ Cuellos de botella esperados, en orden:
 2. **OCR y biometría dentro de la petición**: hoy acotados con semáforo (503 si se llena); lo correcto es una actividad de Temporal.
 3. **Estampado de PDF y cifrado AES en el hilo principal**: bloquean el event loop con PDFs grandes.
 4. **Conexiones a Postgres**: dimensionar `connection_limit` por réplica o usar PgBouncer en modo transacción.
-5. **Índices**: faltan `WorkflowRun(status, updatedAt)` y `(tenantId, createdAt)` en solicitudes, documentos y auditoría.
+5. **Índices**: `WorkflowRun(status, updatedAt)` y `(tenantId, createdAt)` en solicitudes, documentos y auditoría ya existen (migración 20261016100000).
 6. **Listados del front sin paginación ni virtualización**: pide parámetros `limit`/`cursor` que hoy casi ningún endpoint tiene.
 
 ## 4. Decisiones (ADR)
@@ -67,7 +69,7 @@ Para un cliente que exija aislamiento físico: despliegue aparte (namespace y ba
 
 **ADR-003 Las definiciones de proceso pertenecen a un tenant o a `platform`.** Antes eran un catálogo global que cualquier admin podía alterar. Costo: la migración atribuye los flujos existentes al tenant del formato que los usa o a `seguridata`; revisar en bases con varios tenants.
 
-**ADR-004 Defensa en profundidad: RLS antes de abrir a más tenants.** Propuesta: `SET LOCAL app.tenant` por transacción con políticas RLS en las tablas con `tenantId`, y una extensión de Prisma que falle si una consulta a un modelo con tenant no lo incluye. No se hizo: exige que toda consulta corra en una transacción con contexto.
+**ADR-004 Defensa en profundidad: RLS antes de abrir a más tenants.** Propuesta: `SET LOCAL app.tenant` por transacción con políticas RLS en las tablas con `tenantId`, y una extensión de Prisma que falle si una consulta a un modelo con tenant no lo incluye. Hecho solo la extensión de Prisma (`tenant-guard.ts`): valida `tenantId` en `findMany/findFirst/count/aggregate/groupBy/updateMany/deleteMany` y en altas; no valida operaciones por `id`/unique (se cargan antes con tenant). RLS NO se hizo: exige que toda consulta corra en una transacción con contexto (el pool no garantiza la misma conexión) y que ticks y worker usen un rol que la omita; implementarlo ahora rompería las consultas existentes.
 
 **ADR-005 Leases en Redis para los ticks.** El lock de advisory de Postgres retiene una conexión mientras corre el trabajo. Alternativa descartada: lock de sesión (el pool de Prisma no garantiza la misma conexión). Sin Redis se cae al lock transaccional.
 
@@ -78,9 +80,8 @@ Para un cliente que exija aislamiento físico: despliegue aparte (namespace y ba
 ## 5. Pendiente, por prioridad
 
 **Alta**
-- RLS o extensión de Prisma que exija `tenantId` (ADR-004).
-- Contraer las 8 columnas `tenantId` nulas: primero comprobar que no quedan filas nulas y luego `NOT NULL`. Las lecturas siguen aceptando `tenantId IS NULL` hasta entonces.
-- `OutOfOffice` es único por `userId` y no por `(tenantId, userId)`.
+- RLS (ADR-004): la extensión de Prisma ya existe; falta activar `TENANT_GUARD=enforce` fuera de tests cuando los logs salgan limpios, y RLS con `SET LOCAL app.tenant`.
+- `UserNotification.tenantId` sigue nullable: resolver las 11 filas huérfanas y contraer.
 - PKI fuera del disco local (Secret o KMS) antes de la segunda réplica.
 - Aprobación de legal para enviar texto de documentos al proveedor de IA.
 

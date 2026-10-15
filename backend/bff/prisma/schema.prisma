@@ -360,7 +360,8 @@ model DocumentComment {
 model UserNotification {
   id        String   @id @default(uuid())
   /// Aislamiento por tenant: slug que deja TenantContextGuard (no el uuid de TenantMembership).
-  tenantId String
+  /// Nullable a propósito: quedan filas huérfanas sin tenant determinable (revisión manual).
+  tenantId String?
   userId    String
   title     String
   body      String

@@ -141,7 +141,7 @@ export class WorkflowService {
     tenantId?: string,
   ) {
     const signatureRequestId = String(variables.signatureRequestId ?? businessKey);
-    const tenant = tenantId ?? (await this.tenantOfRequest(signatureRequestId));
+    const tenant = await this.resolveTenant(signatureRequestId, tenantId);
     const input: ContratoWorkflowInput = {
       tenantId: tenant,
       signatureRequestId,
@@ -261,7 +261,7 @@ export class WorkflowService {
     // Antes: take 50 fijo. Sin limit/cursor sigue devolviendo array (tope 200).
     const args = pageArgs(page);
     const rows = await this.prisma.workflowRun.findMany({
-      where: { OR: [{ tenantId }, { tenantId: null, signatureRequest: { tenantId } }] },
+      where: { tenantId },
       orderBy: STABLE_ORDER,
       ...prismaPage(args),
     });
@@ -269,21 +269,14 @@ export class WorkflowService {
   }
 
   async listTasks(
-    params: { assignee?: string; candidateGroup?: string; tenantId?: string },
+    params: { assignee?: string; candidateGroup?: string; tenantId: string },
     page?: PageQueryDto,
   ) {
     const args = pageArgs(page);
     const tasks = await this.prisma.humanTask.findMany({
       where: {
+        tenantId: params.tenantId,
         ...(params.assignee ? { signerId: params.assignee } : {}),
-        ...(params.tenantId
-          ? {
-              OR: [
-                { tenantId: params.tenantId },
-                { tenantId: null, signatureRequest: { tenantId: params.tenantId } },
-              ],
-            }
-          : {}),
       },
       orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
       ...prismaPage(args),
@@ -313,7 +306,7 @@ export class WorkflowService {
     const task = await this.prisma.humanTask.findFirst({
       where: {
         id: taskId,
-        OR: [{ tenantId }, { tenantId: null, signatureRequest: { tenantId } }],
+        tenantId,
       },
     });
     if (!task) throw new NotFoundException(`Tarea ${taskId} no encontrada`);
@@ -399,6 +392,13 @@ export class WorkflowService {
     }
   }
 
+  /** tenantId es NOT NULL: sin tenant explícito se deriva de la solicitud o se aborta (nunca se escribe vacío). */
+  private async resolveTenant(signatureRequestId: string, tenantId?: string): Promise<string> {
+    const tenant = tenantId ?? (await this.tenantOfRequest(signatureRequestId));
+    if (!tenant) throw new NotFoundException('Solicitud de firma no encontrada');
+    return tenant;
+  }
+
   private async tenantOfRequest(signatureRequestId: string): Promise<string | undefined> {
     const r = await this.prisma.signatureRequest.findUnique({
       where: { id: signatureRequestId },
@@ -468,7 +468,7 @@ export class WorkflowService {
   }
 
   async seedTasks(input: ContratoWorkflowInput, workflowId?: string, tenantId?: string) {
-    const tenant = tenantId ?? (await this.tenantOfRequest(input.signatureRequestId));
+    const tenant = await this.resolveTenant(input.signatureRequestId, tenantId);
     // Idempotente frente a reintentos del activity de Temporal.
     const existing = await this.prisma.humanTask.count({
       where: { signatureRequestId: input.signatureRequestId },

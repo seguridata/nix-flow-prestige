@@ -51,7 +51,7 @@ export interface EnqueueEmail {
   /** Idempotencia: si ya existe una fila con este dedupeKey, no se vuelve a encolar. */
   dedupeKey?: string;
   /** Tenant dueño del mensaje (aislamiento del listado/reintento del admin). */
-  tenantId?: string;
+  tenantId: string;
   /**
    * Enlace secreto (token de firma). Se guarda CIFRADO (envelope AES-GCM de
    * storage) en `payload.linkEnc` y sólo se sustituye en `{{LINK}}` al enviar.

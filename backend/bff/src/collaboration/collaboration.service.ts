@@ -55,9 +55,8 @@ export class CollaborationService {
   }
 
   /**
-   * Notificaciones del usuario. `tenantId` null = filas anteriores al
-   * particionado por tenant (o emitidas sin contexto); siguen siendo del
-   * usuario, por eso el filtro principal es `userId`.
+   * Notificaciones del usuario dentro de su tenant. Las filas heredadas sin
+   * tenant (UserNotification.tenantId sigue nullable) ya no se listan.
    */
   async listNotifications(userId: string, tenantId: string, page?: PageQueryDto) {
     const args = pageArgs(page);

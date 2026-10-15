@@ -94,7 +94,7 @@ describe('OnboardingService: claves de storage con tenant', () => {
     const { svc, storage } = make({ ineFront: legacy, ineBack: { ...legacy, key: 'onboarding/ine/2026-09-01/uuid-ob1-reverso.jpg' } });
     // Sólo llega el reverso nuevo: el frente viejo se lee del storage para el OCR.
     await svc.attachIne('ob1', { back: JPG, tenantId: 'acme', ...ACTOR });
-    expect(storage.getObject).toHaveBeenCalledWith(legacy.key, legacy.enc);
+    expect(storage.getObject).toHaveBeenCalledWith(legacy.key, legacy.enc, 'acme');
   });
 
   it('defensa en profundidad: una referencia con clave de OTRO tenant no se lee', async () => {

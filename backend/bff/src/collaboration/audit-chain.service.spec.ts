@@ -80,9 +80,9 @@ describe('AuditChainService (M11)', () => {
     const { prisma, rows } = fakePrisma();
     const svc = new AuditChainService(prisma);
 
-    await svc.append({ actorId: 'a', action: 'REQUEST_CREATED', signatureRequestId: 'r1' });
-    await svc.append({ actorId: 'b', action: 'SIGNATURE_APPLIED', signatureRequestId: 'r1', payload: { m: 'DIGITAL' } });
-    await svc.append({ actorId: 'system', action: 'SEALED', signatureRequestId: 'r1' });
+    await svc.append({ actorId: 'a', action: 'REQUEST_CREATED', signatureRequestId: 'r1', tenantId: 'T' });
+    await svc.append({ actorId: 'b', action: 'SIGNATURE_APPLIED', signatureRequestId: 'r1', tenantId: 'T', payload: { m: 'DIGITAL' } });
+    await svc.append({ actorId: 'system', action: 'SEALED', signatureRequestId: 'r1', tenantId: 'T' });
 
     expect(rows.map((r) => r.seq)).toEqual([1n, 2n, 3n]);
     expect(rows[0].prevHash).toBe('');
@@ -96,9 +96,9 @@ describe('AuditChainService (M11)', () => {
   it('detecta manipulación: alterar el payload de un evento rompe la cadena', async () => {
     const { prisma, rows } = fakePrisma();
     const svc = new AuditChainService(prisma);
-    await svc.append({ actorId: 'a', action: 'X' });
-    await svc.append({ actorId: 'b', action: 'Y', payload: { amount: 100 } });
-    await svc.append({ actorId: 'c', action: 'Z' });
+    await svc.append({ actorId: 'a', action: 'X', tenantId: 'T' });
+    await svc.append({ actorId: 'b', action: 'Y', tenantId: 'T', payload: { amount: 100 } });
+    await svc.append({ actorId: 'c', action: 'Z', tenantId: 'T' });
 
     rows[1].payload = { amount: 999999 }; // tamper
 
@@ -110,8 +110,8 @@ describe('AuditChainService (M11)', () => {
   it('detecta manipulación: cambiar un hash almacenado rompe el enlace', async () => {
     const { prisma, rows } = fakePrisma();
     const svc = new AuditChainService(prisma);
-    await svc.append({ actorId: 'a', action: 'X' });
-    await svc.append({ actorId: 'b', action: 'Y' });
+    await svc.append({ actorId: 'a', action: 'X', tenantId: 'T' });
+    await svc.append({ actorId: 'b', action: 'Y', tenantId: 'T' });
 
     rows[0].hash = createHash('sha256').update('falso').digest('hex');
 
@@ -122,9 +122,9 @@ describe('AuditChainService (M11)', () => {
   it('verify scoped comprueba la coherencia propia de cada evento del scope', async () => {
     const { prisma, rows } = fakePrisma();
     const svc = new AuditChainService(prisma);
-    await svc.append({ actorId: 'a', action: 'X', signatureRequestId: 'r1' });
-    await svc.append({ actorId: 'b', action: 'Y', signatureRequestId: 'r2' });
-    await svc.append({ actorId: 'c', action: 'Z', signatureRequestId: 'r1' });
+    await svc.append({ actorId: 'a', action: 'X', signatureRequestId: 'r1', tenantId: 'T' });
+    await svc.append({ actorId: 'b', action: 'Y', signatureRequestId: 'r2', tenantId: 'T' });
+    await svc.append({ actorId: 'c', action: 'Z', signatureRequestId: 'r1', tenantId: 'T' });
 
     const ok = await svc.verify({ signatureRequestId: 'r1' });
     expect(ok).toMatchObject({ mode: 'scoped', ok: true, count: 2 });

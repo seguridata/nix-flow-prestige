@@ -95,6 +95,8 @@ export class AuditChainService {
       const seq = (head[0]?.seq ?? 0n) + 1n;
       const createdAt = new Date();
       const tenantId = input.tenantId ?? (await this.deriveTenant(tx, input));
+      // ProcessAuditEvent.tenantId es NOT NULL: un evento sin tenant determinable no se escribe.
+      if (!tenantId) throw new Error(`Evento de auditoría ${input.action} sin tenant determinable`);
 
       const body = canonicalBody({
         seq,
