@@ -1,6 +1,7 @@
 import { NativeConnection, Worker } from '@temporalio/worker';
 import * as activities from './activities';
 import { PRESTIGE_TASK_QUEUE } from './shared';
+import { temporalWorkerLimits } from './worker-config';
 
 async function run() {
   const address = process.env.TEMPORAL_ADDRESS ?? 'localhost:7233';
@@ -30,6 +31,7 @@ async function run() {
     taskQueue: PRESTIGE_TASK_QUEUE,
     workflowsPath: require.resolve('./workflows'),
     activities,
+    ...temporalWorkerLimits(),
   });
 
   console.log(`[worker] Prestige Temporal worker en cola "${PRESTIGE_TASK_QUEUE}"`);

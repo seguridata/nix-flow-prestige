@@ -53,6 +53,9 @@ export function verifySignature(
 }
 
 /** Token DI opcional para sustituir el resolvedor DNS (tests / entornos con DNS propio). */
+/** Lease de una entrega tomada: > timeout del fetch (10 s) + validación DNS. */
+const DELIVERY_LEASE_MS = 60_000;
+
 export const WEBHOOK_HOST_RESOLVER = Symbol('WEBHOOK_HOST_RESOLVER');
 
 @Injectable()
@@ -209,6 +212,19 @@ export class WebhooksService {
     let dead = 0;
 
     for (const row of due) {
+      // Claim ANTES del fetch: empuja `nextAttemptAt` (lease) con un UPDATE
+      // condicional; si otra réplica/tick ya la tomó (o cambió), count = 0 y se
+      // omite. Si el proceso muere a media entrega, se reintenta al vencer el lease.
+      const claimed = await this.prisma.webhookDelivery.updateMany({
+        where: {
+          id: row.id,
+          status: { in: ['PENDIENTE', 'FALLIDO'] },
+          nextAttemptAt: row.nextAttemptAt,
+        },
+        data: { nextAttemptAt: new Date(Date.now() + DELIVERY_LEASE_MS) },
+      });
+      if (claimed.count === 0) continue;
+
       const body = JSON.stringify(row.payload);
       const timestamp = String(Date.now());
       const signature = signPayload(row.subscription.secret, timestamp, body);

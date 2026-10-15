@@ -18,6 +18,7 @@ import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { assertRuntimeSecrets } from './config/runtime-secrets';
+import { envPositiveInt } from './common/env-number';
 
 /**
  * Bootstrap del BFF de Prestige.
@@ -117,7 +118,13 @@ async function bootstrap() {
   }
 
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-  await app.listen(port);
+  const server = await app.listen(port);
+  // Detras de un balanceador (ALB/nginx, idle ~60 s) el BFF debe mantener la
+  // conexion mas tiempo que el LB, o este reutiliza sockets ya cerrados (502).
+  // headersTimeout debe ser > keepAliveTimeout.
+  const keepAliveTimeout = envPositiveInt('KEEP_ALIVE_TIMEOUT_MS', 65_000);
+  server.keepAliveTimeout = keepAliveTimeout;
+  server.headersTimeout = Math.max(envPositiveInt('HEADERS_TIMEOUT_MS', 66_000), keepAliveTimeout + 1_000);
   app.get(Logger).log(`Prestige BFF escuchando en http://localhost:${port}`);
 }
 

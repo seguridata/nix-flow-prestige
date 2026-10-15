@@ -96,3 +96,38 @@ describe('OperationsController - aislamiento por tenant', () => {
     expect((await ctrl.health()).objectStorage).toBe(false);
   });
 });
+
+describe('OperationsController - health', () => {
+  it('live responde 200 sin tocar dependencias', () => {
+    const { prisma, ctrl } = setup();
+    expect(ctrl.live().status).toBe('ok');
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('ready: 200 con Postgres ok; Redis deshabilitado se reporta informativo', async () => {
+    const { ctrl } = setup();
+    const r = await ctrl.ready();
+    expect(r).toMatchObject({ status: 'ok', postgres: true, redis: 'disabled', objectStorage: true });
+  });
+
+  it('ready: 503 si falla Postgres', async () => {
+    const { prisma, ctrl } = setup();
+    prisma.$queryRaw.mockRejectedValue(new Error('down'));
+    await expect(ctrl.ready()).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('ready: Redis o S3 caídos NO tumban la readiness (informativos)', async () => {
+    const { prisma } = setup();
+    const storage = { ping: vi.fn(async () => false) };
+    const redis = { client: () => ({ ping: async () => { throw new Error('x'); } }) };
+    const ctrl = new OperationsController(prisma as any, { capabilities: () => [] } as any, storage as any, redis as any);
+    const r = await ctrl.ready();
+    expect(r).toMatchObject({ status: 'ok', postgres: true, redis: false, objectStorage: false });
+  });
+
+  it('el GET health existente sigue devolviendo 200 con postgres:false', async () => {
+    const { prisma, ctrl } = setup();
+    prisma.$queryRaw.mockRejectedValue(new Error('down'));
+    expect(await ctrl.health()).toMatchObject({ service: 'prestige-bff', postgres: false });
+  });
+});

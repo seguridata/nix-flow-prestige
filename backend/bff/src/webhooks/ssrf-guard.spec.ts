@@ -127,6 +127,7 @@ describe('WebhooksService — SSRF, secreto y filtro active', () => {
     const update = vi.fn(async () => ({}));
     const prisma = {
       webhookDelivery: {
+        updateMany: async () => ({ count: 1 }),
         findMany: async () => [
           {
             id: 'd1',
@@ -151,6 +152,7 @@ describe('WebhooksService — SSRF, secreto y filtro active', () => {
     vi.stubGlobal('fetch', fetchSpy);
     const prisma = {
       webhookDelivery: {
+        updateMany: async () => ({ count: 1 }),
         findMany: async () => [
           {
             id: 'd1',

@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { withAdvisoryLock } from '../common/advisory-lock';
+import { withTickLock } from '../common/advisory-lock';
+import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebhooksService } from './webhooks.service';
 
@@ -16,6 +17,7 @@ export class WebhookDispatcher {
   constructor(
     private readonly webhooks: WebhooksService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   @Interval('webhook-deliveries', 10_000)
@@ -24,7 +26,7 @@ export class WebhookDispatcher {
     this.running = true;
     try {
       // Una sola réplica por tick (si otra tiene el lock, se omite).
-      await withAdvisoryLock(this.prisma, 'prestige:webhook-deliveries', () => this.webhooks.dispatchDue());
+      await withTickLock({ redis: this.redis, prisma: this.prisma }, 'prestige:webhook-deliveries', () => this.webhooks.dispatchDue());
     } catch (error) {
       this.log.error(`dispatchDue falló: ${(error as Error).message}`);
     } finally {
