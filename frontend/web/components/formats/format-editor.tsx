@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Crosshair, FileUp, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { FormatAiAssistant } from "@/components/ai/format-ai-assistant";
 import { FlowEditor } from "@/components/formats/flow-editor";
 import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
   type FormatDetail,
   type FormatDraft,
   type FormatField,
+  type SignatureBox,
 } from "@/services/formats-service";
 
 const PREFILLS: { value: NonNullable<FormatField["prefill"]> | ""; label: string }[] = [
@@ -57,6 +59,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
     initial?.flowKey && initial.flowVersion ? { key: initial.flowKey, version: initial.flowVersion } : null,
   );
   const [fields, setFields] = useState<FormatField[]>(initial?.fields ?? []);
+  const [boxes, setBoxes] = useState<SignatureBox[]>(initial?.signatureBoxes ?? []);
   const [methods, setMethods] = useState<SignatureMethod[] | null>((initial?.methods as SignatureMethod[] | undefined) ?? null);
   const [kycPolicy, setKycPolicy] = useState<FormatDraft["kycPolicy"]>(initial?.kycPolicy ?? "NONE");
   const [requirePasskey, setRequirePasskey] = useState(initial?.requirePasskey ?? false);
@@ -95,7 +98,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
     description: description.trim() || undefined,
     category: category.trim() || undefined,
     fields: cleanFields,
-    signatureBoxes: saved?.signatureBoxes ?? [],
+    signatureBoxes: boxes,
     flow,
     flowKey: flowRef?.key,
     flowVersion: flowRef?.version,
@@ -110,6 +113,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
       const wasNew = !saved;
       setSaved(f);
       setFields(f.fields);
+      setBoxes(f.signatureBoxes);
       setDirty(false);
       setFile(null);
       toast.success(wasNew ? "Formato creado como borrador." : "Cambios guardados.");
@@ -184,6 +188,20 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
               </Button>
             ) : null}
           </div>
+          {!saved && file ? (
+            <FormatAiAssistant
+              file={file}
+              onApply={(meta) => {
+                setName(meta.name);
+                setDescription(meta.description ?? "");
+                setFlow(meta.flow);
+                setFlowRef(null);
+                setFields(meta.fields);
+                setBoxes(meta.signatureBoxes);
+                setDirty(true);
+              }}
+            />
+          ) : null}
           <label className="block space-y-1.5 text-sm">
             <span className="font-medium">Nombre del formato</span>
             <Input value={name} maxLength={120} placeholder="Ej. Solicitud de vacaciones" onChange={(e) => touch(setName)(e.target.value)} />

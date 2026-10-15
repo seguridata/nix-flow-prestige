@@ -6,6 +6,7 @@ import { ArrowLeft, GitBranch, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { BpmnViewer } from "@/components/bpm/bpmn-viewer";
+import { FlowAssistant } from "@/components/ai/flow-assistant";
 import { FlowEditor } from "@/components/formats/flow-editor";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -207,6 +208,8 @@ function FlowDetail({
             <Input value={description} maxLength={300} onChange={(e) => touch(setDescription)(e.target.value)} />
           </label>
         </div>
+
+        <FlowAssistant flow={flow} onUse={touch(setFlow)} />
 
         <FlowEditor value={flow} onChange={touch(setFlow)} />
 
