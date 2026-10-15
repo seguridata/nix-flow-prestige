@@ -92,9 +92,9 @@ export class ProcessController {
 
   // Catálogo de plataforma (no por tenant): lectura abierta, escritura solo admin.
   @Get('process-definitions')
-  list(@Query() query: ListProcessQueryDto) {
-    if (query.published === 'true') return this.process.listPublished();
-    return this.process.list(query);
+  list(@Query() query: ListProcessQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    if (query.published === 'true') return this.process.listPublished(user.tenantId);
+    return this.process.list(user.tenantId, query);
   }
 
   /** Valida un flujo sin guardarlo (mismos errores que al crearlo). */
@@ -119,54 +119,54 @@ export class ProcessController {
 
   @Roles('admin')
   @Post('process-definitions')
-  create(@Body() body: CreateFlowDto) {
-    return this.process.createFromFlow(body);
+  create(@Body() body: CreateFlowDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.createFromFlow(user.tenantId, body);
   }
 
   @Roles('admin')
   @Put('process-definitions/:key/flow')
-  saveFlow(@Param('key') key: string, @Body() body: SaveFlowDto) {
-    return this.process.saveFlow(key, body);
+  saveFlow(@Param('key') key: string, @Body() body: SaveFlowDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.saveFlow(key, user.tenantId, body);
   }
 
   @Roles('admin')
   @Post('process-definitions/:key/versions/:version/publish')
-  publish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number) {
-    return this.process.publish(key, version);
+  publish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.publish(key, version, user.tenantId);
   }
 
   @Roles('admin')
   @Post('process-definitions/:key/versions/:version/unpublish')
-  unpublish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number) {
-    return this.process.unpublish(key, version);
+  unpublish(@Param('key') key: string, @Param('version', ParseIntPipe) version: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.unpublish(key, version, user.tenantId);
   }
 
   @Get('process-definitions/:key')
-  get(@Param('key') key: string) {
-    return this.process.getLatest(key);
+  get(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.getLatest(key, user.tenantId);
   }
 
   @Get('process-definitions/:key/bpmn')
-  async bpmn(@Param('key') key: string) {
-    const def = await this.process.getLatest(key);
+  async bpmn(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    const def = await this.process.getLatest(key, user.tenantId);
     return { xml: def.bpmnXml, key: def.key, version: def.version, name: def.name };
   }
 
   @Get('process-definitions/:key/dmn')
-  async dmn(@Param('key') key: string) {
-    const def = await this.process.getLatest(key);
+  async dmn(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    const def = await this.process.getLatest(key, user.tenantId);
     return { xml: def.dmnXml, key: def.key, version: def.version };
   }
 
   @Roles('admin')
   @Put('process-definitions/:key')
-  save(@Param('key') key: string, @Body() body: SaveProcessDto) {
-    return this.process.saveXml(key, body);
+  save(@Param('key') key: string, @Body() body: SaveProcessDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.saveXml(key, user.tenantId, body);
   }
 
   @Post('process-definitions/:key/decide')
-  decide(@Param('key') key: string, @Body() body: DecideDto) {
-    return this.process.decide({ tipo: body.tipo ?? 'contrato', ...(body.context ?? {}) }, body.processKey ?? key);
+  decide(@Param('key') key: string, @Body() body: DecideDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.decide({ tipo: body.tipo ?? 'contrato', ...(body.context ?? {}) }, body.processKey ?? key, user.tenantId);
   }
 
   @Get('process-audit')

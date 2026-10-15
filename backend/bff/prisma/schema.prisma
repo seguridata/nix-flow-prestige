@@ -534,8 +534,11 @@ model EnvelopeTemplate {
   @@index([tenantId])
 }
 
+/// Dueño del flujo: un tenant o el literal 'platform' (semillas del sistema, visibles para todos y de solo
+/// lectura para los tenants; editar una crea una copia propia). Sin default a propósito: no hay tenant implícito.
 model ProcessDefinition {
   id          String   @id @default(uuid())
+  tenantId    String
   key         String
   name        String
   description String?
@@ -550,8 +553,8 @@ model ProcessDefinition {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([key, version])
-  @@index([key])
+  @@unique([tenantId, key, version])
+  @@index([tenantId, key])
 }
 
 /// M11 — auditoría inmutable encadenada. Cada evento lleva `seq` monótono,

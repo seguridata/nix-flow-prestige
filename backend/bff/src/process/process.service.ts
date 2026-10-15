@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Prisma, type ProcessDefinition } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { RedisService } from '../redis/redis.service';
@@ -12,6 +12,9 @@ import {
   ONBOARDING_BPMN,
   SLA_DMN,
 } from './defaults';
+
+/** Dueño de las definiciones sembradas por el sistema: las ven todos los tenants y ninguno puede modificarlas. */
+export const PLATFORM_TENANT = 'platform';
 
 const SEEDS = [
   {
@@ -33,9 +36,10 @@ const SEEDS = [
 ];
 
 /**
- * Las definiciones BPMN/DMN son catálogo de PLATAFORMA: no se parten por
- * tenant en este sprint (lectura abierta a cualquier usuario autenticado).
- * Mutarlas exige rol admin (ver ProcessController).
+ * Definiciones BPMN/DMN. Cada una pertenece a un tenant o a la plataforma (`PLATFORM_TENANT`):
+ *  - un tenant ve las suyas y las de la plataforma; una suya con la misma clave tapa a la de la plataforma;
+ *  - solo puede modificar las suyas. Editar una de la plataforma crea una copia propia (versión 1);
+ *  - todo lo cacheado lleva el tenant en la clave.
  */
 @Injectable()
 export class ProcessService implements OnModuleInit {
@@ -48,46 +52,52 @@ export class ProcessService implements OnModuleInit {
     await this.ensureSeeds();
   }
 
-  private async invalidateProcessCache(key?: string) {
-    await this.redis.del('process:list', ...(key ? [`process:latest:${key}`] : []));
+  private async invalidateProcessCache(tenantId: string, key?: string) {
+    await this.redis.del(`process:list:${tenantId}`, ...(key ? [`process:latest:${tenantId}:${key}`] : []));
   }
 
   async ensureSeeds() {
     for (const seed of SEEDS) {
       const existing = await this.prisma.processDefinition.findFirst({
-        where: { key: seed.key },
+        where: { tenantId: PLATFORM_TENANT, key: seed.key },
         orderBy: { version: 'desc' },
       });
       if (!existing) {
         try {
-          await this.prisma.processDefinition.create({ data: seed });
+          await this.prisma.processDefinition.create({ data: { ...seed, tenantId: PLATFORM_TENANT } });
         } catch (error) {
-          // Arranques paralelos (varias réplicas): @@unique([key, version]) → ya lo creó otra.
+          // Arranques paralelos (varias réplicas): @@unique([tenantId, key, version]) → ya lo creó otra.
           if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
         }
       }
     }
   }
 
-  async list(page?: PageQueryDto) {
+  /** Lo que un tenant puede leer: lo suyo y lo de la plataforma. */
+  private readable(tenantId: string) {
+    return { tenantId: { in: [tenantId, PLATFORM_TENANT] } };
+  }
+
+  async list(tenantId: string, page?: PageQueryDto) {
     const args = pageArgs(page);
     // Orden de dominio estable (key asc, version desc, id desc).
     const orderBy = [{ key: 'asc' as const }, { version: 'desc' as const }, { id: 'desc' as const }];
-    // Paginado: sin caché (la clave dependería del cursor). Sin limit/cursor: array con caché.
+    const where = this.readable(tenantId);
+    // Paginado: sin caché (la clave dependería del cursor). Sin limit/cursor: array con caché por tenant.
     if (args.paged) {
-      const rows = await this.prisma.processDefinition.findMany({ orderBy, ...prismaPage(args) });
+      const rows = await this.prisma.processDefinition.findMany({ where, orderBy, ...prismaPage(args) });
       return finishPage(rows, args);
     }
     // D10 — lectura caliente: el diseñador la pide seguido y cambia poco.
-    return this.redis.withCache('process:list', 60, () =>
-      this.prisma.processDefinition.findMany({ orderBy, ...prismaPage(args) }),
+    return this.redis.withCache(`process:list:${tenantId}`, 60, () =>
+      this.prisma.processDefinition.findMany({ where, orderBy, ...prismaPage(args) }),
     );
   }
 
   /** Solo las versiones publicadas (lo que ven los remitentes al crear un sobre). */
-  listPublished() {
+  listPublished(tenantId: string) {
     return this.prisma.processDefinition.findMany({
-      where: { published: true },
+      where: { ...this.readable(tenantId), published: true },
       orderBy: [{ key: 'asc' }, { version: 'desc' }],
     });
   }
@@ -109,16 +119,38 @@ export class ProcessService implements OnModuleInit {
     return flow as Flow;
   }
 
+  /** Última versión de la clave que el tenant ve: la suya si existe y, si no, la de la plataforma. */
+  private async findLatest(key: string, tenantId: string): Promise<ProcessDefinition | null> {
+    const own = await this.prisma.processDefinition.findFirst({ where: { tenantId, key }, orderBy: { version: 'desc' } });
+    if (own) return own;
+    return this.prisma.processDefinition.findFirst({ where: { tenantId: PLATFORM_TENANT, key }, orderBy: { version: 'desc' } });
+  }
+
+  /** Una versión concreta, solo si es del tenant. Las de la plataforma responden 403 y las ajenas, 404. */
+  private async ownVersion(key: string, version: number, tenantId: string): Promise<ProcessDefinition> {
+    const own = await this.prisma.processDefinition.findFirst({ where: { tenantId, key, version } });
+    if (own) return own;
+    const platform = await this.prisma.processDefinition.findFirst({ where: { tenantId: PLATFORM_TENANT, key, version } });
+    if (platform) throw new ForbiddenException('Las definiciones de la plataforma no se modifican; edítala para crear tu propia copia.');
+    throw new NotFoundException(`Versión ${version} de ${key} no encontrada`);
+  }
+
   /** Crea un flujo nuevo del admin como borrador (versión 1, sin publicar). */
-  async createFromFlow(body: { name: string; description?: string; flow: unknown }) {
+  async createFromFlow(tenantId: string, body: { name: string; description?: string; flow: unknown }) {
     const flow = this.assertFlow(body.flow);
     const base = ProcessService.slugify(body.name);
+    // La clave no puede repetir una propia ni una de la plataforma (taparía a la de la plataforma sin querer).
     let key = base;
-    for (let n = 2; await this.prisma.processDefinition.findFirst({ where: { key }, select: { id: true } }); n++) {
+    for (
+      let n = 2;
+      await this.prisma.processDefinition.findFirst({ where: { ...this.readable(tenantId), key }, select: { id: true } });
+      n++
+    ) {
       key = `${base}-${n}`;
     }
     const created = await this.prisma.processDefinition.create({
       data: {
+        tenantId,
         key,
         name: body.name.trim(),
         description: body.description?.trim() || null,
@@ -128,22 +160,24 @@ export class ProcessService implements OnModuleInit {
         published: false,
       },
     });
-    await this.invalidateProcessCache(key);
+    await this.invalidateProcessCache(tenantId, key);
     return created;
   }
 
-  /** Nueva versión borrador del flujo (el BPMN se regenera desde el flujo). */
-  async saveFlow(key: string, body: { flow: unknown; name?: string; description?: string }) {
+  /** Nueva versión borrador del flujo (el BPMN se regenera desde el flujo). Sobre una de la plataforma crea la copia propia. */
+  async saveFlow(key: string, tenantId: string, body: { flow: unknown; name?: string; description?: string }) {
     const flow = this.assertFlow(body.flow);
-    const latest = await this.prisma.processDefinition.findFirst({ where: { key }, orderBy: { version: 'desc' } });
+    const latest = await this.findLatest(key, tenantId);
     if (!latest) throw new NotFoundException(`Proceso ${key} no encontrado`);
+    const own = latest.tenantId === tenantId;
     const name = body.name?.trim() || latest.name;
     const created = await this.prisma.processDefinition.create({
       data: {
+        tenantId,
         key,
         name,
         description: body.description !== undefined ? body.description.trim() || null : latest.description,
-        version: latest.version + 1,
+        version: own ? latest.version + 1 : 1,
         bpmnXml: flowToBpmn(flow, { key, name }),
         dmnXml: latest.dmnXml,
         decisionRules: latest.decisionRules === null ? undefined : latest.decisionRules,
@@ -151,64 +185,57 @@ export class ProcessService implements OnModuleInit {
         published: false,
       },
     });
-    await this.invalidateProcessCache(key);
+    await this.invalidateProcessCache(tenantId, key);
     return created;
   }
 
-  /** Publica una versión; las demás de la misma clave quedan sin publicar (una sola publicada por clave). */
-  async publish(key: string, version: number) {
-    const target = await this.prisma.processDefinition.findFirst({ where: { key, version } });
-    if (!target) throw new NotFoundException(`Versión ${version} de ${key} no encontrada`);
+  /** Publica una versión propia; las demás de la misma clave del tenant quedan sin publicar. */
+  async publish(key: string, version: number, tenantId: string) {
+    const target = await this.ownVersion(key, version, tenantId);
     if (target.flow) this.assertFlow(target.flow);
     const [, published] = await this.prisma.$transaction([
-      this.prisma.processDefinition.updateMany({ where: { key, version: { not: version } }, data: { published: false } }),
+      this.prisma.processDefinition.updateMany({ where: { tenantId, key, version: { not: version } }, data: { published: false } }),
       this.prisma.processDefinition.update({ where: { id: target.id }, data: { published: true, publishedAt: new Date() } }),
     ]);
-    await this.invalidateProcessCache(key);
+    await this.invalidateProcessCache(tenantId, key);
     return published;
   }
 
-  async unpublish(key: string, version: number) {
-    const target = await this.prisma.processDefinition.findFirst({ where: { key, version } });
-    if (!target) throw new NotFoundException(`Versión ${version} de ${key} no encontrada`);
+  async unpublish(key: string, version: number, tenantId: string) {
+    const target = await this.ownVersion(key, version, tenantId);
     const updated = await this.prisma.processDefinition.update({
       where: { id: target.id },
       data: { published: false, publishedAt: null },
     });
-    await this.invalidateProcessCache(key);
+    await this.invalidateProcessCache(tenantId, key);
     return updated;
   }
 
-  async getLatest(key: string) {
-    const found = await this.redis.withCache(`process:latest:${key}`, 60, () =>
-      this.prisma.processDefinition.findFirst({
-        where: { key },
-        orderBy: { version: 'desc' },
-      }),
-    );
+  async getLatest(key: string, tenantId: string) {
+    const found = await this.redis.withCache(`process:latest:${tenantId}:${key}`, 60, () => this.findLatest(key, tenantId));
     if (!found) throw new NotFoundException(`Proceso ${key} no encontrado`);
     return found;
   }
 
-  async saveXml(key: string, body: { bpmnXml?: string; dmnXml?: string; name?: string }) {
-    const latest = await this.prisma.processDefinition.findFirst({
-      where: { key },
-      orderBy: { version: 'desc' },
-    });
+  /** Guarda el XML editado en el modelador como versión nueva del tenant. Sobre una de la plataforma crea la copia propia. */
+  async saveXml(key: string, tenantId: string, body: { bpmnXml?: string; dmnXml?: string; name?: string }) {
+    const latest = await this.findLatest(key, tenantId);
     if (!latest) throw new NotFoundException(`Proceso ${key} no encontrado`);
+    const own = latest.tenantId === tenantId;
     const created = await this.prisma.processDefinition.create({
       data: {
+        tenantId,
         key,
         name: body.name ?? latest.name,
         description: latest.description,
-        version: latest.version + 1,
+        version: own ? latest.version + 1 : 1,
         bpmnXml: body.bpmnXml ?? latest.bpmnXml,
         dmnXml: body.dmnXml ?? latest.dmnXml,
         decisionRules: latest.decisionRules === null ? undefined : latest.decisionRules,
         published: true,
       },
     });
-    await this.invalidateProcessCache(key);
+    await this.invalidateProcessCache(tenantId, key);
     return created;
   }
 
@@ -219,13 +246,11 @@ export class ProcessService implements OnModuleInit {
    * `dmnXml` del proceso con el motor DMN (FEEL); si el proceso no tiene DMN,
    * evalúa el `decisionRules` guardado; como último recurso, la constante.
    */
-  async decide(context: Record<string, unknown>, processKey = 'contrato-dos-partes') {
+  async decide(context: Record<string, unknown>, processKey: string, tenantId: string) {
     const tipo = String(context.tipo ?? 'contrato').toLowerCase();
     const ctx = { ...context, tipo };
 
-    const def = await this.prisma.processDefinition
-      .findFirst({ where: { key: processKey }, orderBy: { version: 'desc' } })
-      .catch(() => null);
+    const def = await this.findLatest(processKey, tenantId).catch(() => null);
 
     // 1. Motor DMN sobre el dmnXml del proceso.
     if (def?.dmnXml) {
