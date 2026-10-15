@@ -9,7 +9,9 @@ import { SignatureRequestsService } from '../signature-requests/signature-reques
 import { SignatureFieldsService } from '../signature-fields/signature-fields.service';
 import { FoldersService } from '../folders/folders.service';
 import { flowToBpmn, missingForConditions, resolveFlow } from '../flow/flow';
-import type { Flow, FlowValues, ResolvedStep, Who } from '../flow/flow.types';
+import type { Flow, FlowValues, MatrixStage, ResolvedStep, Who } from '../flow/flow.types';
+import { ExpenseResponsiblesService } from '../expense-responsibles/expense-responsibles.service';
+import { pickResponsible, type Match } from '../expense-responsibles/expense-responsibles.resolver';
 import { countPages, fillPdf } from './pdf-fill';
 import { parseTemplateMeta, type TemplateMeta } from './template-meta';
 import type { SignatureBox, TemplateActor, TemplateField } from './template.types';
@@ -38,6 +40,7 @@ export class DocumentTemplatesService {
     private readonly requests: SignatureRequestsService,
     private readonly fieldsService: SignatureFieldsService,
     private readonly folders: FoldersService,
+    private readonly matrix: ExpenseResponsiblesService,
   ) {}
 
   /** Formato del tenant; a quien no es admin los borradores le responden 404 (no se revela que existen). */
@@ -159,13 +162,16 @@ export class DocumentTemplatesService {
     const flow = t.flow as unknown as Flow;
     const values = this.looseValues(rawValues);
     const required = new Set(flow.variables.filter((v) => v.required).map((v) => v.key));
+    const resolved = resolveFlow(flow, values);
+    const picks = await this.matrixPicks(resolved, values, actor.tenantId);
     return {
-      steps: resolveFlow(flow, values).map((r) => ({
+      steps: resolved.map((r) => ({
         stepId: r.step.id,
         label: r.step.label,
         role: r.step.role,
         who: r.step.who,
         active: r.active,
+        ...this.matrixInfo(r, picks),
       })),
       missing: missingForConditions(flow, values).filter((k) => required.has(k)),
     };
@@ -180,7 +186,8 @@ export class DocumentTemplatesService {
     // 1) Todo lo que puede fallar por datos del usuario, ANTES de crear nada.
     const clean = this.coerceValues(flow, fields, input.values, actor);
     const resolved = resolveFlow(flow, clean);
-    const { signers, stepSigner } = this.signersFor(resolved, input.askedSigners ?? {}, actor);
+    const picks = await this.matrixPicks(resolved, clean, actor.tenantId);
+    const { signers, stepSigner } = this.signersFor(resolved, input.askedSigners ?? {}, actor, picks);
     if (input.folderId) await this.folders.assertOwned(input.folderId, { tenantId: actor.tenantId, ownerId: actor.actorId });
 
     // 2) PDF rellenado.
@@ -246,7 +253,7 @@ export class DocumentTemplatesService {
       documentId: document.id,
       signatureRequestId: request.id,
       signatureFieldsPlaced,
-      steps: resolved.map((r) => ({ stepId: r.step.id, label: r.step.label, role: r.step.role, who: r.step.who, active: r.active })),
+      steps: resolved.map((r) => ({ stepId: r.step.id, label: r.step.label, role: r.step.role, who: r.step.who, active: r.active, ...this.matrixInfo(r, picks) })),
     };
   }
 
@@ -336,11 +343,43 @@ export class DocumentTemplatesService {
     return clean;
   }
 
+  /**
+   * Resuelve con la matriz de responsables los pasos `matrix` activos, con las variables del flujo `area`, `tipoGasto`,
+   * `concepto` y `monto`. Una sola consulta por llamada (filas candidatas de todas las etapas usadas); sin coincidencia → null.
+   */
+  private async matrixPicks(resolved: ResolvedStep[], values: FlowValues, tenantId: string): Promise<Map<string, Match | null>> {
+    const picks = new Map<string, Match | null>();
+    const steps = resolved.filter((r) => r.active && r.step.who.type === 'matrix');
+    if (!steps.length) return picks;
+    const text = (v: unknown) => (v === undefined || v === null ? '' : String(v).trim());
+    const area = text(values.area);
+    const tipo = text(values.tipoGasto);
+    const concept = text(values.concepto);
+    const n = text(values.monto) === '' ? NaN : Number(values.monto);
+    const amount = Number.isFinite(n) ? n : undefined;
+    const stageOf = (r: ResolvedStep) => (r.step.who as { stage: MatrixStage }).stage;
+    const rows = await this.matrix.candidates(tenantId, [...new Set(steps.map(stageOf))], { area, expenseType: tipo, concept });
+    for (const r of steps) {
+      const stage = stageOf(r);
+      const needed = stage === 'area' ? area : tipo || concept;
+      picks.set(r.step.id, needed ? pickResponsible(rows, { stage, area, expenseType: tipo, concept, amount }) : null);
+    }
+    return picks;
+  }
+
+  /** Para la vista previa y el resultado: quién salió de la matriz, o `unresolved` si se cae a preguntar. */
+  private matrixInfo(r: ResolvedStep, picks: Map<string, Match | null>) {
+    if (!r.active || r.step.who.type !== 'matrix') return {};
+    const m = picks.get(r.step.id);
+    return m ? { resolved: { signerId: m.signerId, name: m.name, email: m.email } } : { unresolved: true as const };
+  }
+
   /** Participantes de los pasos activos, sin repetir personas, y a qué firmante cae cada paso. */
   private signersFor(
     resolved: ResolvedStep[],
     asked: NonNullable<InstantiateInput['askedSigners']>,
     actor: TemplateActor,
+    picks: Map<string, Match | null> = new Map(),
   ) {
     const signers: { signerId: string; name?: string; email?: string; role: 'FIRMANTE' | 'REVISOR' }[] = [];
     const stepSigner = new Map<string, number>();
@@ -348,7 +387,7 @@ export class DocumentTemplatesService {
 
     for (const { step, active } of resolved) {
       if (!active && (step.when?.length ?? 0) > 0) continue;
-      const person = this.person(step.who, step.id, step.label, asked, actor);
+      const person = this.person(step.who, step.id, step.label, asked, actor, picks);
       const key = person.signerId.toLowerCase();
       if (!seen.has(key)) {
         seen.set(key, signers.length);
@@ -360,9 +399,21 @@ export class DocumentTemplatesService {
     return { signers, stepSigner };
   }
 
-  private person(who: Who, stepId: string, label: string, asked: NonNullable<InstantiateInput['askedSigners']>, actor: TemplateActor) {
+  private person(
+    who: Who,
+    stepId: string,
+    label: string,
+    asked: NonNullable<InstantiateInput['askedSigners']>,
+    actor: TemplateActor,
+    picks: Map<string, Match | null>,
+  ) {
     if (who.type === 'initiator') return { signerId: actor.actorId, name: actor.name, email: actor.email };
     if (who.type === 'fixed') return { signerId: who.signerId, name: who.name, email: who.email };
+    if (who.type === 'matrix') {
+      const m = picks.get(stepId);
+      // Sin coincidencia en la matriz se comporta como «preguntar» (usa askedSigners[stepId]).
+      if (m) return { signerId: m.signerId, name: m.name ?? undefined, email: m.email ?? undefined };
+    }
     const a = asked[stepId];
     if (!a?.signerId?.trim()) throw new BadRequestException(`Indica quién participa en «${label}»`);
     return { signerId: a.signerId.trim(), name: a.name, email: a.email };

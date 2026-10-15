@@ -11,7 +11,33 @@ import type { Condition, Flow, FlowStep } from '../flow/flow.types';
  *  - el bucle de reemplazo (T24) no existe en un flujo lineal: se pide el reemplazo fuera del flujo y se vuelve a verificar;
  *  - los carriles pasan a la pregunta «¿Quién…?» de cada paso y los pasos contiguos de un mismo carril se condensan
  *    para no pasar del máximo de pasos.
+ *
+ * Autorizaciones por MATRIZ (proceso real «Registro inicial - proceso adquisición» de Monday): en vez de preguntar quién
+ * autoriza, los pasos `matrix` consultan la matriz de responsables de gasto del tenant (módulo expense-responsibles) con
+ * las variables `area`, `tipoGasto`, `concepto` y `monto`. Si la matriz no tiene coincidencia, el paso se comporta como
+ * «preguntar» (la pregunta de respaldo es el `prompt`). Etapas: Autorizar solicitante (T01, quien inicia) → Autorización
+ * por ÁREA (AUT_AREA) → Autorización por TIPO DE GASTO (AUT_TIPO) → Revisión y cotizaciones (T02, T04) → Cotización y
+ * negociación (T05…). Reemplazan al antiguo T01b «Aprobar solicitud» (que preguntaba a los aprobadores). T26 (aprobar
+ * factura) y T27 (autorizar pago) también usan la matriz de tipo de gasto.
+ *
+ * Pasos fusionados para no pasar de MAX_STEPS (20): T22 «Notificar al responsable y verificar lo recibido» y
+ * T25 «Aceptar lo recibido y solicitar la factura» quedaron en un solo paso T22 (mismo carril, misma condición).
  */
+
+/** Las 11 áreas del proceso de Monday (quién solicita; define la autorización por área). */
+export const AREAS = [
+  'VP Tecnología',
+  'Dirección general',
+  'Administración y finanzas',
+  'Comercial',
+  'Desarrollo',
+  'QA',
+  'RH',
+  'Seguridad - Infraestructura',
+  'Logalty',
+  'Seguridad 4B',
+  'Soporte',
+] as const;
 
 export const TIPOS_GASTO = [
   'Bienes y servicios',
@@ -22,6 +48,81 @@ export const TIPOS_GASTO = [
 ] as const;
 type Tipo = (typeof TIPOS_GASTO)[number];
 
+/**
+ * Conceptos de gasto de la matriz de responsables (hoja «Responsables Gasto»); cada uno pertenece a un tipo de gasto.
+ * La autorización por tipo de gasto se resuelve por concepto.
+ */
+export const CONCEPTOS = [
+  "Entrust",
+  "HDW terceros",
+  "SW terceros",
+  "Aliados",
+  "Azure",
+  "Nómina",
+  "Renta oficinas",
+  "Mantenimiento inmueble",
+  "Renta estacionamiento Externo",
+  "Energía electrica",
+  "Seguros corporativos (Multimodal)",
+  "Seguros corporativos: Empleados",
+  "Seguros corporativos: Corporativos",
+  "Telefonía Fija e Internet",
+  "Telefonos Moviles",
+  "Hosting Red IT (KIO )",
+  "Mensajería",
+  "Asesoría Fiscal-Legal",
+  "Consejo de Administración",
+  "Auditorías Finaniceras",
+  "Presidente del Consejo",
+  "Limpieza Oficina",
+  "Equipo menor no capitalizable",
+  "Reparaciones",
+  "HDW",
+  "Oficina",
+  "Combustibles y lubricantes",
+  "Despensa y artículos de limpieza",
+  "Papelería y artículos de escritorio",
+  "Certificaciones Actas",
+  "Estacionamiento Local",
+  "Pasajes locales",
+  "Gastos de representación",
+  "Cuotas y suscripciones",
+  "Fianzas",
+  "Asesorías (Fábricas SW y otras Tec.)",
+  "Impuestos y derechos",
+  "Multas y recargos",
+  "Honorarios personas físicas",
+  "Honorarios personas morales",
+  "Comida de fin de año",
+  "Diversos deducibles",
+  "Diversos no deducibles",
+  "Donativos",
+  "Reserva para cuentas incobrables",
+  "Outsourcing capacitación",
+  "Outsourcing documentación",
+  "Acervos bibliográficos y documentales",
+  "Arrendamiento puro",
+  "Licencias, software y actualización",
+  "Licencias y software: SAP",
+  "Licencias y software: Jira",
+  "Licencias y software: CRM",
+  "Licencias y software: Fresh Desk",
+  "Licencias y software: SW Desarrollo",
+  "Licencias y software: Factorial",
+  "Gastos de Viaje",
+  "Marketing: Business Intelligence",
+  "Marketing: Growth Hacking",
+  "Marketing: e-Marketing",
+  "Marketing: Direct Marketing",
+  "Marketing: Patrocinios y Eventos",
+  "Marketing: Telemarketing",
+  "Marketing: Relaciones Públicas",
+  "Marketing: Diseño Gráfico y Contenido",
+  "Marketing: Publicidad",
+  "Marketing: Promocionales",
+  "Marketing: Consultoría",
+] as const;
+
 /** «solo si» el tipo de gasto es uno de estos; las condiciones se unen con AND, así que se excluyen los demás. */
 const soloSi = (...tipos: Tipo[]): Condition[] =>
   TIPOS_GASTO.filter((t) => !tipos.includes(t)).map((t) => ({ variable: 'tipoGasto', op: '!=' as const, value: t }));
@@ -29,7 +130,9 @@ const soloSi = (...tipos: Tipo[]): Condition[] =>
 const ask = (prompt: string) => ({ type: 'ask' as const, prompt });
 const SOLICITANTE = '¿Quién es el solicitante o responsable de área?';
 const AYF = '¿Quién es el ejecutivo de Administración y Tesorería?';
-const APROBADORES = '¿Quiénes aprueban (jefe directo y responsable según la matriz de gastos)?';
+const matrix = (stage: 'area' | 'tipoGasto', prompt: string) => ({ type: 'matrix' as const, stage, prompt });
+const AUT_AREA = '¿Quién autoriza por el área del solicitante?';
+const AUT_TIPO = '¿Quién es el responsable del gasto según el tipo y el concepto?';
 
 const BIENES_Y_DIRECTO: Tipo[] = ['Bienes y servicios', 'Costo de venta directo (Entrust)'];
 const OFICINA_Y_MARKETING: Tipo[] = ['Gastos de oficina, seguros y comunicación', 'Marketing'];
@@ -40,11 +143,15 @@ export const ADQUISICIONES_FLOW: Flow = {
   order: 'SECUENCIAL',
   slaHours: 72,
   variables: [
+    { key: 'area', label: 'Área del solicitante', type: 'select', required: true, options: [...AREAS] },
     { key: 'tipoGasto', label: 'Tipo de gasto', type: 'select', required: true, options: [...TIPOS_GASTO] },
+    { key: 'concepto', label: 'Concepto de gasto', type: 'select', required: true, options: [...CONCEPTOS] },
+    { key: 'monto', label: 'Monto (MXN)', type: 'number', required: true },
   ],
   steps: [
     step({ id: 'T01', label: '1. Generar requerimiento con ≥3 cotizaciones', role: 'FIRMANTE', who: { type: 'initiator' } }),
-    step({ id: 'T01b', label: 'Aprobar solicitud (jefe directo y responsable por matriz)', role: 'FIRMANTE', who: ask(APROBADORES) }),
+    step({ id: 'AUT_AREA', label: 'Autorización por área (responsable del área según la matriz)', role: 'FIRMANTE', who: matrix('area', AUT_AREA) }),
+    step({ id: 'AUT_TIPO', label: 'Autorización por tipo de gasto (responsable del concepto según la matriz)', role: 'FIRMANTE', who: matrix('tipoGasto', AUT_TIPO) }),
     step({ id: 'T02', label: '2-3. Validar aprobaciones, presupuesto y congruencia de la compra (sin aprobación o presupuesto, se rechaza)', role: 'REVISOR', who: ask(AYF) }),
     step({ id: 'T04', label: '4. Validar cotizaciones (≥3; mystery shopper)', role: 'REVISOR', who: ask(AYF) }),
     step({ id: 'T05', label: '5-6. Negociar condiciones, documentar la negociación y elegir propuesta', role: 'REVISOR', who: ask(AYF) }),
@@ -59,10 +166,9 @@ export const ADQUISICIONES_FLOW: Flow = {
     step({ id: 'T19', label: '19-21. Solicitar equipo Entrust, recibir guía y gestionar el retiro en aduana', role: 'REVISOR', who: ask(AYF), when: soloSi('Costo de venta directo (Entrust)') }),
     step({ id: 'T30', label: '30-32. Compra en línea, factura, pago con tarjeta y pago de la tarjeta el día de vencimiento', role: 'REVISOR', who: ask(AYF), when: soloSi('Gastos de oficina, seguros y comunicación') }),
     step({ id: 'T17', label: '17, 33-35. Pagar anticipo, revisar saldo y pagar el reembolso o notificar el cargo', role: 'REVISOR', who: ask(AYF), when: soloSi('Marketing', 'Viaje') }),
-    step({ id: 'T22', label: '22-23. Notificar al responsable y verificar el bien o servicio recibido (si no se acepta, se pide el reemplazo y se vuelve a verificar)', role: 'REVISOR', who: ask(SOLICITANTE), when: soloSi(...BIENES_Y_DIRECTO) }),
-    step({ id: 'T25', label: '25. Aceptar lo recibido y solicitar la factura', role: 'FIRMANTE', who: ask(SOLICITANTE), when: soloSi(...BIENES_Y_DIRECTO) }),
-    step({ id: 'T26', label: '26. Aprobar factura (valida SAT)', role: 'FIRMANTE', who: ask(APROBADORES), when: soloSi(...BIENES_Y_DIRECTO) }),
-    step({ id: 'T27', label: '27-28. Autorizar el pago, iniciar Tesorería y ejecutar la liberación de pagos', role: 'FIRMANTE', who: ask(AYF), when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'T22', label: '22-25. Notificar al responsable, verificar el bien o servicio recibido (si no se acepta, se pide el reemplazo y se vuelve a verificar), aceptarlo y solicitar la factura', role: 'FIRMANTE', who: ask(SOLICITANTE), when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'T26', label: '26. Aprobar factura (valida SAT)', role: 'FIRMANTE', who: matrix('tipoGasto', AUT_TIPO), when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'T27', label: '27-28. Autorizar el pago, iniciar Tesorería y ejecutar la liberación de pagos', role: 'FIRMANTE', who: matrix('tipoGasto', AUT_TIPO), when: soloSi(...BIENES_Y_DIRECTO) }),
   ],
 };
 

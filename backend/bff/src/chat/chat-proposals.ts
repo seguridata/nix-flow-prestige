@@ -67,7 +67,13 @@ export function sanitizeFlow(input: unknown): { flow?: Flow; errors: string[] } 
       id: s.id,
       label: s.label,
       role: s.role,
-      who: s.who.type === 'ask' ? { type: 'ask' as const, prompt: s.who.prompt } : { type: 'initiator' as const },
+      // `fixed` ya se rechazó arriba; `matrix` ya pasó validateFlow y se reconstruye con lista blanca.
+      who:
+        s.who.type === 'ask'
+          ? { type: 'ask' as const, prompt: s.who.prompt }
+          : s.who.type === 'matrix'
+            ? { type: 'matrix' as const, stage: s.who.stage, prompt: s.who.prompt }
+            : { type: 'initiator' as const },
       ...(s.when?.length ? { when: s.when.map((c) => ({ variable: c.variable, op: c.op, value: c.value })) } : {}),
     })),
   };

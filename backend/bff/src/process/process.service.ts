@@ -19,6 +19,17 @@ import {
 } from './adquisiciones';
 import { ADQUISICIONES_FLOW, PROVEEDORES_ESTRATEGICOS_FLOW, RENOVACION_LICENCIAS_FLOW } from './adquisiciones.flows';
 
+/** JSON con las claves ordenadas: dos flujos iguales dan el mismo texto sin importar el orden de las claves. */
+function stableJson(value: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]))
+        : v;
+  return JSON.stringify(sort(value));
+}
+
 /** Dueño de las definiciones sembradas por el sistema: las ven todos los tenants y ninguno puede modificarlas. */
 export const PLATFORM_TENANT = 'platform';
 
@@ -104,9 +115,11 @@ export class ProcessService implements OnModuleInit {
         where: { tenantId: PLATFORM_TENANT, key: seed.key },
         orderBy: { version: 'desc' },
       });
-      // Sin definición, se crea. Con una que aún no trae flujo y una semilla que sí, se agrega una versión nueva con
-      // el flujo (las de la plataforma no se editan; la versión anterior queda intacta).
-      const needsFlow = !!existing && !existing.flow && !!seed.flow;
+      // Sin definición, se crea. Con una que aún no trae flujo, o cuyo flujo difiere del sembrado, y una semilla que sí
+      // lo trae, se agrega una versión nueva con el flujo (las de la plataforma no se editan; la anterior queda intacta).
+      // Idempotente: con el mismo flujo (JSON estable) no se crea nada.
+      const needsFlow =
+        !!existing && !!seed.flow && (!existing.flow || stableJson(existing.flow) !== stableJson(seed.flow));
       if (!existing || needsFlow) {
         const { flow, ...rest } = seed;
         try {

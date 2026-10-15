@@ -175,3 +175,33 @@ describe('flowToBpmn', () => {
     expect(xml).toContain('Jefe &lt;&quot;A&amp;B&quot;&gt;');
   });
 });
+
+describe('Who matrix', () => {
+  const withWho = (who: unknown): Flow => {
+    const f = clone();
+    f.steps[1] = { id: 'aut', label: 'Autorización', role: 'FIRMANTE', who } as never;
+    return f;
+  };
+
+  it('acepta la etapa area o tipoGasto con su pregunta de respaldo', () => {
+    expect(validateFlow(withWho({ type: 'matrix', stage: 'area', prompt: '¿Quién autoriza?' }))).toEqual([]);
+    expect(validateFlow(withWho({ type: 'matrix', stage: 'tipoGasto', prompt: '¿Quién autoriza?' }))).toEqual([]);
+  });
+
+  it('rechaza una etapa inválida o ausente', () => {
+    expect(validateFlow(withWho({ type: 'matrix', stage: 'otra', prompt: 'x' })).join()).toContain('etapa válida');
+    expect(validateFlow(withWho({ type: 'matrix', prompt: 'x' })).join()).toContain('etapa válida');
+  });
+
+  it('la pregunta de respaldo es obligatoria', () => {
+    expect(validateFlow(withWho({ type: 'matrix', stage: 'area' })).join()).toContain('pregunta de respaldo');
+    expect(validateFlow(withWho({ type: 'matrix', stage: 'area', prompt: '  ' })).join()).toContain('pregunta de respaldo');
+  });
+
+  it('flowToBpmn conserva etapa y pregunta', () => {
+    const xml = flowToBpmn(withWho({ type: 'matrix', stage: 'tipoGasto', prompt: '¿Quién?' }), { key: 'x', name: 'X' });
+    expect(xml).toContain('prestige:who="matrix"');
+    expect(xml).toContain('prestige:stage="tipoGasto"');
+    expect(xml).toContain('prestige:prompt="¿Quién?"');
+  });
+});

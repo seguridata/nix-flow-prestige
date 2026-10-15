@@ -795,3 +795,31 @@ model DocumentTemplate {
   @@unique([tenantId, name])
   @@index([tenantId, published])
 }
+
+/// Matriz de responsables de gasto (por tenant). El flujo de Adquisiciones la consulta para resolver quién autoriza
+/// por área ('area') o por tipo de gasto ('tipoGasto'), según el monto. `tenantId` es el slug del guard.
+model ExpenseResponsible {
+  id          String   @id @default(uuid())
+  tenantId    String
+  area        String
+  /// null = cualquier tipo de gasto.
+  expenseType String?
+  /// Concepto de gasto (p. ej. «Renta oficinas»); null = cualquiera.
+  concept     String?
+  /// 'area' | 'tipoGasto'
+  stage       String
+  /// null = desde 0.
+  minAmount   Decimal? @db.Decimal(18, 2)
+  /// null = sin tope.
+  maxAmount   Decimal? @db.Decimal(18, 2)
+  signerId    String
+  name        String?
+  email       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, stage, area])
+  @@index([tenantId, stage, expenseType])
+  @@index([tenantId, stage, concept])
+}

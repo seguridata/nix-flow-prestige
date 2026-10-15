@@ -23,7 +23,12 @@ export interface Condition {
 export type Who =
   | { type: 'initiator' }
   | { type: 'fixed'; signerId: string; name?: string; email?: string }
-  | { type: 'ask'; prompt: string };
+  | { type: 'ask'; prompt: string }
+  /** Se resuelve con la matriz de responsables de gasto del tenant; `prompt` es la pregunta de respaldo si no hay coincidencia. */
+  | { type: 'matrix'; stage: MatrixStage; prompt: string };
+
+export const MATRIX_STAGES = ['area', 'tipoGasto'] as const;
+export type MatrixStage = (typeof MATRIX_STAGES)[number];
 
 export interface FlowStep {
   id: string;

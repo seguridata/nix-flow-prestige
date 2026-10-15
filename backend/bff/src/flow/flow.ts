@@ -1,4 +1,5 @@
 import {
+  MATRIX_STAGES,
   MAX_STEPS,
   type Condition,
   type Flow,
@@ -82,6 +83,13 @@ export function validateFlow(input: unknown): string[] {
     } else if (who.type === 'ask') {
       if (typeof who.prompt !== 'string' || !who.prompt.trim()) {
         errors.push(`Paso ${n}: «preguntar» necesita el texto de la pregunta`);
+      }
+    } else if (who.type === 'matrix') {
+      if (!(MATRIX_STAGES as readonly unknown[]).includes(who.stage)) {
+        errors.push(`Paso ${n}: la matriz de responsables necesita una etapa válida (area o tipoGasto)`);
+      }
+      if (typeof who.prompt !== 'string' || !who.prompt.trim()) {
+        errors.push(`Paso ${n}: la matriz de responsables necesita la pregunta de respaldo`);
       }
     } else if (who.type !== 'initiator') {
       errors.push(`Paso ${n}: tipo de participante inválido`);
@@ -214,7 +222,8 @@ export function flowToBpmn(flow: Flow, meta: { key: string; name: string }): str
       `prestige:who="${esc(step.who.type === 'fixed' ? `fixed:${step.who.signerId}` : step.who.type)}"`,
     ];
     // Lo necesario para reconstruir el flujo desde el BPMN (ver `bpmnToFlow`).
-    if (step.who.type === 'ask') extAttrs.push(`prestige:prompt="${esc(step.who.prompt)}"`);
+    if (step.who.type === 'ask' || step.who.type === 'matrix') extAttrs.push(`prestige:prompt="${esc(step.who.prompt)}"`);
+    if (step.who.type === 'matrix') extAttrs.push(`prestige:stage="${step.who.stage}"`);
     if (step.who.type === 'fixed') {
       if (step.who.name) extAttrs.push(`prestige:signerName="${esc(step.who.name)}"`);
       if (step.who.email) extAttrs.push(`prestige:signerEmail="${esc(step.who.email)}"`);

@@ -113,7 +113,7 @@ async function setup(over: { published?: boolean; tenantId?: string; objectKey?:
   };
   const fieldsService = { createMany: vi.fn(async (_d: string, f: any[]) => f) };
   const folders = { assertOwned: vi.fn(async () => undefined) };
-  const svc = new DocumentTemplatesService(prisma as any, storage as any, documents as any, requests as any, fieldsService as any, folders as any);
+  const svc = new DocumentTemplatesService(prisma as any, storage as any, documents as any, requests as any, fieldsService as any, folders as any, { candidates: vi.fn(async () => []) } as any);
   return { svc, prisma, storage, documents, requests, fieldsService, folders, pdf };
 }
 

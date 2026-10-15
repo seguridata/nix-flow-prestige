@@ -201,6 +201,14 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
       const signerEmail = attrOf(n.el, 'signerEmail');
       if (signerName) who.name = signerName;
       if (signerEmail) who.email = signerEmail;
+    } else if (whoAttr === 'matrix') {
+      const stage = attrOf(n.el, 'stage');
+      const prompt = attrOf(n.el, 'prompt')?.trim() || `¿Quién participa en «${name}»?`;
+      if (stage === 'area' || stage === 'tipoGasto') who = { type: 'matrix', stage, prompt };
+      else {
+        who = { type: 'ask', prompt };
+        warnings.push(`«${name}» tiene una matriz sin etapa válida; se preguntará al crear el sobre.`);
+      }
     } else if (whoAttr === 'ask') {
       who = { type: 'ask', prompt: attrOf(n.el, 'prompt')?.trim() || `¿Quién participa en «${name}»?` };
     } else {

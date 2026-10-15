@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { ProcessService } from './process.service';
+import { ADQUISICIONES_FLOW, PROVEEDORES_ESTRATEGICOS_FLOW, RENOVACION_LICENCIAS_FLOW } from './adquisiciones.flows';
 
 describe('ProcessService.ensureSeeds - idempotente con arranques paralelos', () => {
   it('ignora P2002 si otra réplica creó la semilla entre el findFirst y el create', async () => {
@@ -33,7 +34,13 @@ describe('ProcessService.ensureSeeds - idempotente con arranques paralelos', () 
 
   it('no crea si ya existe', async () => {
     const create = vi.fn();
-    const prisma = { processDefinition: { findFirst: vi.fn(async () => ({ id: 'x', version: 1, flow: { steps: [] } })), create } };
+    // Con el flujo igual al sembrado (o sin flujo sembrado) no hay nada que agregar.
+    const flows: Record<string, unknown> = {
+      'adquisiciones-gastos': ADQUISICIONES_FLOW,
+      'renovacion-licenciamiento': RENOVACION_LICENCIAS_FLOW,
+      'proveedores-estrategicos': PROVEEDORES_ESTRATEGICOS_FLOW,
+    };
+    const prisma = { processDefinition: { findFirst: vi.fn(async ({ where }: any) => ({ id: 'x', version: 1, flow: flows[where.key] ?? null })), create } };
     await new ProcessService(prisma as any, {} as any).ensureSeeds();
     expect(create).not.toHaveBeenCalled();
   });
