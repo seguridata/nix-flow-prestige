@@ -21,7 +21,7 @@ describe('ProcessService.ensureSeeds - idempotente con arranques paralelos', () 
     await new ProcessService({ processDefinition: { findFirst, create } } as any, {} as any).ensureSeeds();
     expect(findFirst.mock.calls.every((c: any[]) => c[0].where.tenantId === 'platform')).toBe(true);
     expect(create.mock.calls.every((c: any[]) => c[0].data.tenantId === 'platform')).toBe(true);
-    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(5); // contrato, onboarding y los tres de Adquisiciones
   });
 
   it('propaga otros errores', async () => {
@@ -33,7 +33,7 @@ describe('ProcessService.ensureSeeds - idempotente con arranques paralelos', () 
 
   it('no crea si ya existe', async () => {
     const create = vi.fn();
-    const prisma = { processDefinition: { findFirst: vi.fn(async () => ({ id: 'x' })), create } };
+    const prisma = { processDefinition: { findFirst: vi.fn(async () => ({ id: 'x', version: 1, flow: { steps: [] } })), create } };
     await new ProcessService(prisma as any, {} as any).ensureSeeds();
     expect(create).not.toHaveBeenCalled();
   });
