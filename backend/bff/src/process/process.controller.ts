@@ -1,6 +1,10 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { PageQueryDto } from '../common/pagination';
-import { IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { bpmnToFlow } from '../flow/bpmn-to-flow';
+import { validateFlow } from '../flow/flow';
+import type { FlowVariable } from '../flow/flow.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -47,6 +51,20 @@ class SaveFlowDto {
   flow!: Record<string, unknown>;
 }
 
+class ValidateFlowDto {
+  @IsObject()
+  flow!: Record<string, unknown>;
+}
+
+class FromBpmnDto {
+  @IsString() @MinLength(10) @MaxLength(2_000_000)
+  xml!: string;
+
+  /** Variables ya definidas (p. ej. las del flujo anterior), para no perderlas al convertir. */
+  @IsOptional() @IsArray() @Type(() => Object)
+  variables?: unknown[];
+}
+
 class DecideDto {
   @IsOptional() @IsString() @MaxLength(80)
   tipo?: string;
@@ -77,6 +95,26 @@ export class ProcessController {
   list(@Query() query: ListProcessQueryDto) {
     if (query.published === 'true') return this.process.listPublished();
     return this.process.list(query);
+  }
+
+  /** Valida un flujo sin guardarlo (mismos errores que al crearlo). */
+  @Roles('admin')
+  @Post('flows/validate')
+  validateFlow(@Body() body: ValidateFlowDto) {
+    const errors = validateFlow(body.flow);
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Convierte un diagrama BPMN (p. ej. el del modelador) en un flujo ejecutable, sin guardarlo.
+   * Si no se puede, devuelve `flow: null` y los motivos en `errors`.
+   */
+  @Roles('admin')
+  @Post('flows/from-bpmn')
+  fromBpmn(@Body() body: FromBpmnDto) {
+    const variables = (body.variables ?? []).filter((v): v is FlowVariable => typeof v === 'object' && v !== null);
+    const { flow, errors, warnings } = bpmnToFlow(body.xml, { variables });
+    return { flow: flow ?? null, errors, warnings };
   }
 
   @Roles('admin')
