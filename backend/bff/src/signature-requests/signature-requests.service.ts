@@ -821,6 +821,7 @@ export class SignatureRequestsService {
       const canonicalPdf = await this.storage.getObject(
         request.document.objectKey,
         request.document.enc as unknown as EncMeta,
+        request.document.tenantId,
       );
       const liveCanonical = createHash('sha256').update(canonicalPdf).digest('hex');
       if (liveCanonical !== request.document.hash) {
@@ -833,6 +834,7 @@ export class SignatureRequestsService {
         ? await this.storage.getObject(
             request.document.presentedObjectKey,
             request.document.presentedEnc as unknown as EncMeta,
+            request.document.tenantId,
           )
         : canonicalPdf;
 
@@ -889,6 +891,7 @@ export class SignatureRequestsService {
           filename: `${signer.id}-stroke.png`,
           bytes: autographImage,
           contentType: 'image/png',
+          tenantId: request.document.tenantId,
         });
         strokeObjectKey = stroke.objectKey;
       }
@@ -898,6 +901,7 @@ export class SignatureRequestsService {
           filename: request.document.filename,
           bytes: signed.signedPdf,
           contentType: 'application/pdf',
+          tenantId: request.document.tenantId,
         });
         await tx.document.update({
           where: { id: request.documentId },
@@ -1110,6 +1114,7 @@ export class SignatureRequestsService {
           filename: request.document.filename,
           bytes: r.signedPdf,
           contentType: 'application/pdf',
+          tenantId: request.document.tenantId,
         });
         await tx.document.update({
           where: { id: request.documentId },
@@ -1356,6 +1361,7 @@ export class SignatureRequestsService {
     const now = new Date();
     const rules = await this.prisma.outOfOffice.findMany({
       where: {
+        tenantId,
         userId: { in: signers.map((s) => s.signerId) },
         since: { lte: now },
         OR: [{ until: null }, { until: { gt: now } }],

@@ -1,0 +1,63 @@
+name: prestige-idp-prod
+
+# Keycloak de PRODUCCIÓN (solo el IdP) con Postgres propio. No sustituye a docker-compose.yml (desarrollo).
+# Detrás de un proxy/balanceador que termina TLS y envía X-Forwarded-* (nginx, Traefik, ALB...).
+# Todos los secretos llegan por variables de entorno (archivo .env.prod fuera del repo o gestor de secretos);
+# `${VAR:?}` hace fallar `docker compose` si falta alguna. No hay valores por defecto.
+#
+#   docker compose -f backend/docker-compose.prod.yml --env-file /ruta/segura/.env.prod up -d --build
+#
+# Variables requeridas: KC_HOSTNAME_URL (https://auth.example.com), KC_BOOTSTRAP_ADMIN_USERNAME,
+# KC_BOOTSTRAP_ADMIN_PASSWORD, KC_DB_PASSWORD. Opcional: KC_DB_USERNAME (keycloak).
+# El realm se importa SIN usuarios demo desde deploy/keycloak/prestige-realm.prod.json (ver deploy/k8s/README.md).
+
+services:
+  keycloak-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: ${KC_DB_USERNAME:-keycloak}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?define KC_DB_PASSWORD}
+    volumes:
+      - keycloak-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KC_DB_USERNAME:-keycloak} -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Sin puertos publicados: solo Keycloak lo alcanza por la red interna.
+
+  keycloak:
+    build:
+      context: ..
+      dockerfile: deploy/keycloak/Dockerfile
+    image: prestige-keycloak:26.0
+    restart: unless-stopped
+    command: ["start", "--optimized", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?define KC_DB_PASSWORD}
+      # Hostname público fijo y estricto (nada de KC_HOSTNAME_STRICT=false como en desarrollo).
+      KC_HOSTNAME: ${KC_HOSTNAME_URL:?define KC_HOSTNAME_URL, p. ej. https://auth.example.com}
+      KC_HOSTNAME_STRICT: "true"
+      # TLS lo termina el proxy; Keycloak habla HTTP interno y confía en X-Forwarded-*. Solo exponer el proxy.
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # v26: el admin inicial solo se crea si la base está vacía. Cambiar la contraseña tras el primer ingreso.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?define KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?define KC_BOOTSTRAP_ADMIN_PASSWORD}
+    volumes:
+      - ../deploy/keycloak/prestige-realm.prod.json:/opt/keycloak/data/import/prestige-realm.json:ro
+    ports:
+      # Solo loopback: el proxy inverso del host reenvía aquí. No publicar 8080 a la red.
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+volumes:
+  keycloak-pgdata:

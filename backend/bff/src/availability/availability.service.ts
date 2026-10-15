@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface SetOutOfOfficeInput {
+  /** Slug del tenant (el que deja TenantContextGuard). */
+  tenantId: string;
   userId: string;
   delegateId: string;
   delegateName?: string;
@@ -19,8 +21,8 @@ export interface SetOutOfOfficeInput {
 export class AvailabilityService {
   constructor(private readonly prisma: PrismaService) {}
 
-  get(userId: string) {
-    return this.prisma.outOfOffice.findUnique({ where: { userId } });
+  get(tenantId: string, userId: string) {
+    return this.prisma.outOfOffice.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
   }
 
   async set(input: SetOutOfOfficeInput) {
@@ -38,14 +40,14 @@ export class AvailabilityService {
       until: input.until ?? null,
     };
     return this.prisma.outOfOffice.upsert({
-      where: { userId: input.userId },
-      create: { userId: input.userId, ...data },
+      where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
+      create: { tenantId: input.tenantId, userId: input.userId, ...data },
       update: data,
     });
   }
 
-  async clear(userId: string) {
-    await this.prisma.outOfOffice.deleteMany({ where: { userId } });
+  async clear(tenantId: string, userId: string) {
+    await this.prisma.outOfOffice.deleteMany({ where: { tenantId, userId } });
     return { ok: true };
   }
 }

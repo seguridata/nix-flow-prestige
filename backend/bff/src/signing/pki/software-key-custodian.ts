@@ -6,6 +6,11 @@ import { buildP12, ensureCaChain, issueLeaf, loadCaChain } from './ca';
 import type { KeyCustodian, SigningMaterial } from './key-custodian';
 
 const PKI_DIR = () => process.env.PKI_DIR ?? join(process.cwd(), 'pki');
+/**
+ * Carpeta de los P12 por firmante. Por defecto `PKI_DIR/signers`. En Kubernetes `PKI_DIR` es un Secret de solo
+ * lectura, así que los P12 emitidos en runtime van a un volumen escribible compartido (RWX) con `PKI_SIGNERS_DIR`.
+ */
+const SIGNERS_DIR = () => process.env.PKI_SIGNERS_DIR?.trim() || join(PKI_DIR(), 'signers');
 
 function PASSPHRASE(): string {
   const value = process.env.PKI_PASSPHRASE?.trim() ?? '';
@@ -80,14 +85,14 @@ export class SoftwareKeyCustodian implements KeyCustodian {
     }
     const ca = loadCaChain(caDir);
 
-    const tenantDir = join(dir, 'signers', pathSegment(tenantId, 'tenantId'));
+    const tenantDir = join(SIGNERS_DIR(), pathSegment(tenantId, 'tenantId'));
     mkdirSync(tenantDir, { recursive: true });
     const safe = pathSegment(signerId, 'signerId');
     let p12Path = join(tenantDir, `${safe}.p12`);
     let metaPath = join(tenantDir, `${safe}.json`);
 
     if (!(existsSync(p12Path) && existsSync(metaPath))) {
-      const legacyBase = join(dir, 'signers', legacySegment(signerId));
+      const legacyBase = join(SIGNERS_DIR(), legacySegment(signerId));
       if (existsSync(`${legacyBase}.p12`) && existsSync(`${legacyBase}.json`)) {
         this.log.warn(
           `Usando el P12 heredado signers/${legacySegment(signerId)}.p12 (sin tenant) para ${cacheKey}. Muévelo a signers/<tenantId>/${safe}.p12.`,

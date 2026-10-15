@@ -11,6 +11,6 @@ import { LLM_PROVIDER } from './llm.types';
   imports: [CollaborationModule],
   controllers: [AiController],
   providers: [{ provide: LLM_PROVIDER, useFactory: () => new GrokProvider() }, AiQuotaService, AiService],
-  exports: [AiService],
+  exports: [AiService, AiQuotaService, LLM_PROVIDER],
 })
 export class AiModule {}

@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Logger, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { StorageService, assertTenantKey } from './storage.service';
+import { encryptObject } from './object-crypto';
 
 function make(send?: (...a: any[]) => Promise<unknown>) {
   const svc = new StorageService();
@@ -116,5 +118,95 @@ describe('StorageService credenciales S3', () => {
   it('en desarrollo conserva los defaults', () => {
     setEnv({ NODE_ENV: 'development', S3_ACCESS_KEY: undefined, S3_SECRET_KEY: undefined });
     expect(new StorageService().enabled).toBe(true);
+  });
+});
+
+describe('StorageService putObject/getObject/deleteObject con tenant', () => {
+  const prevKey = process.env.STORAGE_MASTER_KEY;
+  const prevEnv = { NODE_ENV: process.env.NODE_ENV, S3_ENDPOINT: process.env.S3_ENDPOINT };
+  beforeEach(() => {
+    // Aislado de otros describe que dejan NODE_ENV=production o S3_ENDPOINT sin restaurar.
+    process.env.NODE_ENV = 'test';
+    delete process.env.S3_ENDPOINT;
+    process.env.STORAGE_MASTER_KEY = randomBytes(32).toString('base64');
+  });
+  afterEach(() => {
+    for (const [k, v] of Object.entries(prevEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    if (prevKey === undefined) delete process.env.STORAGE_MASTER_KEY;
+    else process.env.STORAGE_MASTER_KEY = prevKey;
+  });
+
+  /** Fake de S3 en memoria: guarda el ciphertext por clave. */
+  function memoryS3() {
+    const store = new Map<string, Buffer>();
+    const send = vi.fn(async (cmd: any) => {
+      const name = cmd.constructor.name;
+      const { Key, Body } = cmd.input;
+      if (name === 'PutObjectCommand') store.set(Key, Buffer.from(Body));
+      if (name === 'DeleteObjectCommand') store.delete(Key);
+      if (name === 'GetObjectCommand') {
+        const buf = store.get(Key);
+        return { Body: { transformToByteArray: async () => new Uint8Array(buf!) } };
+      }
+      return {};
+    });
+    return { store, send };
+  }
+
+  it('los objetos nuevos se escriben con AAD de tenant y el tenant A no descifra el de B', async () => {
+    const { send } = memoryS3();
+    const svc = make(send);
+    const stored = await svc.putObject({
+      prefix: 'documents/acme',
+      filename: 'a.pdf',
+      bytes: Buffer.from('contenido de acme'),
+      contentType: 'application/pdf',
+      tenantId: 'acme',
+    });
+    expect(stored.enc.aad).toBe('tenant');
+    expect((await svc.getObject(stored.objectKey, stored.enc, 'acme')).toString()).toBe('contenido de acme');
+    // Misma clave de objeto presentada por otro tenant: assertTenantKey lo corta.
+    await expect(svc.getObject(stored.objectKey, stored.enc, 'otro')).rejects.toThrow(NotFoundException);
+  });
+
+  it('con clave del tenant correcta pero AAD de otro tenant, el descifrado falla', async () => {
+    const { store, send } = memoryS3();
+    const svc = make(send);
+    // Objeto cifrado para 'otro' pero guardado (por error/corrupción) bajo la clave de 'acme'.
+    const { ciphertext, enc } = encryptObject(Buffer.from('de otro'), { tenantId: 'otro' });
+    store.set('documents/acme/2026-10-01/u-x.pdf', ciphertext);
+    await expect(svc.getObject('documents/acme/2026-10-01/u-x.pdf', enc, 'acme')).rejects.toThrow();
+  });
+
+  it('objeto legado sin AAD sigue legible', async () => {
+    const { store, send } = memoryS3();
+    const svc = make(send);
+    const { ciphertext, enc } = encryptObject(Buffer.from('viejo'));
+    store.set('documents/acme/2026-10-01/u-old.pdf', ciphertext);
+    expect((await svc.getObject('documents/acme/2026-10-01/u-old.pdf', enc, 'acme')).toString()).toBe('viejo');
+  });
+
+  it('clave legada sin tenant se tolera con aviso y no cruza tenants', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { store, send } = memoryS3();
+    const svc = make(send);
+    const { ciphertext, enc } = encryptObject(Buffer.from('legado'));
+    store.set('documents/2026-01-05/u-x.pdf', ciphertext);
+    expect((await svc.getObject('documents/2026-01-05/u-x.pdf', enc, 'acme')).toString()).toBe('legado');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('deleteObject con tenant incorrecto falla sin tocar S3; con el correcto borra', async () => {
+    const { store, send } = memoryS3();
+    const svc = make(send);
+    store.set('documents/acme/2026-10-01/u-x.pdf', Buffer.from('x'));
+    await expect(svc.deleteObject('documents/acme/2026-10-01/u-x.pdf', 'otro')).rejects.toThrow(NotFoundException);
+    expect(send).not.toHaveBeenCalled();
+    await svc.deleteObject('documents/acme/2026-10-01/u-x.pdf', 'acme');
+    expect(store.size).toBe(0);
   });
 });

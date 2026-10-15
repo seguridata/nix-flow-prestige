@@ -102,4 +102,16 @@ describe('kid y AAD de tenant', () => {
   it('rechaza un kid con caracteres inválidos', () => {
     expect(() => encryptObject(Buffer.from('x'), { kid: '../v1' })).toThrow(/inválido/);
   });
+
+  it('objeto legado sin AAD sigue legible aunque se pase tenantId, y no se marca aad', () => {
+    const plain = Buffer.from('objeto anterior al AAD');
+    const { ciphertext, enc } = encryptObject(plain);
+    expect(enc.aad).toBeUndefined();
+    expect(decryptObject(ciphertext, enc, { tenantId: 'tenant-a' }).equals(plain)).toBe(true);
+  });
+
+  it('el objeto del tenant A no se descifra como tenant B aunque se copie su meta', () => {
+    const { ciphertext, enc } = encryptObject(Buffer.from('secreto A'), { tenantId: 'tenant-a' });
+    expect(() => decryptObject(ciphertext, { ...enc }, { tenantId: 'tenant-b' })).toThrow();
+  });
 });

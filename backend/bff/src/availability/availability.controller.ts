@@ -30,12 +30,13 @@ export class AvailabilityController {
 
   @Get()
   get(@CurrentUser() user: AuthenticatedUser) {
-    return this.availability.get(user.actorId);
+    return this.availability.get(user.tenantId, user.actorId);
   }
 
   @Put()
   set(@Body() body: SetOutOfOfficeDto, @CurrentUser() user: AuthenticatedUser) {
     return this.availability.set({
+      tenantId: user.tenantId,
       userId: user.actorId,
       delegateId: body.delegateId,
       delegateName: body.delegateName,
@@ -47,6 +48,6 @@ export class AvailabilityController {
 
   @Delete()
   clear(@CurrentUser() user: AuthenticatedUser) {
-    return this.availability.clear(user.actorId);
+    return this.availability.clear(user.tenantId, user.actorId);
   }
 }
