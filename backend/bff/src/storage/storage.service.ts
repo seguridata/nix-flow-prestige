@@ -73,6 +73,16 @@ export class StorageService {
 
   constructor() {
     const endpoint = process.env.S3_ENDPOINT;
+    const accessKeyId = process.env.S3_ACCESS_KEY?.trim() || undefined;
+    const secretAccessKey = process.env.S3_SECRET_KEY?.trim() || undefined;
+    if (endpoint && process.env.NODE_ENV === 'production') {
+      // En producción no hay credenciales por defecto de MinIO de desarrollo.
+      if (!accessKeyId || !secretAccessKey || accessKeyId === 'prestige' || secretAccessKey === 'prestige-minio') {
+        throw new Error(
+          'S3_ACCESS_KEY / S3_SECRET_KEY deben estar definidas y distintas de las de desarrollo (prestige / prestige-minio) en producción.',
+        );
+      }
+    }
     this.bucket = process.env.S3_BUCKET ?? 'prestige-docs';
     this.client = endpoint
       ? new S3Client({
@@ -80,8 +90,8 @@ export class StorageService {
           endpoint,
           forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
           credentials: {
-            accessKeyId: process.env.S3_ACCESS_KEY ?? 'prestige',
-            secretAccessKey: process.env.S3_SECRET_KEY ?? 'prestige-minio',
+            accessKeyId: accessKeyId ?? 'prestige',
+            secretAccessKey: secretAccessKey ?? 'prestige-minio',
           },
         })
       : null;

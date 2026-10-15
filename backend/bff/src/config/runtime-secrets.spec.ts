@@ -89,3 +89,26 @@ describe('inspectRuntimeSecrets — endurecimiento de producción', () => {
     expect(res.warnings.join(' ')).toMatch(/Ed25519/);
   });
 });
+
+describe('inspectRuntimeSecrets — secretos obligatorios en producción', () => {
+  const prod = (extra: NodeJS.ProcessEnv) =>
+    env({
+      NODE_ENV: 'production',
+      KEYCLOAK_ISSUER: 'https://id.ejemplo.mx/realms/prestige',
+      DATABASE_URL: 'postgresql://prestige:Xk39!zz@db.interno:5432/prestige',
+      S3_ACCESS_KEY: 'AKIAREAL',
+      S3_SECRET_KEY: 'secreto-real-largo',
+      SMTP_HOST: 'smtp.ejemplo.mx',
+      TSA_URL: 'https://tsa.seguridata.mx/tsr',
+      ...extra,
+    });
+
+  it.each([
+    ['STORAGE_MASTER_KEY', { STORAGE_MASTER_KEY: '' }],
+    ['PKI_PASSPHRASE', { PKI_PASSPHRASE: '' }],
+    ['WORKER_SHARED_SECRET', { WORKER_SHARED_SECRET: '' }],
+    ['S3_', { S3_ACCESS_KEY: 'minioadmin', S3_SECRET_KEY: 'minioadmin' }],
+  ])('falta %s: fatal', (name, extra) => {
+    expect(inspectRuntimeSecrets(prod(extra), () => true).fatal.join(' ')).toContain(name);
+  });
+});

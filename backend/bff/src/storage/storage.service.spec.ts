@@ -85,3 +85,36 @@ describe('assertTenantKey (defensa en profundidad por tenant)', () => {
     warn.mockRestore();
   });
 });
+
+describe('StorageService credenciales S3', () => {
+  const keys = ['S3_ENDPOINT', 'S3_ACCESS_KEY', 'S3_SECRET_KEY', 'NODE_ENV'] as const;
+  const saved: Record<string, string | undefined> = {};
+  afterEach(() => {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+  function setEnv(extra: Record<string, string | undefined>) {
+    for (const k of keys) saved[k] = process.env[k];
+    process.env.S3_ENDPOINT = 'http://s3.local:9000';
+    for (const [k, v] of Object.entries(extra)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+
+  it('en producción exige credenciales definidas y distintas de las de desarrollo', () => {
+    setEnv({ NODE_ENV: 'production', S3_ACCESS_KEY: undefined, S3_SECRET_KEY: undefined });
+    expect(() => new StorageService()).toThrow(/S3_ACCESS_KEY/);
+    setEnv({ NODE_ENV: 'production', S3_ACCESS_KEY: 'prestige', S3_SECRET_KEY: 'prestige-minio' });
+    expect(() => new StorageService()).toThrow(/S3_ACCESS_KEY/);
+    setEnv({ NODE_ENV: 'production', S3_ACCESS_KEY: 'AKIAREAL', S3_SECRET_KEY: 'secreto-real' });
+    expect(new StorageService().enabled).toBe(true);
+  });
+
+  it('en desarrollo conserva los defaults', () => {
+    setEnv({ NODE_ENV: 'development', S3_ACCESS_KEY: undefined, S3_SECRET_KEY: undefined });
+    expect(new StorageService().enabled).toBe(true);
+  });
+});

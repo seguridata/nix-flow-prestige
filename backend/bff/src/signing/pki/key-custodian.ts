@@ -38,8 +38,9 @@ export interface KeyCustodian {
   /**
    * Devuelve el material de firma del firmante, emitiéndolo si aún no existe.
    * `displayName` es el nombre humano que va al CN del certificado.
+   * `tenantId` aísla las llaves por tenant (obligatorio en el custodio de software).
    */
-  getSigningMaterial(signerId: string, displayName?: string): Promise<SigningMaterial>;
+  getSigningMaterial(signerId: string, displayName?: string, tenantId?: string): Promise<SigningMaterial>;
 }
 
 export const KEY_CUSTODIAN = Symbol('KEY_CUSTODIAN');
