@@ -5,7 +5,7 @@ import { LlmProviderError, type LlmProvider, type LlmRequest, type LlmResponse }
  * Grok (xAI) por su API compatible con OpenAI (`/chat/completions`).
  *   XAI_API_KEY    obligatoria
  *   XAI_BASE_URL   por defecto https://api.x.ai/v1
- *   AI_MODEL       por defecto grok-4 (confírmalo contra los modelos de tu cuenta)
+ *   AI_MODEL       por defecto grok-4.20-0309-non-reasoning (sin razonamiento: respuestas JSON rápidas y deterministas; ver GET /v1/models)
  *   AI_TIMEOUT_MS  por defecto 60000
  */
 export class GrokProvider implements LlmProvider {
@@ -15,7 +15,7 @@ export class GrokProvider implements LlmProvider {
     const key = process.env.XAI_API_KEY;
     if (!key) throw new ServiceUnavailableException('La IA no está configurada en este entorno.');
     const base = (process.env.XAI_BASE_URL ?? 'https://api.x.ai/v1').replace(/\/+$/, '');
-    const model = process.env.AI_MODEL ?? 'grok-4';
+    const model = process.env.AI_MODEL ?? 'grok-4.20-0309-non-reasoning';
     const timeout = Number(process.env.AI_TIMEOUT_MS) > 0 ? Number(process.env.AI_TIMEOUT_MS) : 60_000;
 
     let res: Response;
