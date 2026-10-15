@@ -1,24 +1,102 @@
-import { ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditChainService } from '../collaboration/audit-chain.service';
 import { finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 
 /** Operador de plataforma: rol de realm explícito, nunca inferido del tenant. */
 export const PLATFORM_ADMIN_ROLE = 'platform_admin';
 export const isPlatformAdmin = (u: { roles?: string[] }) => (u.roles ?? []).includes(PLATFORM_ADMIN_ROLE);
 
+/** Slug de tenant: minúsculas, números y guiones; 3-40 caracteres; sin guiones en los extremos. */
+export const TENANT_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+/** Slugs que chocan con rutas, identidades de sistema o el operador de plataforma. */
+export const RESERVED_TENANT_SLUGS: ReadonlySet<string> = new Set([
+  'platform', 'admin', 'administrator', 'root', 'system', 'sistema', 'api', 'www', 'app', 'auth', 'login', 'keycloak',
+  'public', 'default', 'null', 'undefined', 'test', 'internal', 'support', 'status', 'health', 'metrics', 'static',
+]);
+
+export function assertValidTenantSlug(slug: string): void {
+  if (typeof slug !== 'string' || !TENANT_SLUG_RE.test(slug)) {
+    throw new BadRequestException(
+      'slug inválido: usa minúsculas, números y guiones (3-40 caracteres, sin guiones al inicio ni al final)',
+    );
+  }
+  if (RESERVED_TENANT_SLUGS.has(slug)) throw new BadRequestException(`slug reservado: ${slug}`);
+}
+
+/**
+ * Políticas por defecto de un tenant nuevo (valores seguros). La clave de firma
+ * es la misma que resuelve SignaturePolicyService ('signature.policy'): se
+ * excluye BIOMETRICA y PASSKEY hasta que el tenant las habilite explícitamente.
+ */
+export const DEFAULT_TENANT_POLICIES: ReadonlyArray<{ key: string; value: Prisma.InputJsonValue }> = [
+  {
+    key: 'signature.policy',
+    value: {
+      allowedMethods: ['DIGITAL', 'AUTOGRAFA', 'ACCEPT'],
+      defaultSlaHours: 72,
+      defaultOrder: 'SECUENCIAL',
+      requireTimestamp: true,
+      requireConsent: true,
+      certificateProfile: 'prestige-firmantes-v1',
+    },
+  },
+];
+
+/** Catálogos por defecto de un tenant nuevo. */
+export const DEFAULT_TENANT_CATALOGS: ReadonlyArray<{ kind: string; key: string; label: string; sortOrder: number }> = [
+  { kind: 'signature-method', key: 'DIGITAL', label: 'Firma digital', sortOrder: 10 },
+  { kind: 'signature-method', key: 'AUTOGRAFA', label: 'Firma autógrafa', sortOrder: 20 },
+  { kind: 'signature-method', key: 'ACCEPT', label: 'Aceptación', sortOrder: 30 },
+];
+
 /**
  * M15 — control plane. CRUD de tenants, membresías, políticas y catálogos.
  * Keycloak sigue siendo la fuente de identidad; esto añade la capa de negocio.
+ *
+ * CICLO DE VIDA DE UN TENANT (diseño propuesto; solo los pasos 1 y 2 están implementados):
+ *   1. Alta (createTenant): slug validado + políticas y catálogos por defecto, en una transacción.
+ *   2. Suspensión (suspendTenant): el guard bloquea el acceso, se pausan los webhooks y se cancelan
+ *      sus entregas pendientes (DLQ, reencolables). Reversible con reactivateTenant (los webhooks
+ *      NO se reactivan solos: es decisión del tenant).
+ *   3. Exportación (NO implementada): job asíncrono que empaqueta documentos, evidencias, auditoría
+ *      y manifiestos del tenant en un paquete firmado y cifrado con una clave propia del tenant.
+ *   4. Ventana de retención (NO implementada): el tenant permanece suspendido N días (legal/contractual)
+ *      con derecho a reactivar o exportar; solo lectura para el operador.
+ *   5. Purga (NO implementada): job por lotes e idempotente, con doble confirmación de platform_admin,
+ *      que borra filas por tenantId y objetos de storage, y aplica cripto-borrado (destruir la clave
+ *      de cifrado por tenant) para invalidar copias y backups. La cadena de auditoría global solo
+ *      conserva un evento tombstone (hash), nunca contenido. Los workflows de Temporal se cancelan de
+ *      forma explícita antes de la purga, nunca en la suspensión.
  */
 @Injectable()
 export class ControlPlaneService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly log = new Logger(ControlPlaneService.name);
 
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly audit?: AuditChainService,
+  ) {}
+
+  /**
+   * Tenant semilla. `DEFAULT_TENANT_SLUG` (default 'seguridata'); vacío = no crear
+   * ninguno (despliegues donde los tenants se aprovisionan solo por el control plane).
+   */
   async onModuleInit() {
+    const slug = (process.env.DEFAULT_TENANT_SLUG ?? 'seguridata').trim();
+    if (!slug) return;
     await this.prisma.tenant.upsert({
-      where: { slug: 'seguridata' },
-      create: { slug: 'seguridata', name: 'SeguriData' },
+      where: { slug },
+      create: { slug, name: slug === 'seguridata' ? 'SeguriData' : slug },
       update: {},
     });
   }
@@ -28,13 +106,98 @@ export class ControlPlaneService implements OnModuleInit {
     return this.prisma.tenant.findMany({ orderBy: { createdAt: 'asc' } });
   }
 
-  createTenant(body: { slug: string; name: string }) {
-    return this.prisma.tenant.create({ data: { slug: body.slug, name: body.name } });
+  /** Idempotente por slug: si ya existe lo devuelve sin tocar sus políticas ni catálogos. */
+  async createTenant(body: { slug: string; name: string }) {
+    assertValidTenantSlug(body.slug);
+    const existing = await this.prisma.tenant.findUnique({ where: { slug: body.slug } });
+    if (existing) return existing;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const tenant = await tx.tenant.create({ data: { slug: body.slug, name: body.name } });
+        for (const p of DEFAULT_TENANT_POLICIES) {
+          await tx.policy.create({
+            data: { tenantId: tenant.id, key: p.key, value: p.value, updatedBy: 'system:tenant-bootstrap' },
+          });
+        }
+        for (const c of DEFAULT_TENANT_CATALOGS) {
+          await tx.catalogEntry.create({ data: { tenantId: tenant.id, ...c } });
+        }
+        return tenant;
+      });
+    } catch (e) {
+      // Carrera entre réplicas: otra creó el mismo slug entre el find y el create.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const t = await this.prisma.tenant.findUnique({ where: { slug: body.slug } });
+        if (t) return t;
+      }
+      throw e;
+    }
   }
 
   async updateTenant(id: string, body: { name?: string; active?: boolean }) {
     await this.getTenant(id);
-    return this.prisma.tenant.update({ where: { id }, data: body });
+    // El flag active pasa por suspend/reactivate para no dejar webhooks vivos de un tenant inactivo.
+    const { active, ...rest } = body;
+    if (active === false) await this.suspendTenant(id);
+    else if (active === true) await this.reactivateTenant(id);
+    if (rest.name === undefined) return this.getTenant(id);
+    return this.prisma.tenant.update({ where: { id }, data: { name: rest.name } });
+  }
+
+  /**
+   * Suspende un tenant: el TenantContextGuard ya rechaza a los tenants inactivos.
+   * Además desactiva sus suscripciones de webhook y cancela (DLQ, no se borran)
+   * las entregas pendientes. NO toca workflows de Temporal ni datos.
+   */
+  async suspendTenant(idOrSlug: string, actor = 'platform_admin') {
+    const t = await this.findTenant(idOrSlug);
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.tenant.update({ where: { id: t.id }, data: { active: false } });
+      const subs = await tx.webhookSubscription.updateMany({
+        where: { tenantId: { in: [t.id, t.slug] }, active: true },
+        data: { active: false },
+      });
+      const deliveries = await tx.webhookDelivery.updateMany({
+        where: {
+          status: { in: ['PENDIENTE', 'FALLIDO'] },
+          subscription: { tenantId: { in: [t.id, t.slug] } },
+        },
+        data: { status: 'DLQ', lastError: 'tenant_suspended' },
+      });
+      return { webhooksPaused: subs.count, deliveriesCancelled: deliveries.count };
+    });
+    await this.auditLifecycle('TENANT_SUSPENDED', t, actor, result);
+    return { ok: true, tenant: t.slug, active: false, ...result };
+  }
+
+  /** Reactiva el tenant. Los webhooks siguen pausados: reactivarlos es decisión del tenant. */
+  async reactivateTenant(idOrSlug: string, actor = 'platform_admin') {
+    const t = await this.findTenant(idOrSlug);
+    await this.prisma.tenant.update({ where: { id: t.id }, data: { active: true } });
+    await this.auditLifecycle('TENANT_REACTIVATED', t, actor, {});
+    return { ok: true, tenant: t.slug, active: true };
+  }
+
+  private async auditLifecycle(
+    action: string,
+    t: { id: string; slug: string },
+    actor: string,
+    payload: Record<string, unknown>,
+  ) {
+    try {
+      await this.audit?.append({ actorId: actor, action, tenantId: t.slug, payload: { tenantId: t.id, ...payload } });
+    } catch (e) {
+      // La auditoría no debe revertir la suspensión (ya aplicada): queda constancia en el log.
+      this.log.error(`Auditoría de ${action} falló para ${t.slug}: ${(e as Error).message}`);
+    }
+  }
+
+  private async findTenant(idOrSlug: string) {
+    const t =
+      (await this.prisma.tenant.findUnique({ where: { id: idOrSlug } })) ??
+      (await this.prisma.tenant.findUnique({ where: { slug: idOrSlug } }));
+    if (!t) throw new NotFoundException(`Tenant ${idOrSlug} no encontrado`);
+    return t;
   }
 
   private async getTenant(id: string) {

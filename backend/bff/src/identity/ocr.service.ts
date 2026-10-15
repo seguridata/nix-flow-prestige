@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { createWorker, type Worker } from 'tesseract.js';
+import { ConcurrencyLimiter, envInt } from './concurrency-limiter';
 
 export interface IneOcrFields {
   curp?: string;
@@ -30,8 +31,19 @@ const SECCION = /SECC?I[ÓO]N\D{0,4}(\d{3,4})/i;
  * por defecto los baja del CDN de tessdata la primera vez.
  */
 @Injectable()
-export class OcrService {
+export class OcrService implements OnModuleDestroy {
   private readonly log = new Logger(OcrService.name);
+  /**
+   * El worker de tesseract es único y secuencial: se acota con un semáforo
+   * (`OCR_MAX_CONCURRENCY` default 1) y cola (`OCR_MAX_QUEUE` default 10); con la
+   * cola llena responde 503 (+ `retryAfterSeconds`) en vez de acumular peticiones.
+   */
+  private readonly limiter = new ConcurrencyLimiter(
+    'OCR',
+    envInt('OCR_MAX_CONCURRENCY', 1, 1),
+    envInt('OCR_MAX_QUEUE', 10, 0),
+    10,
+  );
   private workerPromise: Promise<Worker> | null = null;
 
   private worker(): Promise<Worker> {
@@ -73,7 +85,11 @@ export class OcrService {
     return f;
   }
 
-  async recognizeIne(input: { front?: Buffer; back?: Buffer }): Promise<IneOcrResult> {
+  recognizeIne(input: { front?: Buffer; back?: Buffer }): Promise<IneOcrResult> {
+    return this.limiter.run(() => this.doRecognizeIne(input));
+  }
+
+  private async doRecognizeIne(input: { front?: Buffer; back?: Buffer }): Promise<IneOcrResult> {
     const worker = await this.worker();
     let rawFront: string | undefined;
     let rawBack: string | undefined;
@@ -107,6 +123,7 @@ export class OcrService {
     if (this.workerPromise) {
       const w = await this.workerPromise.catch(() => null);
       await w?.terminate().catch(() => undefined);
+      this.workerPromise = null;
     }
   }
 }
