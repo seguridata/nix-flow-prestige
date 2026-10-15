@@ -4,7 +4,7 @@ import { use, useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, CircleDashed, Pencil } from "lucide-react";
+import { ArrowLeft, Check, CircleDashed, Pencil, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { PersonPicker, type Person } from "@/components/formats/person-picker";
@@ -23,7 +23,13 @@ import {
   previewFormatFlow,
   type AskedSigner,
   type FormatDetail,
+  type ResolvedStep,
 } from "@/services/formats-service";
+
+/** Un paso necesita que quien usa el formato elija a la persona: «ask», o «matrix» sin responsable. */
+const needsPerson = (s: Pick<ResolvedStep, "who" | "unresolved">) =>
+  s.who.type === "ask" || (s.who.type === "matrix" && s.unresolved === true);
+const resolvedByMatrix = (s: Pick<ResolvedStep, "who" | "resolved">) => s.who.type === "matrix" && !!s.resolved;
 
 const today = () => new Date().toISOString().slice(0, 10);
 /** El PDF final imprime las fechas como DD/MM/AAAA; la vista previa debe verse igual. */
@@ -100,7 +106,7 @@ function UsarForm({ format }: { format: FormatDetail }) {
   });
 
   const missing = format.flow.variables.filter((v) => v.required && !String(values[v.key] ?? "").trim());
-  const activeAsk = (preview.data?.steps ?? []).filter((s) => s.active && s.who.type === "ask");
+  const activeAsk = (preview.data?.steps ?? []).filter((s) => s.active && needsPerson(s));
   const missingPeople = activeAsk.filter((s) => !asked[s.stepId]);
   const ready = missing.length === 0 && missingPeople.length === 0;
 
@@ -108,8 +114,11 @@ function UsarForm({ format }: { format: FormatDetail }) {
     mutationFn: () =>
       instantiateFormat(format.id, {
         values: typed,
+        // Solo los pasos que de verdad se preguntan: los que resolvió la matriz no llevan askedSigners.
         askedSigners: Object.fromEntries(
-          Object.entries(asked).map(([k, p]) => [k, { signerId: p.signerId, name: p.name, email: p.email } satisfies AskedSigner]),
+          Object.entries(asked)
+            .filter(([stepId]) => activeAsk.some((s) => s.stepId === stepId))
+            .map(([k, p]) => [k, { signerId: p.signerId, name: p.name, email: p.email } satisfies AskedSigner]),
         ),
       }),
     onSuccess: (r) => {
@@ -145,19 +154,36 @@ function UsarForm({ format }: { format: FormatDetail }) {
             Se enviará a
           </h2>
           <ol className="mt-3 space-y-3">
-            {(preview.data?.steps ?? format.flow.steps.map((s) => ({ stepId: s.id, label: s.label, role: s.role, who: s.who, active: !s.when?.length }))).map((s) => (
+            {(preview.data?.steps ??
+              format.flow.steps.map((s): ResolvedStep => ({ stepId: s.id, label: s.label, role: s.role, who: s.who, active: !s.when?.length }))
+            ).map((s) => (
               <li key={s.stepId} className={cn("flex items-start gap-3 text-sm", !s.active && "text-muted-foreground")}>
                 <span className="mt-0.5 shrink-0">{s.active ? <Check className="size-4" aria-hidden /> : <CircleDashed className="size-4" aria-hidden />}</span>
                 <span className="min-w-0 flex-1">
                   <span className={cn("block font-medium", !s.active && "line-through")}>{s.label}</span>
                   <span className="block">
-                    {s.who.type === "ask" ? (s.active ? "Elige a la persona:" : s.who.prompt) : describeWho(s.who)}
+                    {s.active && resolvedByMatrix(s) ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <ShieldCheck className="size-4 shrink-0" aria-hidden />
+                        <span>
+                          Resuelto por la matriz: <span className="font-medium">{s.resolved!.name || s.resolved!.email || s.resolved!.signerId}</span>
+                          {s.resolved!.email && s.resolved!.name ? <span className="text-muted-foreground"> · {s.resolved!.email}</span> : null}
+                        </span>
+                      </span>
+                    ) : needsPerson(s) ? (
+                      s.active ? "Elige a la persona:" : s.who.type === "ask" || s.who.type === "matrix" ? s.who.prompt : ""
+                    ) : (
+                      describeWho(s.who)
+                    )}
                     {!s.active ? " · no aplica con estos datos" : ""}
                   </span>
-                  {s.active && s.who.type === "ask" ? (
+                  {s.active && needsPerson(s) && (s.who.type === "ask" || s.who.type === "matrix") ? (
                     <div className="mt-1.5">
                       <PersonPicker label={s.who.prompt} value={asked[s.stepId] ?? null} onChange={(p) => setAsked((a) => { const n = { ...a }; if (p) n[s.stepId] = p; else delete n[s.stepId]; return n; })} />
                       <p className="mt-1 text-xs text-muted-foreground">{s.who.prompt}</p>
+                      {s.who.type === "matrix" ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Sin responsable en la matriz; elige a la persona.</p>
+                      ) : null}
                     </div>
                   ) : null}
                 </span>
@@ -207,6 +233,46 @@ function UsarForm({ format }: { format: FormatDetail }) {
   );
 }
 
+/** Con más opciones que esto, la lista se vuelve buscable en vez de un select enorme. */
+const SEARCHABLE_FROM = 12;
+
+/** Lista buscable: se escribe para filtrar (datalist nativo, accesible por teclado) y solo vale una opción exacta. */
+function SearchableList({ id, value, options, onChange }: { id: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  const hint = `${id}-hint`;
+  const match = (t: string) => options.find((o) => o.toLowerCase() === t.trim().toLowerCase());
+  const invalid = text.trim() !== "" && !match(text);
+  return (
+    <>
+      <Input
+        id={id}
+        list={`${id}-options`}
+        autoComplete="off"
+        placeholder="Escribe para buscar…"
+        value={text}
+        aria-describedby={hint}
+        aria-invalid={invalid}
+        onChange={(e) => {
+          setText(e.target.value);
+          onChange(match(e.target.value) ?? "");
+        }}
+        onBlur={() => {
+          const m = match(text);
+          if (m) setText(m);
+        }}
+      />
+      <datalist id={`${id}-options`}>
+        {options.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+      <p id={hint} className={cn("text-xs", invalid ? "text-[#8c2018]" : "text-muted-foreground")}>
+        {invalid ? "Elige una opción de la lista." : `${options.length} opciones; escribe para filtrar.`}
+      </p>
+    </>
+  );
+}
+
 function Field({ variable: v, value, onChange }: { variable: FlowVariable; value: string; onChange: (v: string) => void }) {
   const id = `f-${v.key}`;
   return (
@@ -215,7 +281,9 @@ function Field({ variable: v, value, onChange }: { variable: FlowVariable; value
         {v.label || v.key}
         {v.required ? null : <span className="font-normal text-muted-foreground"> (opcional)</span>}
       </label>
-      {v.type === "select" ? (
+      {v.type === "select" && (v.options?.length ?? 0) > SEARCHABLE_FROM ? (
+        <SearchableList id={id} value={value} options={v.options ?? []} onChange={onChange} />
+      ) : v.type === "select" ? (
         <select
           id={id}
           value={value}

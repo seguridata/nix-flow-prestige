@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  MATRIX_STAGE_LABEL,
   newId,
   opsFor,
   OP_LABEL,
@@ -19,6 +20,7 @@ import {
   type Flow,
   type FlowStep,
   type FlowVariable,
+  type MatrixStage,
   type Op,
   type VarType,
   type Who,
@@ -233,10 +235,19 @@ function StepCard({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
   const whoType = step.who.type;
 
+  // La pregunta de respaldo se conserva al pasar entre «se elige» y «según la matriz».
+  const keptPrompt = step.who.type === "ask" || step.who.type === "matrix" ? step.who.prompt : "";
   const setWho = (type: Who["type"]) =>
     onChange({
       ...step,
-      who: type === "initiator" ? { type } : type === "fixed" ? { type, signerId: "" } : { type, prompt: step.who.type === "ask" ? step.who.prompt : "" },
+      who:
+        type === "initiator"
+          ? { type }
+          : type === "fixed"
+            ? { type, signerId: "" }
+            : type === "matrix"
+              ? { type, stage: step.who.type === "matrix" ? step.who.stage : "area", prompt: keptPrompt }
+              : { type, prompt: keptPrompt },
     });
 
   const setCond = (i: number, c: Condition) => onChange({ ...step, when: (step.when ?? []).map((x, j) => (j === i ? c : x)) });
@@ -280,6 +291,7 @@ function StepCard({
               <option value="initiator">Quien solicita</option>
               <option value="fixed">Una persona fija</option>
               <option value="ask">Se elige al usar el formato</option>
+              <option value="matrix">Según matriz de gastos</option>
             </select>
           </div>
 
@@ -298,6 +310,42 @@ function StepCard({
               value={step.who.prompt}
               onChange={(e) => onChange({ ...step, who: { type: "ask", prompt: e.target.value } })}
             />
+          ) : null}
+
+          {step.who.type === "matrix" ? (
+            <div className="space-y-2 rounded-md bg-muted/60 p-2.5 text-sm">
+              <label className="block space-y-1.5">
+                <span className="font-medium">Etapa de la matriz</span>
+                <select
+                  className={cn(selectClass, "block w-full")}
+                  value={step.who.stage}
+                  onChange={(e) => onChange({ ...step, who: { ...(step.who as Extract<Who, { type: "matrix" }>), stage: e.target.value as MatrixStage } })}
+                >
+                  {(Object.keys(MATRIX_STAGE_LABEL) as MatrixStage[]).map((st) => (
+                    <option key={st} value={st}>
+                      {MATRIX_STAGE_LABEL[st]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="font-medium">
+                  Pregunta si la matriz no encuentra a nadie <span className="font-normal text-muted-foreground">(obligatoria)</span>
+                </span>
+                <Input
+                  className="h-10"
+                  required
+                  aria-required="true"
+                  aria-invalid={!step.who.prompt.trim()}
+                  placeholder="Ej. ¿Quién autoriza este gasto?"
+                  value={step.who.prompt}
+                  onChange={(e) => onChange({ ...step, who: { ...(step.who as Extract<Who, { type: "matrix" }>), prompt: e.target.value } })}
+                />
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Si la matriz de responsables de gasto tiene a alguien para estos datos, el paso se asigna solo y no se pregunta.
+              </p>
+            </div>
           ) : null}
 
           {(step.when ?? []).map((c, i) => {

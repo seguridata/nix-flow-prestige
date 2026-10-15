@@ -31,6 +31,14 @@ describe("describeWhen / describeWho", () => {
     expect(describeWho({ type: "fixed", signerId: "ana", name: "Ana Ruiz" })).toBe("Ana Ruiz");
     expect(describeWho({ type: "ask", prompt: "Tu jefe directo" })).toBe("Tu jefe directo");
   });
+  it("describe el participante según la matriz de gastos", () => {
+    expect(describeWho({ type: "matrix", stage: "area", prompt: "¿Quién autoriza?" })).toBe(
+      "Según la matriz de gastos: autorización por área",
+    );
+    expect(describeWho({ type: "matrix", stage: "tipoGasto", prompt: "x" })).toBe(
+      "Según la matriz de gastos: autorización por tipo de gasto",
+    );
+  });
 });
 
 describe("opsFor", () => {
@@ -60,6 +68,13 @@ describe("flowProblems", () => {
     expect(text).toMatch(/elige a quién/);
     expect(text).toMatch(/escribe qué se le pregunta/);
     expect(text).toMatch(/falta el valor/);
+  });
+  it("un paso de matriz exige la pregunta de respaldo", () => {
+    const f = base();
+    f.steps = [{ id: "m", label: "Autoriza el área", who: { type: "matrix", stage: "area", prompt: "  " }, role: "FIRMANTE" }];
+    expect(flowProblems(f).join(" ")).toMatch(/la matriz no encuentra a nadie/);
+    f.steps[0]!.who = { type: "matrix", stage: "area", prompt: "¿Quién autoriza?" };
+    expect(flowProblems(f)).toEqual([]);
   });
   it("una lista sin opciones es un problema", () => {
     const f = base();

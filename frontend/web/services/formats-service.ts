@@ -78,6 +78,10 @@ export interface ResolvedStep {
   role: FlowStep["role"];
   who: FlowStep["who"];
   active: boolean;
+  /** Persona que la matriz de gastos resolvió para un paso `matrix`. */
+  resolved?: { signerId: string; name?: string; email?: string };
+  /** Paso `matrix` sin coincidencia: se pregunta con el `prompt` del paso. */
+  unresolved?: boolean;
 }
 
 export interface FlowPreview {

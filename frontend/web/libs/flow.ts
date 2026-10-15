@@ -19,7 +19,16 @@ export interface Condition {
 export type Who =
   | { type: "initiator" }
   | { type: "fixed"; signerId: string; name?: string; email?: string }
-  | { type: "ask"; prompt: string };
+  | { type: "ask"; prompt: string }
+  /** Lo resuelve la matriz de responsables de gasto; si no hay coincidencia se pregunta con `prompt`. */
+  | { type: "matrix"; stage: MatrixStage; prompt: string };
+
+export type MatrixStage = "area" | "tipoGasto";
+
+export const MATRIX_STAGE_LABEL: Record<MatrixStage, string> = {
+  area: "Autorización por área",
+  tipoGasto: "Autorización por tipo de gasto",
+};
 
 export interface FlowStep {
   id: string;
@@ -101,6 +110,7 @@ export function describeWhen(when: Condition[] | undefined, variables: readonly 
 export function describeWho(who: Who): string {
   if (who.type === "initiator") return "Quien solicita";
   if (who.type === "fixed") return who.name || who.email || who.signerId;
+  if (who.type === "matrix") return `Según la matriz de gastos: ${MATRIX_STAGE_LABEL[who.stage].toLowerCase()}`;
   return who.prompt || "Se elige al usar el formato";
 }
 
@@ -119,6 +129,8 @@ export function flowProblems(flow: Flow): string[] {
     if (!s.label.trim()) out.push("Hay un paso sin nombre.");
     if (s.who.type === "fixed" && !s.who.signerId.trim()) out.push(`«${s.label || "Paso"}»: elige a quién se envía.`);
     if (s.who.type === "ask" && !s.who.prompt.trim()) out.push(`«${s.label || "Paso"}»: escribe qué se le pregunta a quien usa el formato.`);
+    if (s.who.type === "matrix" && !s.who.prompt.trim())
+      out.push(`«${s.label || "Paso"}»: escribe la pregunta que se hace si la matriz no encuentra a nadie.`);
     for (const c of s.when ?? []) {
       if (!flow.variables.some((v) => v.key === c.variable)) out.push(`«${s.label || "Paso"}»: la condición usa una variable que ya no existe.`);
       if (String(c.value).trim() === "") out.push(`«${s.label || "Paso"}»: falta el valor de la condición.`);
