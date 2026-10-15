@@ -22,7 +22,7 @@ export function NotificationsBell() {
   const query = useQuery({
     queryKey: ["notifications", signerId],
     queryFn: () => apiClient.get<Notification[]>(`/me/notifications?userId=${encodeURIComponent(signerId)}`),
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
   });
   const unread = (query.data ?? []).filter((n) => !n.read).length;
   const mark = useMutation({

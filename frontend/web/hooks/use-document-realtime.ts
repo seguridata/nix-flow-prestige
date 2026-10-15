@@ -47,16 +47,24 @@ export function useDocumentRealtime(documentId: string | undefined) {
     let socket: Socket | null = null;
 
     (async () => {
-      let token: string | undefined;
-      try {
-        const r = await fetch("/api/auth/session-token", { cache: "no-store" });
-        if (r.ok) token = (await r.json()).token;
-      } catch {
-        /* sin token no hay presencia en vivo; el resto de la vista funciona */
-      }
-      if (disposed || !token) return;
+      // Token fresco en cada (re)conexión: un token vencido no debe reutilizarse.
+      const fetchToken = async (): Promise<string | undefined> => {
+        try {
+          const r = await fetch("/api/auth/session-token", { cache: "no-store" });
+          if (r.ok) return (await r.json()).token;
+        } catch {
+          /* sin token no hay presencia en vivo; el resto de la vista funciona */
+        }
+        return undefined;
+      };
+      if (disposed || !(await fetchToken())) return;
 
-      socket = io(SOCKET_URL, { transports: ["websocket"], auth: { token } });
+      socket = io(SOCKET_URL, {
+        transports: ["websocket"],
+        auth: (cb) => {
+          void fetchToken().then((token) => cb({ token }));
+        },
+      });
       socketRef.current = socket;
 
       socket.on("connect", () => {

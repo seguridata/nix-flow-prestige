@@ -2,10 +2,15 @@
 
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/store/session-store";
 
 const STORAGE_KEY = "prestige.tour.v1";
 
-export async function startPrestigeTour() {
+function tourKey(userId?: string): string {
+  return userId ? `${STORAGE_KEY}.${userId}` : STORAGE_KEY;
+}
+
+export async function startPrestigeTour(userId?: string) {
   const [{ driver }] = await Promise.all([
     import("driver.js"),
     import("driver.js/dist/driver.css"),
@@ -42,23 +47,34 @@ export async function startPrestigeTour() {
         },
       },
     ],
-    onDestroyed: () => localStorage.setItem(STORAGE_KEY, "1"),
+    onDestroyed: () => {
+      try {
+        localStorage.setItem(tourKey(userId), "1");
+      } catch {
+        /* sin almacenamiento: el recorrido simplemente se repetirá */
+      }
+    },
   });
   d.drive();
 }
 
 export function ProductTourButton() {
+  const { signerId } = useSession();
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (localStorage.getItem(STORAGE_KEY)) return;
+    try {
+      if (localStorage.getItem(tourKey(signerId))) return;
+    } catch {
+      return;
+    }
     const t = window.setTimeout(() => {
-      void startPrestigeTour();
+      void startPrestigeTour(signerId);
     }, 700);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [signerId]);
 
   return (
-    <Button variant="ghost" size="sm" onClick={() => void startPrestigeTour()}>
+    <Button variant="ghost" size="sm" onClick={() => void startPrestigeTour(signerId)}>
       Recorrido
     </Button>
   );
