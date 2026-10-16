@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { ProcessAuditEvent } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { runAsSystem } from '../prisma/tenant-guard';
 
 export interface AuditInput {
   signatureRequestId?: string;
@@ -182,17 +183,24 @@ export class AuditChainService {
   }): Promise<ChainVerification> {
     // Con tenantId siempre es scoped: los vecinos de la cadena global son de otros tenants.
     const scoped = Boolean(scope?.signatureRequestId || scope?.onboardingId || scope?.tenantId);
-    const rows = await this.prisma.processAuditEvent.findMany({
-      where: {
-        hash: { not: null },
-        seq: { not: null },
-        ...(scope?.signatureRequestId ? { signatureRequestId: scope.signatureRequestId } : {}),
-        ...(scope?.onboardingId ? { onboardingId: scope.onboardingId } : {}),
-        ...(scope?.tenantId ? { tenantId: scope.tenantId } : {}),
-      },
-      orderBy: { seq: 'asc' },
-      take: VERIFY_MAX_EVENTS + 1,
-    });
+    const load = () =>
+      this.prisma.processAuditEvent.findMany({
+        where: {
+          hash: { not: null },
+          seq: { not: null },
+          ...(scope?.signatureRequestId ? { signatureRequestId: scope.signatureRequestId } : {}),
+          ...(scope?.onboardingId ? { onboardingId: scope.onboardingId } : {}),
+          ...(scope?.tenantId ? { tenantId: scope.tenantId } : {}),
+        },
+        orderBy: { seq: 'asc' },
+        take: VERIFY_MAX_EVENTS + 1,
+      });
+    // Con tenantId la consulta queda acotada (la guarda ADR-004 la acepta). Sin él es la
+    // verificación GLOBAL de la cadena (operación de plataforma, ningún endpoint de
+    // usuario la usa: process.controller siempre pasa tenantId): se declara como sistema.
+    const rows = scope?.tenantId
+      ? await load()
+      : await runAsSystem('verificación global de la cadena de auditoría', load);
     const truncated = rows.length > VERIFY_MAX_EVENTS;
     if (truncated) rows.pop();
 

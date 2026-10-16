@@ -11,7 +11,7 @@ import {
   type LookupExecutor,
   type LookupHit,
 } from '../flow/flow';
-import type { Flow, FlowValues, ResolvedStep } from '../flow/flow.types';
+import type { Flow, FlowValues, LookupQuery, ResolvedStep } from '../flow/flow.types';
 import { runLookup, type EngineTable, type LookupColumn } from './lookup-engine';
 import { checkFlowAgainstTables } from './lookup-validation';
 
@@ -39,12 +39,40 @@ export interface FlowResolution {
   resolved: ResolvedStep[];
   /** Por paso `lookup` activo: la persona, o null si no hubo coincidencia (→ preguntar). */
   picks: Map<string, LookupPick | null>;
+  /**
+   * Por paso `lookup` activo cuyas entradas aún no están completas: las variables OBLIGATORIAS que faltan. Esos pasos no se
+   * consultan ni cuentan como «sin coincidencia»: la persona se asigna al terminar de llenar los datos.
+   */
+  awaiting: Map<string, AwaitingInput[]>;
   derived: DerivedResult[];
   steps: StepLookupTrace[];
 }
 
+/** Variable de entrada de una consulta que aún no tiene valor (etiqueta del flujo; nunca columnas ni tablas). */
+export interface AwaitingInput {
+  key: string;
+  label: string;
+}
+
 type Json = unknown;
 const cellText = (v: Json): string | null => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
+
+/**
+ * Variables OBLIGATORIAS citadas como fuente de la consulta que están vacías o faltan. Una variable no obligatoria vacía
+ * cuenta como entrada completa (la consulta corre y puede no coincidir). Sin duplicados, en el orden de la consulta.
+ */
+export function awaitingInputs(flow: Flow, query: LookupQuery, values: FlowValues): AwaitingInput[] {
+  const byKey = new Map(flow.variables.map((v) => [v.key, v]));
+  const out = new Map<string, AwaitingInput>();
+  for (const c of query.match) {
+    const src = c.source;
+    if (!src || !('var' in src) || out.has(src.var)) continue;
+    const v = byKey.get(src.var);
+    if (!v?.required || cellText(values[src.var]) !== null) continue;
+    out.set(v.key, { key: v.key, label: v.label || v.key });
+  }
+  return [...out.values()];
+}
 
 /**
  * Resuelve las consultas de un flujo para UNA solicitud (ADR-008 §5): calcula las variables derivadas, decide qué pasos
@@ -84,10 +112,18 @@ export class FlowResolverService {
 
     const resolved = resolveFlow(flow, merged);
     const picks = new Map<string, LookupPick | null>();
+    const awaiting = new Map<string, AwaitingInput[]>();
     const steps: StepLookupTrace[] = [];
     for (const r of resolved) {
       const who = r.step.who;
       if (!r.active || who.type !== 'lookup') continue;
+      const faltan = awaitingInputs(flow, who.query, merged);
+      if (faltan.length) {
+        // Todavía no hay datos para consultar: no es «sin coincidencia»; la persona se asigna al terminar de llenar.
+        awaiting.set(r.step.id, faltan);
+        picks.set(r.step.id, null);
+        continue;
+      }
       const table = tables.get(who.query.table);
       const hit = table ? runLookup(table, who.query, merged).hit : null;
       const signerId = hit ? cellText(hit.values[who.person.signerId]) : null;
@@ -103,7 +139,7 @@ export class FlowResolverService {
       picks.set(r.step.id, pick);
       steps.push({ stepId: r.step.id, table: who.query.table, revision: table?.revision ?? null, rowId: pick && hit ? hit.rowId : null });
     }
-    return { values: merged, resolved, picks, derived, steps };
+    return { values: merged, resolved, picks, awaiting, derived, steps };
   }
 
   /**

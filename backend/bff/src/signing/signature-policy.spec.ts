@@ -1,16 +1,34 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
-import { DEFAULT_SIGNATURE_POLICY, SignaturePolicyService } from './signature-policy';
+import { DEFAULT_SIGNATURE_POLICY, SIGNATURE_POLICY_KEY, SignaturePolicyService } from './signature-policy';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { TenantIdResolver } from '../prisma/tenant-id-resolver';
 
-function svcWith(policyRow: unknown) {
-  const prisma = {
-    policy: { findFirst: async () => policyRow },
-  } as unknown as PrismaService;
-  return new SignaturePolicyService(prisma);
+const TENANT_UUID = '11111111-2222-3333-4444-555555555555';
+
+function svcWith(policyRow: unknown, tenantUuid: string | null = TENANT_UUID) {
+  const findUnique = vi.fn(async (_args: unknown) => policyRow);
+  const prisma = { policy: { findUnique } } as unknown as PrismaService;
+  const tenantIds = { toId: vi.fn(async () => tenantUuid) } as unknown as TenantIdResolver;
+  return Object.assign(new SignaturePolicyService(prisma, tenantIds), { findUnique, tenantIds });
 }
 
 describe('SignaturePolicyService (M10)', () => {
+  it('consulta la unique (tenantId_key) con el UUID del tenant, no con el slug', async () => {
+    const s = svcWith({ version: 1, value: {} });
+    await s.resolve('seguridata');
+    expect(s.tenantIds.toId).toHaveBeenCalledWith('seguridata');
+    expect(s.findUnique).toHaveBeenCalledWith({
+      where: { tenantId_key: { tenantId: TENANT_UUID, key: SIGNATURE_POLICY_KEY } },
+    });
+  });
+
+  it('tenant inexistente: política por defecto y sin consultar Policy', async () => {
+    const s = svcWith({ version: 9, value: {} }, null);
+    expect(await s.resolve('fantasma')).toEqual(DEFAULT_SIGNATURE_POLICY);
+    expect(s.findUnique).not.toHaveBeenCalled();
+  });
+
   it('sin fila de Policy devuelve la política por defecto (version 0)', async () => {
     const p = await svcWith(null).resolve('seguridata');
     expect(p).toEqual(DEFAULT_SIGNATURE_POLICY);

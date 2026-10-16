@@ -42,6 +42,8 @@ graph TD
 
 **Sin RLS en Postgres.** El aislamiento depende de que cada consulta filtre. Red de seguridad: la extensión `src/prisma/tenant-guard.ts` rechaza (`TENANT_GUARD=enforce`; por defecto solo en tests, `log` fuera) lecturas/escrituras masivas y altas sin `tenantId` (ver ADR-004). RLS sigue pendiente.
 
+**Estado de la guarda (ADR-004).** El código quedó listo para `TENANT_GUARD=enforce`: ningún servicio ni controlador de `backend/bff/src` deja una consulta masiva o un alta sin `tenantId` (lo comprueban `tenant-guard.sweep.spec.ts`, barrido estático, y `tenant-guard.enforce.spec.ts`, que ejecuta los servicios corregidos contra el cliente real con la guarda en `enforce`). `TenantMembership` y `Policy` guardan el uuid del `Tenant`: se filtran por columna con `TenantIdResolver` (slug→uuid, caché Redis 5 min) y no por la relación `tenant`. **Pendiente de validar** en un entorno real con `TENANT_GUARD=enforce` (el modo por defecto sigue siendo `log` fuera de tests). Excepciones que siguen, todas con razón escrita: `TenantContextGuard` (membresías del usuario entre tenants, `runAsSystem`), SLO global de plataforma y verificación global de la cadena de auditoría (`runAsSystem`), y los ticks del reconciliador de Temporal y de la bandeja de salida (`SYSTEM_EXCEPTIONS`). Las consultas SQL crudas (`$queryRaw`/`$executeRaw`) no pasan por la guarda y se revisan a mano.
+
 `tenantId` es NOT NULL en todas las tablas de negocio salvo `UserNotification` (11 filas huérfanas sin tenant determinable; revisión manual). `OutOfOffice` es único por `(tenantId, userId)`.
 
 ## 3. Escala horizontal: estado

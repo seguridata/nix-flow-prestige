@@ -18,13 +18,26 @@
  *
  * Excepciones: lista explícita `SYSTEM_EXCEPTIONS` (tareas de sistema que recorren
  * todos los tenants) y `runAsSystem(razon, fn)` para un bloque puntual. Ambas exigen
- * una razón escrita.
+ * una razón escrita. Preferir `runAsSystem` junto a la consulta (queda a la vista de quien
+ * la lee); la lista gruesa no debe crecer.
  *
  * Modo (`TENANT_GUARD`): `enforce` lanza `TenantGuardError`; `log` registra una vez por
  * (modelo, operación) y deja pasar; `off` desactiva. Por defecto: `enforce` en tests y
- * `log` en el resto, hasta que los logs de un entorno real salgan limpios (no se
- * auditaron en ejecución todos los puntos de llamada). Pasar a `enforce` en producción
- * es un cambio de variable, no de código.
+ * `log` en el resto.
+ *
+ * Cómo activarlo en un entorno (dev/stage/prod): definir `TENANT_GUARD=enforce` en el
+ * entorno del BFF y reiniciarlo (el modo se lee en cada consulta, pero la variable de
+ * proceso solo cambia al reiniciar). No hay cambio de código. Para volver atrás:
+ * `TENANT_GUARD=log` (o `off`). Con `enforce`, una consulta sin `tenantId` responde 500 y
+ * deja `TenantGuardError: TenantGuard: Modelo.operación …` en el log; con `log` el mismo
+ * caso aparece una vez como «Rechazada en modo enforce». Estado: ver §2 de
+ * MasterPlan/ARQUITECTURA-MULTITENANT-Y-ESCALA.md. Regresiones: `tenant-guard.sweep.spec.ts`
+ * (barrido estático) y `tenant-guard.enforce.spec.ts` (servicios con el cliente real).
+ *
+ * Resolución slug/uuid: `TenantMembership.tenantId` y `Policy.tenantId` guardan el UUID del
+ * `Tenant`; el resto de modelos, el slug. Para filtrar esas dos tablas usar
+ * `TenantIdResolver.toId(slug)` (src/prisma/tenant-id-resolver.ts) y filtrar por la columna,
+ * nunca por la relación `tenant: { OR: [...] }` (no fija `tenantId` y la guarda la rechaza).
  *
  * RLS (`SET LOCAL app.tenant` + políticas por tabla) NO se implementa aquí: exige que
  * TODA consulta corra dentro de una transacción con el contexto fijado (el pool de
@@ -67,19 +80,23 @@ const CREATE_OPS = new Set(['create', 'createMany', 'createManyAndReturn', 'upse
  * (por modelo y operación, no por llamador); lo ideal es migrarlas a `runAsSystem`.
  */
 export const SYSTEM_EXCEPTIONS: Readonly<Record<string, string>> = {
-  'signatureRequest.count': 'SLO del control plane: métricas globales por entorno',
   'workflowRun.findMany': 'reconciliador de Temporal: recorre corridas de todos los tenants',
   'notificationOutbox.findMany': 'tick de la bandeja de salida: toma pendientes de todos los tenants',
   'notificationOutbox.updateMany': 'tick de la bandeja de salida: reclamo de filas pendientes',
-  'notificationOutbox.count': 'métrica de la bandeja de salida (profundidad de cola)',
 };
 
 const systemContext = new AsyncLocalStorage<string>();
 
-/** Ejecuta `fn` sin la guarda. `reason` es obligatoria y queda en el log de depuración. */
+/**
+ * Ejecuta `fn` sin la guarda. `reason` es obligatoria y queda en el log de depuración.
+ *
+ * Ojo: las consultas de Prisma son PEREZOSAS (se ejecutan al hacer `await`/`.then`, no
+ * al llamarlas). Si `fn` devolviera la consulta sin esperarla, se ejecutaría FUERA del
+ * contexto de sistema y la guarda la rechazaría. Por eso se espera dentro del contexto.
+ */
 export function runAsSystem<T>(reason: string, fn: () => Promise<T>): Promise<T> {
   if (!reason.trim()) throw new Error('runAsSystem exige una razón');
-  return systemContext.run(reason, fn);
+  return systemContext.run(reason, async () => await fn());
 }
 
 let tenantModelsCache: ReadonlySet<string> | undefined;

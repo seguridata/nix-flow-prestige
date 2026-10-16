@@ -215,7 +215,7 @@ describe('WorkflowService.reassignForDelegation', () => {
         { id: 't2', signerId: 'ana', status: 'COMPLETADA' },
       ],
     });
-    await service.reassignForDelegation('req-1', 'ana', 'beto');
+    await service.reassignForDelegation('req-1', 'ana', 'beto', 'acme');
     expect(tasks.get('t1')).toMatchObject({ signerId: 'beto', delegatedFrom: 'ana', status: 'ASIGNADA' });
     expect(tasks.get('t2')).toMatchObject({ signerId: 'ana', status: 'COMPLETADA' });
   });
@@ -224,7 +224,7 @@ describe('WorkflowService.reassignForDelegation', () => {
     const { service, tasks } = makeService({
       tasks: [{ id: 't1', signerId: 'beto', status: 'ASIGNADA', delegatedFrom: 'ana' }],
     });
-    await service.signalSigned('req-1', 'ana');
+    await service.signalSigned('req-1', 'ana', 'acme');
     expect(tasks.get('t1')?.status).toBe('COMPLETADA');
   });
 });

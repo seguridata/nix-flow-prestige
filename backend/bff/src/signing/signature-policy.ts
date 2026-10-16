@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantIdResolver } from '../prisma/tenant-id-resolver';
 
 export type SignatureMethodName = 'DIGITAL' | 'AUTOGRAFA' | 'BIOMETRICA' | 'ACCEPT' | 'PASSKEY';
 
@@ -41,11 +42,22 @@ export const SIGNATURE_POLICY_KEY = 'signature.policy';
  */
 @Injectable()
 export class SignaturePolicyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantIds: TenantIdResolver,
+  ) {}
 
+  /**
+   * `tenantId` llega como slug (el que deja el guard) o uuid; `Policy.tenantId` guarda
+   * el uuid, así que se traduce y se consulta por la unique `(tenantId, key)`.
+   * Tenant inexistente o sin fila => política por defecto.
+   */
   async resolve(tenantId: string): Promise<SignaturePolicy> {
-    const row = await this.prisma.policy
-      .findFirst({ where: { key: SIGNATURE_POLICY_KEY, tenant: { OR: [{ id: tenantId }, { slug: tenantId }] } } })
+    const row = await this.tenantIds
+      .toId(tenantId)
+      .then((id) =>
+        id ? this.prisma.policy.findUnique({ where: { tenantId_key: { tenantId: id, key: SIGNATURE_POLICY_KEY } } }) : null,
+      )
       .catch(() => null);
     if (!row) return { ...DEFAULT_SIGNATURE_POLICY };
 

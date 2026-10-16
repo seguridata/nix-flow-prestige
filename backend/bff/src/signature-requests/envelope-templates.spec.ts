@@ -65,6 +65,7 @@ function makeService(templates: Record<string, Record<string, unknown>>) {
     policyService,
     undefined as never,
     documents as never,
+    { toId: async (t: string) => t } as never,
   );
   return { svc, created, documents };
 }

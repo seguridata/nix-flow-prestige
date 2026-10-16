@@ -47,6 +47,20 @@ export interface RowsFilter {
   limit?: number;
   cursor?: string;
   q?: string;
+  active?: boolean;
+}
+
+export interface MoveResult {
+  id: string;
+  /** false si ya estaba en el extremo (o en el lugar pedido): no se escribió ni auditó nada. */
+  moved: boolean;
+  /** Lugar de la fila en el orden de evaluación de TODA la tabla, empezando en 1. */
+  index: number;
+  position: number;
+  total: number;
+  revision: number;
+  /** Filas cuya `position` cambió (solo las afectadas). */
+  changed: { id: string; position: number }[];
 }
 
 /** Quién usa una tabla: formatos (DocumentTemplate.flow) y definiciones de proceso (ProcessDefinition.flow) del tenant. */
@@ -63,7 +77,22 @@ interface Ref {
   columns: Set<string>;
 }
 
+// Búsqueda sin acentos en SQL sin la extensión `unaccent` (no hay migraciones aquí): se pliegan las vocales acentuadas, ñ y ç.
+const ACCENT_PAIRS: [string, string][] = [
+  ['áàäâãå', 'a'],
+  ['éèëê', 'e'],
+  ['íìïî', 'i'],
+  ['óòöôõ', 'o'],
+  ['úùüû', 'u'],
+  ['ñ', 'n'],
+  ['ç', 'c'],
+];
+const foldPairs = ACCENT_PAIRS.flatMap(([chars, to]) => [...chars, ...chars.toUpperCase()].map((c) => [c, to] as const));
+const ACCENT_FROM = foldPairs.map(([c]) => c).join('');
+const ACCENT_TO = foldPairs.map(([, t]) => t).join('');
+
 const MAX_ERRORS = 50;
+const MAX_AUDIT_POSITIONS = 50;
 const MAX_LIST = 500;
 
 const toColumns = (json: Prisma.JsonValue): LookupColumn[] => (Array.isArray(json) ? (json as unknown as LookupColumn[]) : []);
@@ -323,34 +352,62 @@ export class LookupTablesService {
 
   // ───────────────────────────── filas ─────────────────────────────
 
-  /** Filas por cursor (orden de evaluación: position, id). Con `q` se filtra en memoria sobre las filas de la tabla (≤ 5000). */
-  async listRows(id: string, filter: RowsFilter, tenantId: string): Promise<{ items: RowView[]; nextCursor: string | null }> {
+  /** Cursor opaco `position:id`: sigue valiendo aunque la fila que lo originó se borre o se mueva. Un id suelto también se acepta. */
+  private async cursorKey(tableId: string, tenantId: string, cursor: string): Promise<{ position: number; id: string }> {
+    const m = /^(-?\d{1,9}):(.+)$/.exec(cursor);
+    if (m) return { position: Number(m[1]), id: m[2]! };
+    const row = await this.prisma.lookupRow.findFirst({ where: { id: cursor, tableId, tenantId }, select: { id: true, position: true } });
+    if (!row) throw new BadRequestException('El cursor no es válido');
+    return { position: row.position, id: row.id };
+  }
+
+  /**
+   * Filas por cursor en orden de evaluación (`position` asc, desempate por `id`), con `total` = filas que cumplen los filtros
+   * (no solo las de la página). Filtros: `active` y `q` (texto en las celdas, sin mayúsculas ni acentos).
+   *
+   * `q` va en SQL sobre `jsonb_each_text("values")`, acotado a (tenantId, tableId) con el índice existente: recorre como mucho
+   * las 5000 filas de UNA tabla y `q` mide ≤ 100. Un índice trigram (pg_trgm) no aplica a «cualquier celda» sin una columna
+   * generada, así que no se crea; si las tablas crecieran habría que revisarlo (ver ADR-008 §10).
+   */
+  async listRows(id: string, filter: RowsFilter, tenantId: string): Promise<{ items: RowView[]; nextCursor: string | null; total: number }> {
     await this.table(id, tenantId);
     const limit = Math.min(MAX_PAGE_LIMIT, Math.max(1, Math.trunc(filter.limit ?? DEFAULT_PAGE_LIMIT) || DEFAULT_PAGE_LIMIT));
-    const where = { tableId: id, tenantId };
-    const orderBy = [{ position: 'asc' as const }, { id: 'asc' as const }];
-    const q = filter.q?.trim();
+    const q = normText(filter.q ?? '');
+    const key = filter.cursor ? await this.cursorKey(id, tenantId, filter.cursor) : null;
 
+    let rows: RowView[];
+    let total: number;
     if (!q) {
-      const rows = await this.prisma.lookupRow.findMany({
-        where,
-        orderBy,
-        take: limit + 1,
-        ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
-      });
-      const more = rows.length > limit;
-      const items = (more ? rows.slice(0, limit) : rows).map(toRow);
-      return { items, nextCursor: more ? items[items.length - 1]!.id : null };
+      const base: Prisma.LookupRowWhereInput = { tableId: id, tenantId, ...(filter.active === undefined ? {} : { active: filter.active }) };
+      const where: Prisma.LookupRowWhereInput = key
+        ? { ...base, OR: [{ position: { gt: key.position } }, { position: key.position, id: { gt: key.id } }] }
+        : base;
+      const [found, count] = await Promise.all([
+        this.prisma.lookupRow.findMany({ where, orderBy: [{ position: 'asc' }, { id: 'asc' }], take: limit + 1 }),
+        this.prisma.lookupRow.count({ where: base }),
+      ]);
+      rows = found.map(toRow);
+      total = count;
+    } else {
+      const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+      const active = filter.active === undefined ? Prisma.empty : Prisma.sql`AND r."active" = ${filter.active}`;
+      const match = Prisma.sql`r."tableId" = ${id} AND r."tenantId" = ${tenantId} ${active}
+        AND EXISTS (SELECT 1 FROM jsonb_each_text(r."values") AS e WHERE translate(lower(e."value"), ${Prisma.raw(`'${ACCENT_FROM}'`)}, ${Prisma.raw(`'${ACCENT_TO}'`)}) LIKE ${like} ESCAPE '\\')`;
+      const after = key ? Prisma.sql`AND (r."position", r."id") > (${key.position}::int, ${key.id})` : Prisma.empty;
+      const [counted, found] = await Promise.all([
+        this.prisma.$queryRaw<{ n: number }[]>(Prisma.sql`SELECT count(*)::int AS n FROM "LookupRow" r WHERE ${match}`),
+        this.prisma.$queryRaw<Pick<LookupRow, 'id' | 'values' | 'position' | 'active'>[]>(
+          Prisma.sql`SELECT r."id", r."values", r."position", r."active" FROM "LookupRow" r WHERE ${match} ${after} ORDER BY r."position" ASC, r."id" ASC LIMIT ${limit + 1}::int`,
+        ),
+      ]);
+      rows = found.map(toRow);
+      total = Number(counted[0]?.n ?? 0);
     }
 
-    const needle = normText(q);
-    const all = await this.prisma.lookupRow.findMany({ where, orderBy, take: MAX_ROWS });
-    const hits = all.filter((r) => Object.values(toValues(r.values)).some((v) => normText(v).includes(needle)));
-    const start = filter.cursor ? hits.findIndex((r) => r.id === filter.cursor) + 1 : 0;
-    const page = hits.slice(start, start + limit + 1);
-    const more = page.length > limit;
-    const items = (more ? page.slice(0, limit) : page).map(toRow);
-    return { items, nextCursor: more ? items[items.length - 1]!.id : null };
+    const more = rows.length > limit;
+    const items = more ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    return { items, nextCursor: more && last ? `${last.position}:${last.id}` : null, total };
   }
 
   async createRow(id: string, raw: unknown, actor: LookupActor): Promise<RowView> {
@@ -442,11 +499,96 @@ export class LookupTablesService {
     const positions = order.map((_, i) => i);
 
     const revision = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`UPDATE "LookupRow" AS r SET "position" = u."pos", "updatedAt" = now() FROM unnest(${order}::text[], ${positions}::int[]) AS u("id", "pos") WHERE r."id" = u."id" AND r."tableId" = ${id} AND r."tenantId" = ${actor.tenantId}`;
+      await this.writePositions(tx, id, actor.tenantId, order, positions);
       return this.bump(tx, id, actor.tenantId);
     });
     await this.record(actor, 'LOOKUP_ROWS_REORDERED', { tableId: id, tableKey: table.key, count: order.length, revision });
     return { reordered: order.length, revision };
+  }
+
+  /** Escribe `position` SOLO de las filas dadas (una sentencia), acotado a la tabla y al tenant. */
+  private async writePositions(tx: Prisma.TransactionClient, tableId: string, tenantId: string, ids: string[], positions: number[]) {
+    if (!ids.length) return;
+    await tx.$executeRaw`UPDATE "LookupRow" AS r SET "position" = u."pos", "updatedAt" = now() FROM unnest(${ids}::text[], ${positions}::int[]) AS u("id", "pos") WHERE r."id" = u."id" AND r."tableId" = ${tableId} AND r."tenantId" = ${tenantId}`;
+  }
+
+  /**
+   * Reubica UNA fila: `{direction:'up'|'down'}`, `{toTop:true}` o `{afterRowId:id|null}` (null = al inicio). En una transacción que
+   * bloquea la tabla (`FOR UPDATE`, así dos movimientos simultáneos se serializan y ninguno pisa al otro) se leen solo `id` y
+   * `position` y se recalculan las posiciones únicamente de la ventana entre el origen y el destino: reutilizando los mismos
+   * valores de `position` de esa ventana, sin tocar el resto. Si la ventana trae posiciones repetidas (no debería) se renumera 0..n-1.
+   */
+  async moveRow(id: string, rowId: string, raw: unknown, actor: LookupActor): Promise<MoveResult> {
+    const table = await this.table(id, actor.tenantId);
+    const body = isObj(raw) ? raw : {};
+    const given = (['direction', 'toTop', 'afterRowId'] as const).filter((k) => body[k] !== undefined);
+    if (given.length !== 1) throw new BadRequestException('Indica una sola forma de mover: direction, toTop o afterRowId');
+    const mode = given[0]!;
+    if (mode === 'direction' && body.direction !== 'up' && body.direction !== 'down') throw new BadRequestException('direction debe ser «up» o «down»');
+    if (mode === 'toTop' && body.toTop !== true) throw new BadRequestException('toTop solo admite true');
+    if (mode === 'afterRowId' && body.afterRowId !== null && (typeof body.afterRowId !== 'string' || body.afterRowId === '')) {
+      throw new BadRequestException('afterRowId debe ser el id de una fila o null (al inicio)');
+    }
+
+    const orderBy = [{ position: 'asc' as const }, { id: 'asc' as const }];
+    const done = await this.prisma.$transaction(async (tx): Promise<{ result: MoveResult; from: number; to: number; fromPosition: number }> => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "LookupTable" WHERE "id" = ${id} AND "tenantId" = ${actor.tenantId} FOR UPDATE`;
+      if (locked.length === 0) throw new NotFoundException('Tabla de consulta no encontrada');
+      const all = await tx.lookupRow.findMany({ where: { tableId: id, tenantId: actor.tenantId }, orderBy, select: { id: true, position: true }, take: MAX_ROWS });
+      const from = all.findIndex((r) => r.id === rowId);
+      if (from < 0) throw new NotFoundException('Fila no encontrada');
+      const cur = all[from]!;
+
+      let to: number;
+      if (mode === 'direction') to = body.direction === 'up' ? from - 1 : from + 1;
+      else if (mode === 'toTop' || body.afterRowId === null) to = 0;
+      else {
+        const anchor = all.findIndex((r) => r.id === body.afterRowId);
+        if (anchor < 0) throw new BadRequestException('La fila de referencia no es de esta tabla');
+        to = anchor === from ? from : anchor < from ? anchor + 1 : anchor;
+      }
+      if (to < 0 || to >= all.length || to === from) {
+        return { result: { id: rowId, moved: false, index: from + 1, position: cur.position, total: all.length, revision: table.revision, changed: [] }, from, to: from, fromPosition: cur.position };
+      }
+
+      const lo = Math.min(from, to);
+      const win = all.slice(lo, Math.max(from, to) + 1);
+      const rest = win.filter((r) => r.id !== rowId);
+      const reordered = from < to ? [...rest, cur] : [cur, ...rest];
+      const slots = win.map((r) => r.position);
+      const distinct = slots.every((p, i) => i === 0 || p > slots[i - 1]!);
+      const before = new Map(all.map((r) => [r.id, r.position]));
+      let target: { id: string; position: number }[];
+      if (distinct) target = reordered.map((r, i) => ({ id: r.id, position: slots[i]! }));
+      else {
+        const full = [...all.slice(0, lo), ...reordered, ...all.slice(lo + win.length)];
+        target = full.map((r, i) => ({ id: r.id, position: i }));
+      }
+      const changed = target.filter((t) => before.get(t.id) !== t.position);
+      await this.writePositions(tx, id, actor.tenantId, changed.map((c) => c.id), changed.map((c) => c.position));
+      const revision = await this.bump(tx, id, actor.tenantId);
+      const position = changed.find((c) => c.id === rowId)?.position ?? cur.position;
+      return { result: { id: rowId, moved: true, index: to + 1, position, total: all.length, revision, changed }, from, to, fromPosition: cur.position };
+    });
+
+    if (done.result.moved) {
+      const r = done.result;
+      await this.record(actor, 'LOOKUP_ROW_MOVED', {
+        tableId: id,
+        tableKey: table.key,
+        rowId,
+        mode: mode === 'direction' ? (body.direction as string) : mode === 'toTop' ? 'top' : 'after',
+        ...(mode === 'afterRowId' ? { afterRowId: body.afterRowId } : {}),
+        fromIndex: done.from + 1,
+        toIndex: done.to + 1,
+        fromPosition: done.fromPosition,
+        toPosition: r.position,
+        affected: r.changed.length,
+        positions: r.changed.slice(0, MAX_AUDIT_POSITIONS),
+        revision: r.revision,
+      });
+    }
+    return done.result;
   }
 
   /** Importa hasta 5000 filas, todo o nada. Con `replace` borra ANTES las filas de esta tabla del tenant (y solo esas). */
@@ -510,10 +652,18 @@ export class LookupTablesService {
       orderBy: [{ position: 'asc' }, { id: 'asc' }],
       take: MAX_ROWS,
     });
-    return dryRun(
+    const out = dryRun(
       { key: table.key, revision: table.revision, columns, rows: rows.map((r) => ({ id: r.id, position: r.position, active: r.active, values: toValues(r.values) })) },
       query,
       inputs.inputs,
     );
+    // `order` = lugar de la fila (desde 1) en el orden de evaluación de TODA la tabla: la pantalla no necesita cargar las filas para numerarlas.
+    const order = new Map(rows.map((r, i) => [r.id, i + 1]));
+    return {
+      ...out,
+      matches: out.matches.map((m) => ({ ...m, order: order.get(m.rowId) ?? 0 })),
+      first: out.first ? { ...out.first, order: order.get(out.first.rowId) ?? 0 } : null,
+      explain: out.explain.map((e) => ({ ...e, order: order.get(e.rowId) ?? 0 })),
+    };
   }
 }

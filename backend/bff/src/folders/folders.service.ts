@@ -189,8 +189,8 @@ export class FoldersService {
   async remove(id: string, actor: DriveActor): Promise<void> {
     await this.mine(id, actor);
     const [children, cases] = await Promise.all([
-      this.prisma.folder.count({ where: { parentId: id } }),
-      this.prisma.case.count({ where: { folderId: id } }),
+      this.prisma.folder.count({ where: { tenantId: actor.tenantId, parentId: id } }),
+      this.prisma.case.count({ where: { tenantId: actor.tenantId, folderId: id } }),
     ]);
     if (children + cases > 0) {
       throw new ConflictException('La carpeta no está vacía: mueve o elimina su contenido primero');

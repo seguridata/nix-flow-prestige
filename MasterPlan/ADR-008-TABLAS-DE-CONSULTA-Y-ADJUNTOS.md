@@ -69,11 +69,15 @@ POST   /lookup-tables {key,name,description?,columns[]}
 GET    /lookup-tables/:id
 PUT    /lookup-tables/:id {name?,description?,columns?,active?}
 DELETE /lookup-tables/:id                      → 409 con la lista de formatos/flujos que la usan
-GET    /lookup-tables/:id/rows?cursor&limit&q  → {items:[{id,values,position,active}],nextCursor}
+GET    /lookup-tables/:id/rows?cursor&limit&q&active → {items:[{id,values,position,active}],nextCursor,total}
+         (límite máx. 200, default 50; `total` cuenta lo que cumple los filtros; `q` busca en las celdas sin mayúsculas ni acentos;
+          el cursor es `position:id`; orden por `position` y desempate por `id`)
 POST   /lookup-tables/:id/rows {values}
-PUT    /lookup-tables/:id/rows/:rowId {values?,active?}
+PUT    /lookup-tables/:id/rows/:rowId {values?,active?}    (`values` reemplaza la fila completa; lo que no venga queda vacío)
 DELETE /lookup-tables/:id/rows/:rowId
-POST   /lookup-tables/:id/rows/reorder {ids:[...]}
+POST   /lookup-tables/:id/rows/:rowId/move {direction:'up'|'down'} | {toTop:true} | {afterRowId:id|null}
+         → {id,moved,index,position,total,revision,changed:[{id,position}]}  (una transacción con bloqueo; solo reescribe las filas afectadas)
+POST   /lookup-tables/:id/rows/reorder {ids:[...]}         (compatibilidad)
 POST   /lookup-tables/:id/rows/import {rows:[values],replace?}   (máx. 5000; todo o nada; replace solo del tenant)
 POST   /lookup-tables/:id/test {query:LookupQuery, inputs:{[var]:value}} → {matches:[{rowId,position,values}], first:{...}|null, explain:[{rowId,failedAt?}]}
 ```
@@ -108,7 +112,23 @@ POST   /lookup-tables/:id/test {query:LookupQuery, inputs:{[var]:value}} → {ma
 2. `businessRuleTask` de BPMN como consulta al convertir a flujo.
 3. Versionado con vigencia y aprobación de cambios; fuentes externas sincronizadas (Monday, Sheets); asistente de Excel a tabla (la IA propone, una persona revisa).
 
-## 10. Límites conocidos
+## 10. Decisiones de implementación (2026-10-16)
+
+- **El usuario no ve la consulta:** a quien no es administrador, el participante `lookup` le llega como `{type:'lookup', prompt}` y las variables derivadas solo con clave, etiqueta y tipo.
+  El preview devuelve por paso `resolved` (persona), `unresolved` (todas las entradas estaban completas y la tabla no devolvió a nadie) o `awaiting` (faltan datos obligatorios;
+  solo clave y etiqueta de las variables). Nunca salen la tabla, sus columnas ni la consulta.
+- **Límites:** 500 caracteres por celda de texto, 30 columnas, 5000 filas por tabla. Las importaciones usan un parser propio de 12 MB (`LOOKUP_IMPORT_BODY_LIMIT`); el resto de la API sigue en 2 MB.
+- **Semántica fina:** `isEmpty`/`isNotEmpty` miran la celda de la fila; si la solicitud no trae valor y la celda sí, la condición falla (incluso con `neq`); una celda vacía cumple siempre salvo `emptyMatchesAny:false`
+  (la condición `etapa` de Adquisiciones lo usa para que una fila sin etapa no autorice a nadie).
+- **Métodos de firma:** se validan contra la política del tenant al guardar y publicar un formato; sin `methods` se guardan los permitidos de {ACCEPT, AUTOGRAFA, DIGITAL}. Un cambio posterior de la política
+  se reporta al llenar el formato (400 claro, sin crear nada).
+- **Anexos:** lectura solo para el dueño del expediente y los participantes de sus solicitudes (ni un administrador ajeno los lee); no son firmables; no cuentan como documentos en las carpetas; el paquete de evidencia
+  incluye `anexos.json` (nombre, tamaño y hash). Sin Redis la carga previa responde 503 (no hay respaldo en memoria: no hay estado en el proceso).
+- **Auditoría:** `LOOKUP_TABLE_*`, `LOOKUP_ROW_*` (incluye `LOOKUP_ROW_MOVED`), `LOOKUP_ROWS_IMPORTED`, `LOOKUP_RESOLVED` y `ATTACHMENTS_ADDED`, con ids, claves, conteos y hashes; nunca valores de celdas, nombres ni correos.
+- **Guarda de tenant (ADR-004):** las consultas que la guarda marcaba quedaron acotadas por `tenantId` o por `runAsSystem` con razón explícita; un resolvedor `slug → uuid` con caché corta sirve a las tablas que guardan el UUID.
+  `TENANT_GUARD=enforce` queda listo para activarse (ver la cabecera de `tenant-guard.ts`).
+
+## 11. Límites conocidos
 
 - El flujo sigue siendo lineal: la consulta decide con lo que se sabe **al crear la solicitud**, no con resultados de pasos anteriores.
 - Las solicitudes en curso conservan lo congelado; cambiar una tabla no las reencamina.

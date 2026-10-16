@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
+import { runAsSystem } from '../prisma/tenant-guard';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import type { AuthenticatedUser } from './jwt-auth.guard';
 
@@ -42,10 +43,16 @@ export class TenantContextGuard implements CanActivate {
     const requested = header || user.tenantId;
     const userIds = [...new Set([user.actorId, user.sub].filter((v) => v && v.length > 0))];
 
-    const memberships = await this.prisma.tenantMembership.findMany({
-      where: { userId: { in: userIds }, active: true },
-      include: { tenant: true },
-    });
+    // Búsqueda LEGÍTIMAMENTE entre tenants: aquí todavía no se sabe en qué tenant actúa
+    // el usuario; justo esto lo determina («¿a qué tenants pertenece este userId?»).
+    // Por eso no se puede fijar `tenantId` y se declara explícitamente fuera de la guarda
+    // ADR-004. Acotada por `userId` y `active`; nunca devuelve filas de otros usuarios.
+    const memberships = await runAsSystem('resolver membresías del usuario', () =>
+      this.prisma.tenantMembership.findMany({
+        where: { userId: { in: userIds }, active: true },
+        include: { tenant: true },
+      }),
+    );
 
     if (memberships.length === 0) {
       // Fail-closed: un directorio vacío ya no abre el sandbox. Solo con

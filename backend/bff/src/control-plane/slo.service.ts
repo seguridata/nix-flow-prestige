@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { runAsSystem } from '../prisma/tenant-guard';
 
 type Level = 'ok' | 'warn' | 'crit';
 
@@ -28,7 +29,10 @@ export class SloService {
    * el controller debe verificar el rol antes de llamarla.
    */
   async snapshotGlobal() {
-    return this.compute(null);
+    // Conteos de TODOS los tenants a propósito (métricas de plataforma): sin tenantId en el where.
+    return runAsSystem('SLO global de plataforma (platform_admin): conteos de todos los tenants', () =>
+      this.compute(null),
+    );
   }
 
   private async compute(tenantId: string | null) {

@@ -78,23 +78,20 @@ export class SignatureFieldsService {
     if (!documentId) throw new BadRequestException('documentId es requerido');
     await this.assertDocument(documentId, tenantId);
     return this.prisma.signatureField.findMany({
-      where: { documentId },
+      where: { tenantId, documentId },
       orderBy: [{ page: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
-  /**
-   * El campo se considera del tenant por su documento (los campos previos al
-   * hardening pueden tener `tenantId` nulo): 404 si el documento es ajeno.
-   */
+  /** 404 si el campo no es del tenant (`tenantId` es NOT NULL; se filtra por la columna). */
   async remove(id: string, tenantId: string) {
     if (!tenantId) throw new BadRequestException('tenantId es requerido');
     const found = await this.prisma.signatureField.findFirst({
-      where: { id, document: { tenantId } },
+      where: { id, tenantId },
       select: { id: true },
     });
     if (!found) throw new NotFoundException(`Campo de firma ${id} no encontrado`);
-    await this.prisma.signatureField.deleteMany({ where: { id, document: { tenantId } } });
+    await this.prisma.signatureField.deleteMany({ where: { id, tenantId } });
     return { id };
   }
 
@@ -118,7 +115,7 @@ export class SignatureFieldsService {
     await this.assertDocument(documentId, tenantId);
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.signatureField.deleteMany({ where: { documentId } });
+      await tx.signatureField.deleteMany({ where: { tenantId, documentId } });
       if (fields.length === 0) return [];
       await tx.signatureField.createMany({
         data: fields.map((f) => ({
@@ -135,7 +132,7 @@ export class SignatureFieldsService {
         })),
       });
       return tx.signatureField.findMany({
-        where: { documentId },
+        where: { tenantId, documentId },
         orderBy: [{ page: 'asc' }, { createdAt: 'asc' }],
       });
     });

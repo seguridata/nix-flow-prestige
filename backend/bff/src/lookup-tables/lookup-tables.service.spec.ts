@@ -170,6 +170,7 @@ describe('aislamiento por tenant', () => {
       ['updateRow', svc.updateRow('tB', rowB, { active: false }, A)],
       ['removeRow', svc.removeRow('tB', rowB, A)],
       ['reorder', svc.reorder('tB', [rowB], A)],
+      ['moveRow', svc.moveRow('tB', rowB, { toTop: true }, A)],
       ['import', svc.importRows('tB', [{ signerId: 'x' }], true, A)],
       ['test', svc.test('tB', { table: 'responsables-gasto', match: [{ column: 'area', op: 'eq', source: { value: 'QA' } }] }, {}, 'acme')],
     ];
@@ -183,6 +184,7 @@ describe('aislamiento por tenant', () => {
     const { svc, db } = setup(seed);
     expect(await catchErr(svc.updateRow('tA', 'tB-r0', { active: false }, A))).toBeInstanceOf(NotFoundException);
     expect(await catchErr(svc.removeRow('tA', 'tB-r0', A))).toBeInstanceOf(NotFoundException);
+    expect(await catchErr(svc.moveRow('tA', 'tB-r0', { toTop: true }, A))).toBeInstanceOf(NotFoundException);
     expect(db.state.rows.find((r: any) => r.id === 'tB-r0')).toMatchObject({ active: true });
   });
 
@@ -284,35 +286,245 @@ describe('filas', () => {
   describe('listado por cursor', () => {
     const rows = Array.from({ length: 5 }, (_, i) => rowOf('acme', 'tA', i, { area: i === 3 ? 'Nómina' : 'Otra' }));
 
-    it('pagina en orden de evaluación (position) con nextCursor hasta null', async () => {
+    it('pagina en orden de evaluación (position) con nextCursor hasta null y trae el total', async () => {
       const { svc } = setup({ rows: [...rows].reverse() });
       const p1 = await svc.listRows('tA', { limit: 2 }, 'acme');
       expect(p1.items.map((r) => r.position)).toEqual([0, 1]);
-      expect(p1.nextCursor).toBe('tA-r1');
+      expect(p1.nextCursor).toBe('1:tA-r1');
+      expect(p1.total).toBe(5);
       const p2 = await svc.listRows('tA', { limit: 2, cursor: p1.nextCursor! }, 'acme');
       expect(p2.items.map((r) => r.position)).toEqual([2, 3]);
+      expect(p2.total).toBe(5);
       const p3 = await svc.listRows('tA', { limit: 2, cursor: p2.nextCursor! }, 'acme');
       expect(p3.items.map((r) => r.position)).toEqual([4]);
       expect(p3.nextCursor).toBeNull();
     });
 
-    it('`q` filtra sin distinguir mayúsculas ni acentos y también pagina', async () => {
+    it('la paginación es estable: el desempate es por id y nada se repite ni se salta', async () => {
+      const tied = ['c', 'a', 'b', 'e', 'd'].map((x) => ({ ...rowOf('acme', 'tA', 0), id: 'row-' + x, position: x < 'c' ? 0 : 1 }));
+      const { svc } = setup({ rows: tied });
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      for (let i = 0; i < 10; i++) {
+        const page = await svc.listRows('tA', { limit: 2, cursor }, 'acme');
+        seen.push(...page.items.map((r) => r.id));
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+      expect(seen).toEqual(['row-a', 'row-b', 'row-c', 'row-d', 'row-e']);
+    });
+
+    it('el cursor sigue valiendo si la fila que lo originó se borró; un id suelto también se acepta; uno ajeno, 400', async () => {
+      const { svc } = setup({ rows });
+      const p1 = await svc.listRows('tA', { limit: 2 }, 'acme');
+      await svc.removeRow('tA', 'tA-r1', A);
+      const p2 = await svc.listRows('tA', { limit: 2, cursor: p1.nextCursor! }, 'acme');
+      expect(p2.items.map((r) => r.id)).toEqual(['tA-r2', 'tA-r3']);
+      expect((await svc.listRows('tA', { limit: 2, cursor: 'tA-r2' }, 'acme')).items.map((r) => r.id)).toEqual(['tA-r3', 'tA-r4']);
+      expect(await catchErr(svc.listRows('tA', { cursor: 'no-existe' }, 'acme'))).toBeInstanceOf(BadRequestException);
+    });
+
+    it('total cuenta las filas que cumplen los filtros, no las de la página', async () => {
+      const mixed = rows.map((r, i) => ({ ...r, active: i % 2 === 0 }));
+      const { svc } = setup({ rows: mixed });
+      expect((await svc.listRows('tA', { limit: 1 }, 'acme')).total).toBe(5);
+      const inactive = await svc.listRows('tA', { active: false, limit: 1 }, 'acme');
+      expect(inactive.total).toBe(2);
+      expect(inactive.items.map((r) => r.id)).toEqual(['tA-r1']);
+      expect(inactive.nextCursor).toBe('1:tA-r1');
+      const active = await svc.listRows('tA', { active: true }, 'acme');
+      expect(active.items.map((r) => r.id)).toEqual(['tA-r0', 'tA-r2', 'tA-r4']);
+      expect(active.total).toBe(3);
+    });
+
+    it('q filtra sin distinguir mayúsculas ni acentos, pagina y su total es el de las coincidencias', async () => {
       const { svc } = setup({ rows });
       const r = await svc.listRows('tA', { q: 'NOMINA' }, 'acme');
       expect(r.items.map((x) => x.id)).toEqual(['tA-r3']);
+      expect(r.total).toBe(1);
       const all = await svc.listRows('tA', { q: 'otra', limit: 3 }, 'acme');
       expect(all.items).toHaveLength(3);
+      expect(all.total).toBe(4);
       const rest = await svc.listRows('tA', { q: 'otra', limit: 3, cursor: all.nextCursor! }, 'acme');
       expect(rest.items).toHaveLength(1);
       expect(rest.nextCursor).toBeNull();
+      expect(rest.total).toBe(4);
+    });
+
+    it('q busca en los valores (no en las claves), combina con active y no encuentra nada ajeno al tenant', async () => {
+      const mixed = [
+        rowOf('acme', 'tA', 0, { nombre: 'Ana López' }),
+        { ...rowOf('acme', 'tA', 1, { nombre: 'Luis Peña' }), active: false },
+        rowOf('beta', 'tB', 0, { nombre: 'Ana López' }),
+      ];
+      const { svc } = setup({ rows: mixed });
+      expect((await svc.listRows('tA', { q: 'lopez' }, 'acme')).items.map((r) => r.id)).toEqual(['tA-r0']);
+      expect((await svc.listRows('tA', { q: 'PEÑA' }, 'acme')).total).toBe(1);
+      expect((await svc.listRows('tA', { q: 'pena', active: true }, 'acme')).total).toBe(0);
+      expect((await svc.listRows('tA', { q: 'pena', active: false }, 'acme')).total).toBe(1);
+      expect((await svc.listRows('tA', { q: 'nombre' }, 'acme')).total).toBe(0); // «nombre» es una clave de columna, no un valor
+      expect((await svc.listRows('tB', { q: 'lopez' }, 'beta')).items.map((r) => r.id)).toEqual(['tB-r0']);
+    });
+
+    it('en la búsqueda SQL los comodines de q se escapan y todo va acotado a tabla y tenant', async () => {
+      const { svc, db } = setup({ rows: [rowOf('acme', 'tA', 0, { nombre: '100% listo' }), rowOf('acme', 'tA', 1, { nombre: 'a_b' })] });
+      expect((await svc.listRows('tA', { q: '100%' }, 'acme')).total).toBe(1);
+      expect((await svc.listRows('tA', { q: '_' }, 'acme')).items.map((r) => r.id)).toEqual(['tA-r1']);
+      const [raw] = db.$queryRaw.mock.calls[0]!;
+      expect(raw.values.slice(0, 3)).toEqual(['tA', 'acme', '%100\\%%']);
+      expect(raw.strings.join('?')).toContain('"tenantId" =');
+      expect(raw.strings.join('?')).toContain('ESCAPE');
     });
 
     it('el límite por defecto es 50 y el máximo 200', async () => {
       const big = Array.from({ length: 260 }, (_, i) => rowOf('acme', 'tA', i));
       const { svc } = setup({ rows: big });
-      expect((await svc.listRows('tA', {}, 'acme')).items).toHaveLength(50);
+      const def = await svc.listRows('tA', {}, 'acme');
+      expect(def.items).toHaveLength(50);
+      expect(def.total).toBe(260);
       expect((await svc.listRows('tA', { limit: 9999 }, 'acme')).items).toHaveLength(200);
     });
+  });
+});
+
+describe('mover una fila', () => {
+  const ids = (db: any) => [...db.state.rows].sort((a: any, b: any) => a.position - b.position || (a.id < b.id ? -1 : 1)).map((r: any) => r.id.replace('tA-', ''));
+  const rows = (n = 5) => Array.from({ length: n }, (_, i) => rowOf('acme', 'tA', i));
+  const writes = (db: any) => db.$executeRaw.mock.calls.map((c: any[]) => c.slice(1));
+
+  it('subir y bajar intercambian solo las dos filas vecinas, suben la revisión y auditan ids y posiciones', async () => {
+    const { svc, db, audit } = setup({ rows: rows() });
+    const up = await svc.moveRow('tA', 'tA-r2', { direction: 'up' }, A);
+    expect(up).toMatchObject({ id: 'tA-r2', moved: true, index: 2, position: 1, total: 5, revision: 2 });
+    expect(up.changed).toEqual([{ id: 'tA-r2', position: 1 }, { id: 'tA-r1', position: 2 }]);
+    expect(ids(db)).toEqual(['r0', 'r2', 'r1', 'r3', 'r4']);
+    expect(writes(db)[0][0]).toEqual(['tA-r2', 'tA-r1']); // solo las afectadas, no toda la tabla
+
+    const down = await svc.moveRow('tA', 'tA-r2', { direction: 'down' }, A);
+    expect(down).toMatchObject({ moved: true, index: 3, position: 2, revision: 3 });
+    expect(ids(db)).toEqual(['r0', 'r1', 'r2', 'r3', 'r4']);
+    expect(db.state.tables.find((t: any) => t.id === 'tA').revision).toBe(3);
+
+    expect(events(audit)[0]).toMatchObject({
+      action: 'LOOKUP_ROW_MOVED',
+      tenantId: 'acme',
+      payload: { tableId: 'tA', rowId: 'tA-r2', mode: 'up', fromIndex: 3, toIndex: 2, fromPosition: 2, toPosition: 1, affected: 2, revision: 2 },
+    });
+    expect(events(audit)[0].payload.positions).toEqual([{ id: 'tA-r2', position: 1 }, { id: 'tA-r1', position: 2 }]);
+  });
+
+  it('«llevar al inicio» (toTop y afterRowId:null) reubica la fila y desplaza solo las que estaban antes', async () => {
+    const { svc, db, audit } = setup({ rows: rows() });
+    const out = await svc.moveRow('tA', 'tA-r3', { toTop: true }, A);
+    expect(out).toMatchObject({ moved: true, index: 1, position: 0, revision: 2 });
+    expect(out.changed.map((c) => c.id).sort()).toEqual(['tA-r0', 'tA-r1', 'tA-r2', 'tA-r3']); // r4 no se toca
+    expect(ids(db)).toEqual(['r3', 'r0', 'r1', 'r2', 'r4']);
+    expect(db.state.rows.find((r: any) => r.id === 'tA-r4').position).toBe(4);
+    expect(events(audit)[0].payload).toMatchObject({ mode: 'top', fromIndex: 4, toIndex: 1 });
+
+    await svc.moveRow('tA', 'tA-r4', { afterRowId: null }, A);
+    expect(ids(db)).toEqual(['r4', 'r3', 'r0', 'r1', 'r2']);
+  });
+
+  it('afterRowId: detrás de una fila posterior y detrás de una anterior', async () => {
+    const { svc, db } = setup({ rows: rows() });
+    expect(await svc.moveRow('tA', 'tA-r0', { afterRowId: 'tA-r3' }, A)).toMatchObject({ moved: true, index: 4, position: 3 });
+    expect(ids(db)).toEqual(['r1', 'r2', 'r3', 'r0', 'r4']);
+    expect(await svc.moveRow('tA', 'tA-r4', { afterRowId: 'tA-r1' }, A)).toMatchObject({ moved: true, index: 2 });
+    expect(ids(db)).toEqual(['r1', 'r4', 'r2', 'r3', 'r0']);
+    expect(await svc.moveRow('tA', 'tA-r2', { afterRowId: 'tA-r0' }, A)).toMatchObject({ moved: true, index: 5 });
+    expect(ids(db)).toEqual(['r1', 'r4', 'r3', 'r0', 'r2']);
+  });
+
+  it('en los extremos o ya en su lugar no escribe, no sube la revisión y no audita', async () => {
+    const { svc, db, audit } = setup({ rows: rows() });
+    for (const [row, body] of [
+      ['tA-r0', { direction: 'up' }],
+      ['tA-r4', { direction: 'down' }],
+      ['tA-r0', { toTop: true }],
+      ['tA-r0', { afterRowId: null }],
+      ['tA-r2', { afterRowId: 'tA-r1' }], // ya va detrás de r1
+      ['tA-r2', { afterRowId: 'tA-r2' }], // detrás de sí misma
+      ['tA-r4', { afterRowId: 'tA-r4' }],
+    ] as const) {
+      const out = await svc.moveRow('tA', row, body, A);
+      expect(out, row + ' ' + JSON.stringify(body)).toMatchObject({ moved: false, changed: [], revision: 1 });
+    }
+    expect((await svc.moveRow('tA', 'tA-r0', { direction: 'up' }, A)).index).toBe(1);
+    expect(ids(db)).toEqual(['r0', 'r1', 'r2', 'r3', 'r4']);
+    expect(db.$executeRaw.mock.calls).toHaveLength(0);
+    expect(db.state.tables.find((t: any) => t.id === 'tA').revision).toBe(1);
+    expect(audit.append).not.toHaveBeenCalled();
+  });
+
+  it('respeta los huecos de posición: reutiliza los valores de la ventana y no toca el resto', async () => {
+    const gapped = [0, 10, 20, 30, 40].map((p, i) => ({ ...rowOf('acme', 'tA', i), position: p }));
+    const { svc, db } = setup({ rows: gapped });
+    const out = await svc.moveRow('tA', 'tA-r3', { direction: 'up' }, A);
+    expect(out.changed).toEqual([{ id: 'tA-r3', position: 20 }, { id: 'tA-r2', position: 30 }]);
+    expect(db.state.rows.map((r: any) => r.position)).toEqual([0, 10, 30, 20, 40]);
+  });
+
+  it('si la ventana trae posiciones repetidas renumera 0..n-1 (y el orden sigue siendo el esperado)', async () => {
+    const dup = [0, 0, 0, 3].map((p, i) => ({ ...rowOf('acme', 'tA', i), position: p }));
+    const { svc, db } = setup({ rows: dup });
+    const out = await svc.moveRow('tA', 'tA-r2', { direction: 'up' }, A);
+    expect(out.moved).toBe(true);
+    expect(ids(db)).toEqual(['r0', 'r2', 'r1', 'r3']);
+    expect(new Set(db.state.rows.map((r: any) => r.position)).size).toBe(4);
+  });
+
+  it('validación: una sola forma de mover y valores válidos (400); fila inexistente 404; referencia ajena 400', async () => {
+    const { svc, db } = setup({ rows: [...rows(3), rowOf('beta', 'tB', 0)] });
+    for (const body of [{}, { direction: 'left' }, { direction: 'up', toTop: true }, { toTop: false }, { afterRowId: 7 }, { afterRowId: '' }, 'x', null] as any[]) {
+      expect(await catchErr(svc.moveRow('tA', 'tA-r1', body, A)), JSON.stringify(body)).toBeInstanceOf(BadRequestException);
+    }
+    expect(await catchErr(svc.moveRow('tA', 'no-existe', { toTop: true }, A))).toBeInstanceOf(NotFoundException);
+    // la referencia debe ser de ESTA tabla y de este tenant
+    expect(await catchErr(svc.moveRow('tA', 'tA-r1', { afterRowId: 'tB-r0' }, A))).toBeInstanceOf(BadRequestException);
+    expect(await catchErr(svc.moveRow('tA', 'tA-r1', { afterRowId: 'no-existe' }, A))).toBeInstanceOf(BadRequestException);
+    expect(ids(db).filter((x: string) => x.startsWith('r'))).toEqual(['r0', 'r1', 'r2']);
+    expect(db.state.tables.find((t: any) => t.id === 'tA').revision).toBe(1);
+  });
+
+  it('tenant ajeno: la tabla de otro tenant responde 404 aunque la fila exista, y nada cambia', async () => {
+    const { svc, db, audit } = setup({ rows: [rowOf('acme', 'tA', 0), rowOf('acme', 'tA', 1), rowOf('beta', 'tB', 0), rowOf('beta', 'tB', 1)] });
+    expect(await catchErr(svc.moveRow('tB', 'tB-r1', { toTop: true }, A))).toBeInstanceOf(NotFoundException);
+    expect(await catchErr(svc.moveRow('tB', 'tB-r1', { direction: 'up' }, A))).toBeInstanceOf(NotFoundException);
+    expect(db.state.rows.filter((r: any) => r.tenantId === 'beta').map((r: any) => r.position)).toEqual([0, 1]);
+    expect(audit.append).not.toHaveBeenCalled();
+    expect(db.$queryRaw.mock.calls).toHaveLength(0); // 404 antes de abrir la transacción
+  });
+
+  it('la transacción bloquea la tabla (FOR UPDATE) acotada al tenant', async () => {
+    const { svc, db } = setup({ rows: rows(3) });
+    await svc.moveRow('tA', 'tA-r1', { direction: 'up' }, A);
+    const [strings, ...vals] = db.$queryRaw.mock.calls[0]!;
+    expect(strings.join('?')).toContain('FOR UPDATE');
+    expect(strings.join('?')).toContain('"tenantId"');
+    expect(vals).toEqual(['tA', 'acme']);
+  });
+
+  it('concurrencia: varios movimientos a la vez se serializan y las posiciones siguen siendo una permutación sin repetidos', async () => {
+    const { svc, db } = setup({ rows: rows(6) });
+    const out = await Promise.all([
+      svc.moveRow('tA', 'tA-r5', { toTop: true }, A), // r5 r0 r1 r2 r3 r4
+      svc.moveRow('tA', 'tA-r0', { direction: 'down' }, A), // r5 r1 r0 r2 r3 r4
+      svc.moveRow('tA', 'tA-r3', { afterRowId: 'tA-r5' }, A), // r5 r3 r1 r0 r2 r4
+      svc.moveRow('tA', 'tA-r2', { direction: 'up' }, A), // r5 r3 r1 r2 r0 r4
+    ]);
+    expect(out.every((o) => o.moved)).toBe(true);
+    expect(out.map((o) => o.revision)).toEqual([2, 3, 4, 5]); // cada uno vio el resultado del anterior
+    expect(db.state.tables.find((t: any) => t.id === 'tA').revision).toBe(5);
+    expect(new Set(db.state.rows.map((r: any) => r.position)).size).toBe(6);
+    expect(ids(db)).toEqual(['r5', 'r3', 'r1', 'r2', 'r0', 'r4']);
+  });
+
+  it('un movimiento fallido no deja la cola de transacciones bloqueada', async () => {
+    const { svc } = setup({ rows: rows(3) });
+    const [bad, good] = await Promise.allSettled([svc.moveRow('tA', 'tA-r1', { afterRowId: 'no-existe' }, A), svc.moveRow('tA', 'tA-r1', { toTop: true }, A)]);
+    expect(bad.status).toBe('rejected');
+    expect(good.status).toBe('fulfilled');
   });
 });
 
@@ -446,6 +658,10 @@ describe('prueba (dry-run)', () => {
     expect(out.matches.map((m) => m.rowId)).toEqual(['tA-r0', 'tA-r2']);
     expect(out.explain.find((e) => e.rowId === 'tA-r1')?.failedAt).toMatchObject({ index: 1, column: 'montoMin', op: 'gte' });
     expect(out.revision).toBe(1);
+    // `order` = lugar en el orden de evaluación de TODA la tabla (para numerar sin cargar las filas)
+    expect(out.matches.map((m) => m.order)).toEqual([1, 3]);
+    expect(out.first?.order).toBe(1);
+    expect(out.explain.find((e) => e.rowId === 'tA-r1')?.order).toBe(2);
     expect(audit.append).not.toHaveBeenCalled();
     expect(db.lookupRow.updateMany.mock.calls).toHaveLength(0);
     expect(db.state.tables.find((t: any) => t.id === 'tA').revision).toBe(1);
@@ -482,12 +698,14 @@ describe('auditoría: nunca valores de celdas', () => {
     await svc.updateRow('tA', row.id, { values: { ...secret, nombre: 'Otro Secreto' } }, A);
     await svc.importRows('tA', [secret], true, A);
     await svc.reorder('tA', [(await svc.listRows('tA', {}, 'acme')).items[0]!.id], A);
+    await svc.createRow('tA', { values: secret }, A);
+    await svc.moveRow('tA', (await svc.listRows('tA', {}, 'acme')).items[0]!.id, { direction: 'down' }, A);
     await svc.update('tA', { name: 'Nombre de tabla', columns: [...columnsFixture, { key: 'x', label: 'Etiqueta nueva', type: 'text' }] }, A);
     const all = JSON.stringify(events(audit));
     for (const s of ['ÁreaSecreta', 'responsable-secreto', 'Nombre Secreto', 'Otro Secreto', 'secreto@x.mx', '123456', 'Nombre de tabla']) expect(all).not.toContain(s);
     expect(events(audit).every((e) => e.tenantId === 'acme' && e.actorId === 'ana')).toBe(true);
     expect(events(audit).map((e) => e.action)).toEqual([
-      'LOOKUP_ROW_CREATED', 'LOOKUP_ROW_UPDATED', 'LOOKUP_ROWS_IMPORTED', 'LOOKUP_ROWS_REORDERED', 'LOOKUP_TABLE_UPDATED',
+      'LOOKUP_ROW_CREATED', 'LOOKUP_ROW_UPDATED', 'LOOKUP_ROWS_IMPORTED', 'LOOKUP_ROWS_REORDERED', 'LOOKUP_ROW_CREATED', 'LOOKUP_ROW_MOVED', 'LOOKUP_TABLE_UPDATED',
     ]);
   });
 

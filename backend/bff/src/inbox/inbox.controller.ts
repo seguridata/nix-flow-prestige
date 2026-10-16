@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { InboxService, type InboxItem } from './inbox.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantIdResolver } from '../prisma/tenant-id-resolver';
 
 /**
  * `/me/*` — siempre relativo al usuario autenticado. La identidad sale del
@@ -14,6 +15,7 @@ export class InboxController {
   constructor(
     private readonly inbox: InboxService,
     private readonly prisma: PrismaService,
+    private readonly tenantIds: TenantIdResolver,
   ) {}
 
   @Get('inbox')
@@ -34,11 +36,12 @@ export class InboxController {
   @Get('colleagues')
   async colleagues(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
     const args = pageArgs(page);
+    // `user.tenantId` es el slug (o el uuid); `TenantMembership.tenantId` guarda el uuid.
+    // Se traduce y se filtra por la columna; tenant desconocido => directorio vacío.
+    const tenantUuid = await this.tenantIds.toId(user.tenantId);
     const rows = await this.prisma.tenantMembership.findMany({
       where: {
-        // `user.tenantId` del JWT puede ser el slug o el id del tenant;
-        // `TenantMembership.tenantId` es el id. Se acepta cualquiera de los dos.
-        tenant: { OR: [{ id: user.tenantId }, { slug: user.tenantId }] },
+        tenantId: tenantUuid ?? '',
         active: true,
         OR: [{ name: { not: null } }, { email: { not: null } }],
       },
@@ -62,15 +65,15 @@ export class InboxController {
   async snapshot(@CurrentUser() user: AuthenticatedUser) {
     const userId = user.actorId;
     const [unread, pendingTasks, pendingSign] = await Promise.all([
-      this.prisma.userNotification.count({ where: { userId, read: false } }),
+      this.prisma.userNotification.count({ where: { userId, tenantId: user.tenantId, read: false } }),
       this.prisma.humanTask.count({
-        where: { signerId: userId, status: { in: ['CREADA', 'ASIGNADA'] } },
+        where: { tenantId: user.tenantId, signerId: userId, status: { in: ['CREADA', 'ASIGNADA'] } },
       }),
       this.prisma.signer.count({
         where: {
           OR: [{ signerId: userId }, { delegatedTo: userId }],
           status: 'PENDIENTE',
-          signatureRequest: { status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
+          signatureRequest: { tenantId: user.tenantId, status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
         },
       }),
     ]);

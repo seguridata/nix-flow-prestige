@@ -10,7 +10,7 @@ import { SignatureFieldsService } from '../signature-fields/signature-fields.ser
 import { FoldersService } from '../folders/folders.service';
 import { flowToBpmn, missingForConditions, publicFlow, publicWho } from '../flow/flow';
 import type { Flow, FlowValues, ResolvedStep, Who } from '../flow/flow.types';
-import { FlowResolverService, type LookupPick } from '../lookup-tables/flow-resolver.service';
+import { FlowResolverService, type AwaitingInput, type LookupPick } from '../lookup-tables/flow-resolver.service';
 import { countPages, fillPdf } from './pdf-fill';
 import { buildFormPdf, type FormPdfResult } from './form-pdf';
 import { AttachmentsService, type MaterializedAttachment } from '../attachments/attachments.service';
@@ -334,7 +334,7 @@ export class DocumentTemplatesService {
     const flow = t.flow as unknown as Flow;
     const values = this.looseValues(rawValues);
     const required = new Set(flow.variables.filter((v) => v.required).map((v) => v.key));
-    const { resolved, picks } = await this.resolver.resolve(flow, values, actor.tenantId);
+    const { resolved, picks, awaiting } = await this.resolver.resolve(flow, values, actor.tenantId);
     return {
       steps: resolved.map((r) => ({
         stepId: r.step.id,
@@ -342,7 +342,7 @@ export class DocumentTemplatesService {
         role: r.step.role,
         who: publicWho(r.step.who),
         active: r.active,
-        ...this.lookupInfo(r, picks),
+        ...this.lookupInfo(r, picks, awaiting),
       })),
       missing: missingForConditions(flow, values).filter((k) => required.has(k)),
     };
@@ -362,7 +362,7 @@ export class DocumentTemplatesService {
     // 1) Todo lo que puede fallar por datos del usuario, ANTES de crear nada.
     const clean = this.coerceValues(flow, fields, input.values, actor);
     const resolution = await this.resolver.resolve(flow, clean, actor.tenantId, { strict: true });
-    const { resolved, picks } = resolution;
+    const { resolved, picks, awaiting } = resolution;
     const { signers, stepSigner } = this.signersFor(resolved, input.askedSigners ?? {}, actor, picks);
     if (input.folderId) await this.folders.assertOwned(input.folderId, { tenantId: actor.tenantId, ownerId: actor.actorId });
     // Anexos (ADR-008): TODO se valida aquí, antes de crear nada.
@@ -462,7 +462,7 @@ export class DocumentTemplatesService {
       signatureRequestId: request.id,
       signatureFieldsPlaced,
       attachments: attached.map((a) => ({ documentId: a.documentId, attachmentKey: a.specKey, sha256: a.sha256 })),
-      steps: resolved.map((r) => ({ stepId: r.step.id, label: r.step.label, role: r.step.role, who: publicWho(r.step.who), active: r.active, ...this.lookupInfo(r, picks) })),
+      steps: resolved.map((r) => ({ stepId: r.step.id, label: r.step.label, role: r.step.role, who: publicWho(r.step.who), active: r.active, ...this.lookupInfo(r, picks, awaiting) })),
     };
   }
 
@@ -566,9 +566,14 @@ export class DocumentTemplatesService {
     return clean;
   }
 
-  /** Para la vista previa y el resultado: quién salió de la consulta, o `unresolved` si se cae a preguntar. */
-  private lookupInfo(r: ResolvedStep, picks: Map<string, LookupPick | null>) {
+  /**
+   * Para la vista previa y el resultado: quién salió de la consulta; `awaiting` (variables que faltan) mientras los datos de
+   * entrada no estén completos; `unresolved` solo si estaban completos y la tabla no devolvió a nadie.
+   */
+  private lookupInfo(r: ResolvedStep, picks: Map<string, LookupPick | null>, awaiting: Map<string, AwaitingInput[]>) {
     if (!r.active || r.step.who.type !== 'lookup') return {};
+    const wait = awaiting.get(r.step.id);
+    if (wait?.length) return { awaiting: wait.map(({ key, label }) => ({ key, label })) };
     const m = picks.get(r.step.id);
     return m ? { resolved: { signerId: m.signerId, name: m.name, email: m.email } } : { unresolved: true as const };
   }

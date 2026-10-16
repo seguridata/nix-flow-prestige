@@ -215,9 +215,9 @@ function createFakePrisma(seed: {
       findFirst: async ({
         where,
       }: {
-        where: { tenant: { OR: { id?: string; slug?: string }[] }; OR: { userId?: string; email?: { equals: string } }[] };
+        where: { tenantId: string; active: boolean; OR: { userId?: string; email?: { equals: string } }[] };
       }) => {
-        const tenantKeys = where.tenant.OR.flatMap((o) => [o.id, o.slug]);
+        const tenantKeys = [where.tenantId];
         return (
           (seed.members ?? []).find(
             (m) =>
@@ -297,6 +297,7 @@ function makeService(
     policyService as never,
     undefined as never,
     documents as never,
+    { toId: async (t: string) => t } as never,
   );
   return { service, requests, signers, doc, manifests, calls, realtime, evidence, workflow, signing, storage, collab, mail, documents };
 }
@@ -436,7 +437,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
     });
     const result = await service.signFromPublicLink(REQUEST_ID, { signerId: 'unico', ...SIGN });
     expect(result.requestStatus).toBe('COMPLETADA');
-    expect(workflow.signalSigned).toHaveBeenCalledWith(REQUEST_ID, 'unico');
+    expect(workflow.signalSigned).toHaveBeenCalledWith(REQUEST_ID, 'unico', 'seguridata');
     expect(evidence.generateForRequest).toHaveBeenCalledTimes(1);
     expect(mail.sendCompleted).toHaveBeenCalledTimes(1);
   });
@@ -654,7 +655,7 @@ describe('SignatureRequestsService.reject', () => {
     expect(result.status).toBe('RECHAZADA');
     expect(signers.get('signer-primero')?.status).toBe('RECHAZADO');
     expect(requests.get(REQUEST_ID)?.status).toBe('RECHAZADA');
-    expect(workflow.signalRejected).toHaveBeenCalledWith(REQUEST_ID, 'primero');
+    expect(workflow.signalRejected).toHaveBeenCalledWith(REQUEST_ID, 'primero', 'seguridata');
     expect(collab.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'REQUEST_REJECTED' }));
   });
 
@@ -716,7 +717,7 @@ describe('SignatureRequestsService.cancel', () => {
         payload: expect.objectContaining({ cancelledSigners: ['segundo', 'tercero'] }),
       }),
     );
-    expect(workflow.signalRejected).toHaveBeenCalledWith(REQUEST_ID, 'maria');
+    expect(workflow.signalRejected).toHaveBeenCalledWith(REQUEST_ID, 'maria', 'seguridata');
   });
 
   it('cancelar una solicitud ya cerrada no hace nada (sin auditoría ni señal)', async () => {
@@ -752,7 +753,7 @@ describe('SignatureRequestsService.delegate', () => {
     const { service, signers, workflow, collab } = makeService({ requests: [baseRequest()], signers: twoSigners(), members });
     await service.delegate(REQUEST_ID, { fromSignerId: 'primero', toSignerId: 'SARA@a.mx' }, 'seguridata');
     expect(signers.get('signer-primero')).toMatchObject({ delegatedTo: 'suplente', delegatedToName: 'Sara Suplente' });
-    expect(workflow.reassignForDelegation).toHaveBeenCalledWith(REQUEST_ID, 'primero', 'suplente');
+    expect(workflow.reassignForDelegation).toHaveBeenCalledWith(REQUEST_ID, 'primero', 'suplente', 'seguridata');
     expect(collab.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELEGATED' }));
   });
 

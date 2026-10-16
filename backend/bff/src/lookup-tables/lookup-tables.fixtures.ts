@@ -19,9 +19,26 @@ type Rec = Record<string, any>;
 
 const matches = (rec: Rec, where: Rec = {}): boolean =>
   Object.entries(where).every(([k, v]) => {
-    if (v && typeof v === 'object' && !Array.isArray(v) && 'in' in v) return (v.in as unknown[]).includes(rec[k]);
+    if (k === 'OR') return (v as Rec[]).some((w) => matches(rec, w));
+    if (k === 'AND') return (v as Rec[]).every((w) => matches(rec, w));
+    if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      const op = v as Rec;
+      if ('in' in op && !(op.in as unknown[]).includes(rec[k])) return false;
+      if ('gt' in op && !(rec[k] > op.gt)) return false;
+      if ('gte' in op && !(rec[k] >= op.gte)) return false;
+      if ('lt' in op && !(rec[k] < op.lt)) return false;
+      if ('lte' in op && !(rec[k] <= op.lte)) return false;
+      return true;
+    }
     return rec[k] === v;
   });
+
+/** Sin mayúsculas ni acentos: lo que hace en SQL la búsqueda (`translate(lower(...))`). */
+const fold = (v: unknown) =>
+  String(v ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
 
 const sorter = (orderBy: Rec[] | Rec | undefined) => {
   const list = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
@@ -42,6 +59,7 @@ const pick = (rec: Rec, select?: Rec) => {
 
 export function makeLookupDb(seed: { tables?: Rec[]; rows?: Rec[]; templates?: Rec[]; definitions?: Rec[] } = {}) {
   let n = 0;
+  let queue: Promise<unknown> = Promise.resolve();
   const id = (p: string) => `${p}-${String(++n).padStart(4, '0')}`;
   const state: { tables: Rec[]; rows: Rec[]; templates: Rec[]; definitions: Rec[] } = {
     tables: (seed.tables ?? []).map((t) => ({ revision: 1, active: true, description: null, ...t })),
@@ -134,7 +152,48 @@ export function makeLookupDb(seed: { tables?: Rec[]; rows?: Rec[]; templates?: R
     },
     documentTemplate: { findMany: spy(async ({ where }: Rec) => state.templates.filter((t) => matches(t, where))) },
     processDefinition: { findMany: spy(async ({ where }: Rec) => state.definitions.filter((t) => matches(t, where))) },
-    $transaction: spy(async (cb: (tx: Rec) => unknown) => cb(db)),
+    /**
+     * Las transacciones se serializan (cola): en producción lo garantiza el `SELECT … FOR UPDATE` sobre la tabla, y así las
+     * pruebas de concurrencia (dos movimientos a la vez) ejercen el mismo contrato.
+     */
+    $transaction: spy((cb: (tx: Rec) => unknown) => {
+      const run = queue.then(() => cb(db));
+      queue = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    }),
+    /** SQL crudo de lectura: el bloqueo `FOR UPDATE` de la tabla y la búsqueda de filas (conteo y página) con `jsonb_each_text`. */
+    $queryRaw: spy(async (arg: any, ...rest: any[]) => {
+      const strings: readonly string[] = Array.isArray(arg) ? arg : arg.strings;
+      const v: any[] = Array.isArray(arg) ? rest : arg.values;
+      const sql = strings.join('?');
+      if (sql.includes('FOR UPDATE')) {
+        const [tableId, tenantId] = v as [string, string];
+        return state.tables.some((t) => t.id === tableId && t.tenantId === tenantId) ? [{ id: tableId }] : [];
+      }
+      if (sql.includes('jsonb_each_text')) {
+        // Mismo orden de valores que arma el servicio: tableId, tenantId, [active], patrón LIKE, [position, id], [limit].
+        const vals = [...v];
+        const tableId = vals.shift();
+        const tenantId = vals.shift();
+        const active = sql.includes('"active" =') ? (vals.shift() as boolean) : undefined;
+        const like = vals.shift() as string;
+        const needle = like.slice(1, -1).replace(/\\([\\%_])/g, '$1');
+        let out = state.rows
+          .filter((r) => r.tableId === tableId && r.tenantId === tenantId && (active === undefined || r.active === active))
+          .filter((r) => Object.values(r.values as Rec).some((x) => x !== null && x !== undefined && fold(x).includes(needle)))
+          .sort(sorter([{ position: 'asc' }, { id: 'asc' }]));
+        if (sql.includes('count(*)')) return [{ n: out.length }];
+        if (sql.includes('(r."position", r."id") >')) {
+          const [p, i] = vals.splice(0, 2) as [number, string];
+          out = out.filter((r) => r.position > p || (r.position === p && r.id > i));
+        }
+        return out.slice(0, vals.shift() as number).map((r) => ({ id: r.id, values: r.values, position: r.position, active: r.active }));
+      }
+      throw new Error(`SQL crudo de lectura no soportado por el fake: ${sql}`);
+    }),
     /** Las dos sentencias crudas del servicio: reordenar (position) y quitar claves de columnas (values - text[]). */
     $executeRaw: spy(async (strings: TemplateStringsArray, ...v: any[]) => {
       const sql = strings.join('?');

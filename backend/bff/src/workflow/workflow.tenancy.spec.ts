@@ -33,7 +33,7 @@ function make(tasks: Task[], opts: { members?: string[]; requests?: Array<{ id: 
     case: { findFirst: async () => null },
     signer: { findMany: async () => [] },
   };
-  return new WorkflowService(prisma as never, {} as never, {} as never, {} as never);
+  return new WorkflowService(prisma as never, {} as never, {} as never, {} as never, { toId: async (t: string) => t } as never);
 }
 
 const user = (over: Partial<WorkflowActor> = {}): WorkflowActor => ({

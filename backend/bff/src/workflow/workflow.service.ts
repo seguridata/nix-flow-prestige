@@ -12,6 +12,7 @@ import {
   WorkflowNotFoundError,
 } from '@temporalio/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantIdResolver } from '../prisma/tenant-id-resolver';
 import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { EvidenceService } from '../evidence/evidence.service';
 import { SignerMailService } from '../notifications/signer-mail.service';
@@ -69,6 +70,7 @@ export class WorkflowService {
     private readonly evidence: EvidenceService,
     private readonly mail: SignerMailService,
     private readonly auditChain: AuditChainService,
+    private readonly tenantIds: TenantIdResolver,
   ) {}
 
   private async client(): Promise<Client> {
@@ -240,7 +242,7 @@ export class WorkflowService {
     if (!owned) throw new NotFoundException('Solicitud de firma no encontrada');
     const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
     const tasks = await this.prisma.humanTask.findMany({
-      where: { signatureRequestId },
+      where: { tenantId, signatureRequestId },
       orderBy: { createdAt: 'asc' },
     });
     let live: ContratoWorkflowState | null = null;
@@ -355,10 +357,14 @@ export class WorkflowService {
     const task = await this.loadTask(taskId, user.tenantId);
     this.assertTaskActor(task, user);
     // El destino debe ser miembro activo del tenant (directorio real).
-    const member = await this.prisma.tenantMembership.findFirst({
-      where: { userId: targetUserId, active: true, tenant: { slug: user.tenantId, active: true } },
-      select: { id: true },
-    });
+    // TenantMembership.tenantId guarda el uuid; user.tenantId es el slug.
+    const tenantUuid = await this.tenantIds.toId(user.tenantId);
+    const member = tenantUuid
+      ? await this.prisma.tenantMembership.findFirst({
+          where: { tenantId: tenantUuid, userId: targetUserId, active: true, tenant: { active: true } },
+          select: { id: true },
+        })
+      : null;
     if (!member) throw new BadRequestException('El destinatario no pertenece a este tenant');
     return this.prisma.humanTask.update({
       where: { id: task.id },
@@ -373,13 +379,13 @@ export class WorkflowService {
    * `SignatureRequestsService.cancel()`, que ya cargó la solicitud por tenant)
    * debe haberlo hecho. Idempotente y tolerante a que Temporal no esté.
    */
-  async cancelRun(signatureRequestId: string) {
+  async cancelRun(signatureRequestId: string, tenantId: string) {
     await this.prisma.humanTask.updateMany({
-      where: { signatureRequestId, status: { in: OPEN_TASK } },
+      where: { tenantId, signatureRequestId, status: { in: OPEN_TASK } },
       data: { status: 'CANCELADA' },
     });
     await this.prisma.workflowRun.updateMany({
-      where: { signatureRequestId },
+      where: { tenantId, signatureRequestId },
       data: { status: 'CANCELADO' },
     });
     const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
@@ -407,9 +413,10 @@ export class WorkflowService {
     return r?.tenantId;
   }
 
-  async signalSigned(signatureRequestId: string, signerId: string) {
+  async signalSigned(signatureRequestId: string, signerId: string, tenantId: string) {
     await this.prisma.humanTask.updateMany({
       where: {
+        tenantId,
         signatureRequestId,
         status: { in: ['CREADA', 'ASIGNADA'] },
         OR: [{ signerId }, { delegatedFrom: signerId }],
@@ -419,9 +426,9 @@ export class WorkflowService {
     await this.signal(signatureRequestId, 'sign', signerId);
   }
 
-  async signalRejected(signatureRequestId: string, signerId: string) {
+  async signalRejected(signatureRequestId: string, signerId: string, tenantId: string) {
     await this.prisma.humanTask.updateMany({
-      where: { signatureRequestId, status: { in: ['CREADA', 'ASIGNADA'] } },
+      where: { tenantId, signatureRequestId, status: { in: ['CREADA', 'ASIGNADA'] } },
       data: { status: 'CANCELADA' },
     });
     await this.signal(signatureRequestId, 'reject', signerId);
@@ -471,7 +478,7 @@ export class WorkflowService {
     const tenant = await this.resolveTenant(input.signatureRequestId, tenantId);
     // Idempotente frente a reintentos del activity de Temporal.
     const existing = await this.prisma.humanTask.count({
-      where: { signatureRequestId: input.signatureRequestId },
+      where: { tenantId: tenant, signatureRequestId: input.signatureRequestId },
     });
     if (existing > 0) return;
 
@@ -505,27 +512,27 @@ export class WorkflowService {
 
   /** Idempotente: todos los updates están condicionados al estado abierto. */
   async expire(signatureRequestId: string, tenantId?: string) {
-    await this.assertRequestTenant(signatureRequestId, tenantId, 'expire');
+    const tenant = await this.assertRequestTenant(signatureRequestId, tenantId, 'expire');
     await this.prisma.signatureRequest.updateMany({
       where: { id: signatureRequestId, status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
       data: { status: 'EXPIRADA' },
     });
     await this.prisma.humanTask.updateMany({
-      where: { signatureRequestId, status: { in: ['CREADA', 'ASIGNADA'] } },
+      where: { tenantId: tenant, signatureRequestId, status: { in: ['CREADA', 'ASIGNADA'] } },
       data: { status: 'EXPIRADA' },
     });
     await this.prisma.workflowRun.updateMany({
-      where: { signatureRequestId },
+      where: { tenantId: tenant, signatureRequestId },
       data: { status: 'EXPIRADO' },
     });
   }
 
   /** Idempotente: `generateForRequest` devuelve el manifiesto existente si ya se generó. */
   async seal(signatureRequestId: string, tenantId?: string) {
-    await this.assertRequestTenant(signatureRequestId, tenantId, 'seal-evidence');
+    const tenant = await this.assertRequestTenant(signatureRequestId, tenantId, 'seal-evidence');
     await this.evidence.generateForRequest(signatureRequestId);
     await this.prisma.workflowRun.updateMany({
-      where: { signatureRequestId },
+      where: { tenantId: tenant, signatureRequestId },
       data: { status: 'COMPLETADO' },
     });
   }
@@ -555,6 +562,7 @@ export class WorkflowService {
 
     const openTasks = await this.prisma.humanTask.findMany({
       where: {
+        tenantId: request.tenantId,
         signatureRequestId: cmd.signatureRequestId,
         status: { in: ['CREADA', 'ASIGNADA'] },
         // En orden SECUENCIAL el workflow apunta al firmante del orden; si está
@@ -574,7 +582,7 @@ export class WorkflowService {
     let escalationRecipients: string[] = [];
     if (cmd.kind === 'ESCALATION') {
       const watchers = await this.prisma.processWatcher.findMany({
-        where: { signatureRequestId: cmd.signatureRequestId },
+        where: { tenantId: request.tenantId, signatureRequestId: cmd.signatureRequestId },
       });
       escalationRecipients = [
         ...new Set([
@@ -641,9 +649,15 @@ export class WorkflowService {
    * M07 — reasigna las tareas de firma abiertas de `fromSignerId` a
    * `toSignerId` (delegación / «fuera de oficina»), dejando traza del origen.
    */
-  async reassignForDelegation(signatureRequestId: string, fromSignerId: string, toSignerId: string) {
+  async reassignForDelegation(
+    signatureRequestId: string,
+    fromSignerId: string,
+    toSignerId: string,
+    tenantId: string,
+  ) {
     await this.prisma.humanTask.updateMany({
       where: {
+        tenantId,
         signatureRequestId,
         // Re-delegación: la tarea puede estar ya bajo un suplente anterior.
         OR: [{ signerId: fromSignerId }, { delegatedFrom: fromSignerId }],

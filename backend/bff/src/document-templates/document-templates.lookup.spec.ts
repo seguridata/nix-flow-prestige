@@ -163,10 +163,49 @@ describe('previewFlow con pasos lookup', () => {
     expect(db.lookupTable.findMany.mock.calls[0]![0].where).toMatchObject({ tenantId: 'acme', active: true });
   });
 
-  it('con los valores a medio capturar no truena: lo que falta queda sin resolver', async () => {
+  it('con los valores a medio capturar no truena: lo que falta queda «por asignar» (awaiting), no «sin resolver»', async () => {
     const { svc } = await setup();
     const out = await svc.previewFlow('t1', {}, actor);
-    expect(byId(out.steps).aut_area).toMatchObject({ unresolved: true });
+    const by = byId(out.steps);
+    expect(by.aut_area.awaiting).toEqual([{ key: 'area', label: 'Área' }]);
+    expect(by.aut_area.unresolved).toBeUndefined();
+    expect(by.aut_area.resolved).toBeUndefined();
+    expect(by.aut_tipo.awaiting.map((w: any) => w.key)).toEqual(['tipoGasto', 'concepto', 'monto']);
+    expect(by.aut_tipo.awaiting.map((w: any) => w.label)).toEqual(['Tipo', 'Concepto', 'Monto']);
+    expect(by.ask.awaiting).toBeUndefined();
+    expect(by.sol.awaiting).toBeUndefined();
+    expect(by.solo_viaje.awaiting).toBeUndefined(); // inactivo
+  });
+
+  it('awaiting y unresolved son excluyentes: con los datos completos y sin coincidencia solo hay unresolved', async () => {
+    const { svc } = await setup();
+    const partial = byId((await svc.previewFlow('t1', { area: 'QA' }, actor)).steps);
+    expect(partial.aut_area.resolved?.signerId).toBe('jefe-qa');
+    expect(partial.aut_area.awaiting).toBeUndefined();
+    expect(partial.aut_tipo.awaiting).toBeDefined();
+    expect(partial.aut_tipo.unresolved).toBeUndefined();
+    const full = byId((await svc.previewFlow('t1', { ...values, area: 'RH' }, actor)).steps);
+    expect(full.aut_area.unresolved).toBe(true);
+    expect(full.aut_area.awaiting).toBeUndefined();
+  });
+
+  it('una variable no obligatoria vacía cuenta como entrada completa: se consulta (puede no coincidir), no se espera', async () => {
+    const f: Flow = { ...flow, variables: flow.variables.map((v) => (v.key === 'concepto' ? { ...v, required: false } : v)) };
+    const { svc } = await setup({ templateFlow: f });
+    const out = byId((await svc.previewFlow('t1', { area: 'QA', tipoGasto: 'Marketing', monto: 500 }, actor)).steps);
+    expect(out.aut_tipo.awaiting).toBeUndefined();
+    // entrada completa (aunque vacía): la consulta corrió y la fila exige un concepto → sin coincidencia, no «por asignar»
+    expect(out.aut_tipo.unresolved).toBe(true);
+  });
+
+  it('administrador y usuario reciben lo mismo en awaiting, y nunca la consulta (tabla, columnas)', async () => {
+    const { svc } = await setup();
+    const u = await svc.previewFlow('t1', {}, actor);
+    const a = await svc.previewFlow('t1', {}, admin);
+    expect(a.steps).toEqual(u.steps);
+    const json = JSON.stringify(u);
+    for (const secret of ['responsables-gasto', 'montoMin', 'montoMax', 'signerId', 'etapa']) expect(json).not.toContain(secret);
+    expect(byId(u.steps).aut_area.who).toEqual({ type: 'lookup', prompt: '¿Quién autoriza el área?' });
   });
 
   it('las variables derivadas deciden qué pasos aplican en la vista previa', async () => {
@@ -196,6 +235,16 @@ describe('instantiate con pasos lookup', () => {
     const out = await svc.instantiate('t1', { values: { ...values, area: 'RH' }, askedSigners: { aut_area: { signerId: 'manual' }, ask: { signerId: 'carlos' } } }, actor);
     expect(requests.create.mock.calls[0]![0].signers.map((s: any) => s.signerId)).toEqual(['maria', 'manual', 'dir-mkt', 'carlos']);
     expect((out.steps.find((s) => s.stepId === 'aut_area') as any).unresolved).toBe(true);
+  });
+
+  it('instantiate usa los mismos nombres: con los datos completos no hay awaiting; si faltan requeridos → 400 sin crear nada', async () => {
+    const { svc, requests } = await setup();
+    const out = await svc.instantiate('t1', { values, askedSigners: { ask: { signerId: 'c' } } }, actor);
+    expect(out.steps.every((s: any) => s.awaiting === undefined)).toBe(true);
+    expect(requests.create).toHaveBeenCalledTimes(1);
+    const err: any = await svc.instantiate('t1', { values: { area: 'QA' }, askedSigners: { ask: { signerId: 'c' } } }, actor).catch((e) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(requests.create).toHaveBeenCalledTimes(1);
   });
 
   it('sin coincidencia y sin respuesta manual → 400, sin crear nada ni auditar', async () => {

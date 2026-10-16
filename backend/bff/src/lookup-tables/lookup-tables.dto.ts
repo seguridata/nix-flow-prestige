@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PageQueryDto } from '../common/pagination';
 import { MAX_COLUMNS, MAX_ROWS } from './lookup-validation';
 
@@ -19,8 +19,19 @@ export class UpdateTableDto {
   @IsOptional() @IsBoolean() active?: boolean;
 }
 
+/** `?active=true|false` llega como texto: `enableImplicitConversion` convertiría 'false' en true, por eso se interpreta a mano. */
+const toBool = ({ value }: { value: unknown }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value);
+
 export class RowsQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(100) q?: string;
+  @IsOptional() @Transform(toBool) @IsBoolean() active?: boolean;
+}
+
+/** Exactamente UNA de las tres formas (se valida en el servicio): `direction`, `toTop` o `afterRowId` (null = al inicio). */
+export class MoveRowDto {
+  @IsOptional() @IsIn(['up', 'down']) direction?: 'up' | 'down';
+  @IsOptional() @IsBoolean() toTop?: boolean;
+  @IsOptional() @IsString() @MaxLength(64) afterRowId?: string | null;
 }
 
 export class CreateRowDto {

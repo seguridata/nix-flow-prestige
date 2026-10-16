@@ -109,7 +109,7 @@ export class WorkflowReconcilerService {
 
   /** @returns true si se reinició, false si quedó FALLIDO. */
   private async handleFailed(
-    run: { signatureRequestId: string; processKey: string; tenantId: string | null; lastError: string | null },
+    run: { signatureRequestId: string; processKey: string; tenantId: string; lastError: string | null },
     reason: string,
   ): Promise<boolean> {
     const alreadyRestarted = (run.lastError ?? '').includes(RESTART_MARK);
@@ -135,14 +135,14 @@ export class WorkflowReconcilerService {
       );
       // startInstance limpia lastError: se deja la marca para no reiniciar en bucle.
       await this.prisma.workflowRun.updateMany({
-        where: { signatureRequestId: run.signatureRequestId },
+        where: { tenantId: request.tenantId, signatureRequestId: run.signatureRequestId },
         data: { lastError: `${RESTART_MARK} (${reason})` },
       });
       return true;
     }
 
     await this.prisma.workflowRun.updateMany({
-      where: { signatureRequestId: run.signatureRequestId, status: 'ACTIVO' },
+      where: { tenantId: run.tenantId, signatureRequestId: run.signatureRequestId, status: 'ACTIVO' },
       data: { status: 'FALLIDO', lastError: alreadyRestarted ? `${reason} ${RESTART_MARK}` : reason },
     });
     return false;

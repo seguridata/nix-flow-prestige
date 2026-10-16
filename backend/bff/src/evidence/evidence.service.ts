@@ -151,7 +151,7 @@ export class EvidenceService {
     // la auditoría de cada evento SIGNATURE_APPLIED.
     const auditBySigner = new Map<string, Record<string, unknown>>();
     for (const ev of await this.prisma.processAuditEvent.findMany({
-      where: { signatureRequestId: request.id, action: 'SIGNATURE_APPLIED' },
+      where: { tenantId: request.tenantId, signatureRequestId: request.id, action: 'SIGNATURE_APPLIED' },
     })) {
       auditBySigner.set(ev.actorId, (ev.payload as Record<string, unknown>) ?? {});
     }
@@ -582,7 +582,7 @@ export class EvidenceService {
     // SPEC.md §12 — bitácora legible del proceso, encadenada, en texto plano
     // (no hace falta abrir Postgres para auditar un expediente descargado).
     const events = await this.prisma.processAuditEvent.findMany({
-      where: { signatureRequestId: m.signatureRequestId },
+      where: { tenantId: m.tenantId, signatureRequestId: m.signatureRequestId },
       orderBy: { createdAt: 'asc' },
     });
     files.push({

@@ -30,6 +30,7 @@ import { CONTRATO_DOS_PARTES } from '../temporal/shared';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SignerMailService } from '../notifications/signer-mail.service';
 import { SignaturePolicyService } from '../signing/signature-policy';
+import { TenantIdResolver } from '../prisma/tenant-id-resolver';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
 import { DocumentsService } from '../documents/documents.service';
 import { allowedMethodsForRequest, creationWarnings } from './allowed-methods';
@@ -95,6 +96,7 @@ export class SignatureRequestsService {
     private readonly policyService: SignaturePolicyService,
     private readonly passkeys: PasskeyCeremonyService,
     private readonly documents: DocumentsService,
+    private readonly tenantIds: TenantIdResolver,
   ) {}
 
   consentText() {
@@ -120,12 +122,15 @@ export class SignatureRequestsService {
     tenantId: string,
     signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[],
   ) {
-    const members = await this.prisma.tenantMembership.findMany({
-      // `tenantId` (del JWT) puede venir como slug o como id; `TenantMembership`
-      // guarda el id. Se acepta cualquiera.
-      where: { tenant: { OR: [{ id: tenantId }, { slug: tenantId }] }, active: true },
-      select: { userId: true, name: true, email: true },
-    });
+    // `tenantId` (del JWT) puede venir como slug o como id; `TenantMembership.tenantId`
+    // guarda el uuid: se traduce y se filtra por la columna (lo que exige la guarda).
+    const tenantUuid = await this.tenantIds.toId(tenantId);
+    const members = tenantUuid
+      ? await this.prisma.tenantMembership.findMany({
+          where: { tenantId: tenantUuid, active: true },
+          select: { userId: true, name: true, email: true },
+        })
+      : [];
     const byKey = new Map<string, { userId: string; name: string | null; email: string | null }>();
     for (const m of members) {
       byKey.set(m.userId.toLowerCase(), m);
@@ -164,6 +169,7 @@ export class SignatureRequestsService {
 
     const already = await this.prisma.processAuditEvent.count({
       where: {
+        tenantId: request.tenantId,
         signatureRequestId: request.id,
         action: 'SIGNATURE_TURN',
         payload: { path: ['signerId'], equals: next.signerId },
@@ -187,6 +193,7 @@ export class SignatureRequestsService {
     await this.mail.sendInvite(request.id, next.signerId).catch(() => undefined);
     await this.prisma.humanTask.updateMany({
       where: {
+        tenantId: request.tenantId,
         signatureRequestId: request.id,
         status: { in: ['CREADA', 'ASIGNADA'] },
         OR: [{ signerId: next.signerId }, { delegatedFrom: next.signerId }],
@@ -566,7 +573,7 @@ export class SignatureRequestsService {
   }
 
   /** Marca la solicitud EXPIRADA (si sigue abierta) y avisa al workflow. */
-  private async expire(request: { id: string; documentId: string }) {
+  private async expire(request: { id: string; documentId: string; tenantId: string }) {
     const closed = await this.prisma.signatureRequest.updateMany({
       where: { id: request.id, status: { in: OPEN_REQUEST } },
       data: { status: 'EXPIRADA' },
@@ -579,7 +586,7 @@ export class SignatureRequestsService {
       action: 'REQUEST_EXPIRED',
     });
     await this.safe('workflow.signalRejected(expire)', () =>
-      this.workflow.signalRejected(request.id, 'system'),
+      this.workflow.signalRejected(request.id, 'system', request.tenantId),
     );
   }
 
@@ -587,14 +594,14 @@ export class SignatureRequestsService {
    * Reintento idempotente: la solicitud ya está COMPLETADA pero el post-commit
    * (señal / evidencia) pudo haber fallado. Si no hay manifiesto, lo reintenta.
    */
-  private async retryCompletion(request: { id: string }, signerId: string) {
+  private async retryCompletion(request: { id: string; tenantId: string }, signerId: string) {
     const manifest = await this.prisma.evidenceManifest.findUnique({
       where: { signatureRequestId: request.id },
       select: { id: true },
     });
     if (manifest) return;
     await this.safe('workflow.signalSigned(retry)', () =>
-      this.workflow.signalSigned(request.id, signerId),
+      this.workflow.signalSigned(request.id, signerId, request.tenantId),
     );
     const ok = await this.safe('evidence.generateForRequest(retry)', () =>
       this.evidence.generateForRequest(request.id),
@@ -811,10 +818,15 @@ export class SignatureRequestsService {
       // delegado), o cualquiera del documento.
       const field =
         (await tx.signatureField.findFirst({
-          where: { documentId: request.documentId, signerId: signer.signerId, type: 'SIGNATURE' },
+          where: {
+            tenantId: request.tenantId,
+            documentId: request.documentId,
+            signerId: signer.signerId,
+            type: 'SIGNATURE',
+          },
         })) ??
         (await tx.signatureField.findFirst({
-          where: { documentId: request.documentId, type: 'SIGNATURE' },
+          where: { tenantId: request.tenantId, documentId: request.documentId, type: 'SIGNATURE' },
         }));
 
       // Canónico: SIEMPRE se rehashea contra storage antes de aceptar la firma.
@@ -1032,7 +1044,7 @@ export class SignatureRequestsService {
     // el evento SIGNATURE_APPLIED con su sello por evento esté persistido. La
     // firma ya está commiteada: si la señal falla se registra y el reintento
     // del firmante (alreadySigned + COMPLETADA sin evidencia) la repite.
-    await this.safe('workflow.signalSigned', () => this.workflow.signalSigned(request.id, effectiveSignerId));
+    await this.safe('workflow.signalSigned', () => this.workflow.signalSigned(request.id, effectiveSignerId, request.tenantId));
 
     if (request.requestedBy && request.requestedBy !== body.signerId) {
       await this.collab.notify(
@@ -1094,7 +1106,7 @@ export class SignatureRequestsService {
         });
       });
       await this.safe('workflow.signalRejected(reconcile)', () =>
-        this.workflow.signalRejected(signatureRequestId, signer.signerId),
+        this.workflow.signalRejected(signatureRequestId, signer.signerId, request.tenantId),
       );
       await this.collab.audit({
         signatureRequestId,
@@ -1149,7 +1161,7 @@ export class SignatureRequestsService {
       payload: { method: signer.usedMethod, signatureHash, reconciled: true },
     });
     await this.safe('workflow.signalSigned(reconcile)', () =>
-      this.workflow.signalSigned(signatureRequestId, signer.signerId),
+      this.workflow.signalSigned(signatureRequestId, signer.signerId, request.tenantId),
     );
     if (completed.status === 'COMPLETADA') {
       const ok = await this.safe('evidence.generateForRequest(reconcile)', () =>
@@ -1226,7 +1238,7 @@ export class SignatureRequestsService {
     }, SIGN_TX_OPTIONS);
     if (!updated) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
 
-    await this.safe('workflow.signalRejected', () => this.workflow.signalRejected(id, body.signerId));
+    await this.safe('workflow.signalRejected', () => this.workflow.signalRejected(id, body.signerId, tenantId));
     await this.collab.audit({
       signatureRequestId: id,
       documentId: updated.documentId,
@@ -1272,8 +1284,8 @@ export class SignatureRequestsService {
           .map((s) => s.signerId),
       },
     });
-    await this.safe('workflow.cancelRun', () => this.workflow.cancelRun(id));
-    await this.safe('workflow.signalRejected(cancel)', () => this.workflow.signalRejected(id, actor));
+    await this.safe('workflow.cancelRun', () => this.workflow.cancelRun(id, tenantId));
+    await this.safe('workflow.signalRejected(cancel)', () => this.workflow.signalRejected(id, actor, tenantId));
     return updated;
   }
 
@@ -1299,14 +1311,18 @@ export class SignatureRequestsService {
     if (body.toSignerId === body.fromSignerId) {
       throw new BadRequestException('No puedes delegarte una firma a ti mismo');
     }
-    const member = await this.prisma.tenantMembership.findFirst({
-      where: {
-        tenant: { OR: [{ id: tenantId }, { slug: tenantId }] },
-        active: true,
-        OR: [{ userId: body.toSignerId }, { email: { equals: body.toSignerId, mode: 'insensitive' } }],
-      },
-      select: { userId: true, name: true },
-    });
+    // `TenantMembership.tenantId` guarda el uuid; `tenantId` llega como slug (o uuid).
+    const tenantUuid = await this.tenantIds.toId(tenantId);
+    const member = tenantUuid
+      ? await this.prisma.tenantMembership.findFirst({
+          where: {
+            tenantId: tenantUuid,
+            active: true,
+            OR: [{ userId: body.toSignerId }, { email: { equals: body.toSignerId, mode: 'insensitive' } }],
+          },
+          select: { userId: true, name: true },
+        })
+      : null;
     if (!member) {
       throw new BadRequestException('El destinatario no es un miembro activo de tu organización');
     }
@@ -1324,7 +1340,7 @@ export class SignatureRequestsService {
       throw new ConflictException('La firma ya no está pendiente');
     }
     // Las tareas humanas abiertas pasan a la bandeja del delegado.
-    await this.workflow.reassignForDelegation(id, body.fromSignerId, toSignerId);
+    await this.workflow.reassignForDelegation(id, body.fromSignerId, toSignerId, tenantId);
     await this.collab.audit({
       signatureRequestId: id,
       documentId: request.documentId,

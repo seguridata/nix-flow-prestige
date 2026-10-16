@@ -6,7 +6,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 import { SignatureFieldsController } from './signature-fields.controller';
 import { SignatureFieldsService, type SignatureFieldInput } from './signature-fields.service';
 
-type Field = { id: string; tenantId: string | null; documentId: string } & Record<string, unknown>;
+type Field = { id: string; tenantId: string; documentId: string } & Record<string, unknown>;
 
 function makeService() {
   const docs: Record<string, { id: string; tenantId: string }> = {
@@ -28,21 +28,22 @@ function makeService() {
         fields.push(row);
         return row;
       },
-      findMany: async ({ where }: { where: { documentId: string } }) =>
-        fields.filter((f) => f.documentId === where.documentId),
-      findFirst: async ({ where }: { where: { id: string; document: { tenantId: string } } }) =>
-        fields.find((f) => f.id === where.id && docs[f.documentId]?.tenantId === where.document.tenantId) ?? null,
+      // La guarda ADR-004 exige tenantId en el where: el fake lo aplica igual que Postgres.
+      findMany: async ({ where }: { where: { tenantId: string; documentId: string } }) =>
+        fields.filter((f) => f.documentId === where.documentId && f.tenantId === where.tenantId),
+      findFirst: async ({ where }: { where: { id: string; tenantId: string } }) =>
+        fields.find((f) => f.id === where.id && f.tenantId === where.tenantId) ?? null,
       deleteMany: async ({
         where,
       }: {
-        where: { id?: string; documentId?: string; document?: { tenantId: string } };
+        where: { id?: string; documentId?: string; tenantId: string };
       }) => {
         let count = 0;
         for (let i = fields.length - 1; i >= 0; i--) {
           const f = fields[i];
           if (where.id && f.id !== where.id) continue;
           if (where.documentId && f.documentId !== where.documentId) continue;
-          if (where.document && docs[f.documentId]?.tenantId !== where.document.tenantId) continue;
+          if (f.tenantId !== where.tenantId) continue;
           fields.splice(i, 1);
           count++;
         }
@@ -95,10 +96,13 @@ describe('SignatureFieldsService - aislamiento por tenant', () => {
     expect(fields).toHaveLength(0);
   });
 
-  it('remove alcanza campos legados con tenantId nulo via su documento', async () => {
+  it('list y reemplazo en bulk filtran por la columna tenantId: no tocan filas de otro tenant', async () => {
     const { svc, fields } = makeService();
-    fields.push({ id: 'legacy', tenantId: null, documentId: 'doc-a' });
-    await expect(svc.remove('legacy', 'tenant-a')).resolves.toEqual({ id: 'legacy' });
+    fields.push({ id: 'ajeno', tenantId: 'tenant-b', documentId: 'doc-a' });
+    await svc.create(input('doc-a'), 'tenant-a');
+    expect((await svc.listByDocument('doc-a', 'tenant-a')).map((f) => f.tenantId)).toEqual(['tenant-a']);
+    await svc.createMany('doc-a', [], 'tenant-a');
+    expect(fields.map((f) => f.id)).toEqual(['ajeno']);
   });
 
   it('createMany contra un documento ajeno responde 404 y NO borra sus campos', async () => {

@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import type { Flow, LookupQuery } from '../flow/flow.types';
-import { FlowResolverService } from './flow-resolver.service';
+import { FlowResolverService, awaitingInputs } from './flow-resolver.service';
 import { makeLookupDb } from './lookup-tables.fixtures';
 
 const cols = [
@@ -143,6 +143,73 @@ describe('FlowResolverService.resolve', () => {
     const { svc } = setup();
     const r = await svc.resolve(flow(), {}, 'acme');
     expect([...r.picks.values()]).toEqual([null, null]);
+  });
+
+  describe('awaiting: entradas de la consulta aún sin datos', () => {
+    it('sin datos: cada paso lookup activo espera sus variables obligatorias (con etiqueta del flujo) y no se consulta', async () => {
+      const { svc } = setup();
+      const r = await svc.resolve(flow(), {}, 'acme');
+      expect(r.awaiting.get('aut_area')).toEqual([{ key: 'area', label: 'Área' }]);
+      expect(r.awaiting.get('aut_tipo')).toEqual([
+        { key: 'tipoGasto', label: 'Tipo' },
+        { key: 'monto', label: 'Monto' },
+      ]);
+      expect(r.awaiting.has('sol')).toBe(false);
+      expect(r.steps).toEqual([]); // no hubo consulta: tampoco traza
+    });
+
+    it('con los datos completos no espera nada; sin coincidencia es unresolved (picks null), no awaiting', async () => {
+      const { svc } = setup();
+      const ok = await svc.resolve(flow(), values, 'acme');
+      expect(ok.awaiting.size).toBe(0);
+      const miss = await svc.resolve(flow(), { ...values, area: 'Soporte' }, 'acme');
+      expect(miss.awaiting.size).toBe(0);
+      expect(miss.picks.get('aut_area')).toBeNull();
+      expect(miss.steps[0]!.rowId).toBeNull();
+    });
+
+    it('espera solo lo que falta; lo vacío o en blanco cuenta como faltante', async () => {
+      const { svc } = setup();
+      const r = await svc.resolve(flow(), { area: 'QA', tipoGasto: '   ', monto: 500 }, 'acme');
+      expect(r.awaiting.has('aut_area')).toBe(false);
+      expect(r.picks.get('aut_area')?.signerId).toBe('jefe-qa');
+      expect(r.awaiting.get('aut_tipo')).toEqual([{ key: 'tipoGasto', label: 'Tipo' }]);
+    });
+
+    it('una variable NO obligatoria vacía cuenta como entrada completa: consulta (y puede no coincidir) pero no espera', async () => {
+      const { svc } = setup();
+      const f = flow();
+      f.variables = f.variables.map((v) => (v.key === 'area' ? { ...v, required: false } : v));
+      const r = await svc.resolve(f, {}, 'acme');
+      expect(r.awaiting.has('aut_area')).toBe(false);
+      expect(r.picks.get('aut_area')).toBeNull();
+      expect(r.steps[0]).toMatchObject({ stepId: 'aut_area', rowId: null });
+    });
+
+    it('un paso inactivo no espera nada; una derivada vacía (no obligatoria) tampoco bloquea', async () => {
+      const { svc } = setup();
+      const f = flow();
+      f.steps[1]!.when = [{ variable: 'monto', op: '>', value: 1e9 }];
+      expect((await svc.resolve(f, { monto: 1 }, 'acme')).awaiting.has('aut_area')).toBe(false);
+      const g = flow({ derived: [{ key: 'nivel', label: 'Nivel', type: 'number', column: 'montoMin', query: { table: 'responsables', match: [{ column: 'area', op: 'eq', source: { var: 'area' } }] } }] });
+      (g.steps[1]!.who as any).query.match.push({ column: 'montoMin', op: 'gte', source: { var: 'nivel' } });
+      expect((await svc.resolve(g, { area: 'ZZ' }, 'acme')).awaiting.has('aut_area')).toBe(false);
+    });
+
+    it('awaitingInputs no repite variables, ignora fuentes fijas y no revela columnas ni tablas', () => {
+      const q: LookupQuery = {
+        table: 'secreta',
+        match: [
+          { column: 'colSecreta', op: 'eq', source: { var: 'area' } },
+          { column: 'otra', op: 'eq', source: { var: 'area' } },
+          { column: 'etapa', op: 'eq', source: { value: 'area' } },
+          { column: 'vacia', op: 'isEmpty' },
+        ],
+      };
+      const out = awaitingInputs(flow(), q, {});
+      expect(out).toEqual([{ key: 'area', label: 'Área' }]);
+      expect(JSON.stringify(out)).not.toMatch(/secreta|colSecreta|otra/);
+    });
   });
 
   it('una fila coincidente sin responsable (celda vacía) no resuelve a nadie', async () => {

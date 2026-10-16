@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Pu
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
-import { CreateRowDto, CreateTableDto, ImportRowsDto, ReorderDto, RowsQueryDto, TestQueryDto, UpdateRowDto, UpdateTableDto } from './lookup-tables.dto';
+import { CreateRowDto, CreateTableDto, ImportRowsDto, MoveRowDto, ReorderDto, RowsQueryDto, TestQueryDto, UpdateRowDto, UpdateTableDto } from './lookup-tables.dto';
 import { LookupTablesService, type LookupActor } from './lookup-tables.service';
 
 const actorOf = (u: AuthenticatedUser): LookupActor => ({ tenantId: u.tenantId, actorId: u.actorId, name: u.name });
@@ -64,6 +64,19 @@ export class LookupTablesController {
   @HttpCode(200)
   reorder(@Param('id', ParseUUIDPipe) id: string, @Body() body: ReorderDto, @CurrentUser() user: AuthenticatedUser) {
     return this.service.reorder(id, body.ids, actorOf(user));
+  }
+
+  /** Reubica UNA fila (sube/baja, al inicio o tras otra) sin reescribir toda la tabla. */
+  @Roles('admin')
+  @Post(':id/rows/:rowId/move')
+  @HttpCode(200)
+  moveRow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('rowId', ParseUUIDPipe) rowId: string,
+    @Body() body: MoveRowDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.moveRow(id, rowId, body, actorOf(user));
   }
 
   @Roles('admin')
