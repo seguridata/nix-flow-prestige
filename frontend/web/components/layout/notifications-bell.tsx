@@ -21,7 +21,8 @@ export function NotificationsBell() {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["notifications", signerId],
-    queryFn: () => apiClient.get<Notification[]>(`/me/notifications?userId=${encodeURIComponent(signerId)}`),
+    // The BFF scopes notifications by the authenticated actor; never accept identity from query params.
+    queryFn: () => apiClient.get<Notification[]>("/me/notifications"),
     refetchInterval: 60_000,
   });
   const unread = (query.data ?? []).filter((n) => !n.read).length;

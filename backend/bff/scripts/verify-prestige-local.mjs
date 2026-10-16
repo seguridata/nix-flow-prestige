@@ -22,11 +22,11 @@ assert.equal((await request('/lookup-tables', { 'X-Tenant-Id': 'tenant-inexisten
 const health = await (await request('/operations/health')).json();
 assert.equal(health.postgres, true);
 assert.equal(health.objectStorage, true);
-for (const path of ['/lookup-tables', '/document-templates?all=true', '/chat/drafts/templates']) {
+for (const path of ['/lookup-tables', '/document-templates?all=true', '/chat/drafts/templates', '/me/notifications']) {
   assert.equal((await request(path)).status, 200, path);
 }
 if (process.argv.includes('--apply-decisions')) {
   const result = await applyDecisions({ ...process.env, BFF_URL: base, BFF_TOKEN: token }, ['--sandbox', '--apply']);
   console.log(JSON.stringify({ decisions: result.applied }));
 }
-console.log(JSON.stringify({ verified: ['OIDC', '401 sin token', '403 tenant ajeno', 'Postgres', 'MinIO', 'tablas', 'formatos', 'borradores'], user }));
+console.log(JSON.stringify({ verified: ['OIDC', '401 sin token', '403 tenant ajeno', 'Postgres', 'MinIO', 'tablas', 'formatos', 'borradores', 'notificaciones del actor'], user }));
