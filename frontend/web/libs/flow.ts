@@ -9,6 +9,9 @@ import {
   type SourceVar,
 } from "@/libs/lookup";
 
+/** Server-owned identity is available to lookups, never as an editable form input. */
+export const BUILTIN_LOOKUP_SOURCES: SourceVar[] = [{ key: "solicitante", label: "Solicitante (usuario autenticado)" }];
+
 export type VarType = "text" | "date" | "number" | "select";
 export type Op = ">" | ">=" | "<" | "<=" | "==" | "!=";
 
@@ -163,14 +166,15 @@ export function describeWho(who: Who, ctx: DescribeCtx = {}): string {
 export function flowProblems(flow: Flow, tables?: readonly LookupTableSummary[]): string[] {
   const out: string[] = [];
   if (flow.steps.length === 0) out.push("Agrega al menos un paso.");
-  const keys = new Set<string>();
+  const keys = new Set<string>(["solicitante"]);
   for (const v of flow.variables) {
     if (!v.label.trim()) out.push("Hay una variable sin nombre.");
-    if (keys.has(v.key)) out.push(`La variable «${v.label}» está repetida.`);
+    if (v.key === "solicitante") out.push("La clave solicitante está reservada al usuario autenticado; usa otra clave para este dato.");
+    else if (keys.has(v.key)) out.push(`La variable «${v.label}» está repetida.`);
     keys.add(v.key);
     if (v.type === "select" && !(v.options?.length)) out.push(`«${v.label}» necesita al menos una opción.`);
   }
-  const sourcesForDerived: SourceVar[] = flow.variables.map((v) => ({ key: v.key, label: v.label || v.key }));
+  const sourcesForDerived: SourceVar[] = [...BUILTIN_LOOKUP_SOURCES, ...flow.variables.map((v) => ({ key: v.key, label: v.label || v.key }))];
   const tableOf = (key: string) => tables?.find((t) => t.key === key);
   const tableMissing = (key: string, where: string) =>
     tables && key.trim() && !tableOf(key) ? [`${where}: la tabla «${key}» ya no existe.`] : [];
@@ -179,7 +183,8 @@ export function flowProblems(flow: Flow, tables?: readonly LookupTableSummary[])
     const where = `Variable calculada «${d.label || d.key || "sin nombre"}»`;
     if (!d.label.trim()) out.push("Hay una variable calculada sin nombre.");
     if (!KEY_RE.test(d.key)) out.push(`${where}: la clave debe empezar con letra y usar solo letras, números y guion bajo.`);
-    if (keys.has(d.key)) out.push(`${where}: la clave «${d.key}» ya la usa otro dato.`);
+    if (d.key === "solicitante") out.push(`${where}: solicitante está reservado al usuario autenticado.`);
+    else if (keys.has(d.key)) out.push(`${where}: la clave «${d.key}» ya la usa otro dato.`);
     keys.add(d.key);
     const t = tableOf(d.query.table);
     out.push(...tableMissing(d.query.table, where));
@@ -189,7 +194,7 @@ export function flowProblems(flow: Flow, tables?: readonly LookupTableSummary[])
   }
 
   const every = allVariables(flow);
-  const sourcesForSteps: SourceVar[] = every.map((v) => ({ key: v.key, label: v.label || v.key }));
+  const sourcesForSteps: SourceVar[] = [...BUILTIN_LOOKUP_SOURCES, ...every.map((v) => ({ key: v.key, label: v.label || v.key }))];
   for (const s of flow.steps) {
     const name = s.label || "Paso";
     if (!s.label.trim()) out.push("Hay un paso sin nombre.");

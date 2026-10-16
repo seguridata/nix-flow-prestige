@@ -24,7 +24,7 @@ const textOf = (v: unknown): string => {
 };
 
 /** Lo único que Prestige sabe ejecutar. Cualquier otro elemento del proceso se rechaza. */
-const BPMN_NODES = ['startEvent', 'endEvent', 'userTask', 'exclusiveGateway'] as const;
+const BPMN_NODES = ['startEvent', 'endEvent', 'userTask', 'businessRuleTask', 'exclusiveGateway'] as const;
 const BPMN_IGNORED = new Set(['sequenceFlow', 'extensionElements', 'documentation']);
 
 /** Inversa de `exprOf`: `${a > 5 && b == 'x'}` → condiciones. Solo entiende esa gramática. */
@@ -140,6 +140,10 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
         errors.push(`Hay un elemento «${type}» sin identificador.`);
         continue;
       }
+      if (nodes.has(id)) {
+        errors.push(`El identificador «${id}» está repetido en el diagrama.`);
+        continue;
+      }
       nodes.set(id, { id, type, el });
     }
   }
@@ -172,6 +176,8 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
   if (errors.length) return fail();
 
   const steps: FlowStep[] = [];
+  const ruleDerived: DerivedVariable[] = [];
+  let enteredUserPath = false;
   const usedIds = new Set<string>();
   const visited = new Set<string>();
 
@@ -244,6 +250,25 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
 
     if (cur.type === 'endEvent') break;
 
+    if (cur.type === 'businessRuleTask') {
+      if (enteredUserPath) {
+        errors.push(`La consulta «${label(cur)}» debe estar antes de todas las tareas y decisiones: las consultas se evalúan al crear la solicitud.`);
+        break;
+      }
+      let definition: unknown;
+      try { definition = JSON.parse(attrOf(cur.el, 'lookup') ?? ''); } catch { definition = undefined; }
+      if (!isObj(definition)) {
+        errors.push(`La tarea de regla «${label(cur)}» requiere prestige:lookup con una variable derivada tipada (key, label, type, query, column).`);
+        break;
+      }
+      ruleDerived.push(definition as unknown as DerivedVariable);
+      const e = only(cur);
+      if (e?.cond) errors.push(`La consulta «${label(cur)}» no admite una salida condicional.`);
+      cur = e && nodes.get(e.target);
+      continue;
+    }
+
+    if (cur.type === 'userTask' || cur.type === 'exclusiveGateway') enteredUserPath = true;
     if (cur.type === 'startEvent' || cur.type === 'userTask') {
       if (cur.type === 'userTask') steps.push(makeStep(cur));
       const e = only(cur);
@@ -313,7 +338,7 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
   (known.variables ?? []).forEach(addVar);
 
   // Variables derivadas de una tabla (las condiciones pueden citarlas: no se infieren como capturadas).
-  const derived: DerivedVariable[] = [];
+  const derived: DerivedVariable[] = [...ruleDerived];
   const embeddedDerived = attrOf(proc, 'derived');
   if (embeddedDerived) {
     try {

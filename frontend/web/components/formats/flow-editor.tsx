@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   allVariables,
+  BUILTIN_LOOKUP_SOURCES,
   newId,
   opsFor,
   OP_LABEL,
@@ -404,7 +405,7 @@ function StepCard({
               tables={tables}
               tablesError={tablesError}
               onRetryTables={onRetryTables}
-              sources={inputVariables.map((v) => ({ key: v.key, label: v.label || v.key }))}
+              sources={[...BUILTIN_LOOKUP_SOURCES, ...variables.map((v) => ({ key: v.key, label: v.label || v.key }))]}
               onChange={(who) => onChange({ ...step, who })}
             />
           ) : null}
@@ -608,7 +609,7 @@ function DerivedCard({
   onRemove: () => void;
 }) {
   const table = tables.find((t) => t.key === item.query.table);
-  const sources = inputVariables.map((v) => ({ key: v.key, label: v.label || v.key }));
+  const sources = [...BUILTIN_LOOKUP_SOURCES, ...inputVariables.map((v) => ({ key: v.key, label: v.label || v.key }))];
   return (
     <li className="rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">

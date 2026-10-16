@@ -92,7 +92,9 @@ export class FlowResolverService {
    * `strict` (al crear la solicitud): una variable derivada con `onMiss: 'fail'` sin coincidencia responde 400.
    * Sin `strict` (vista previa) esa variable solo queda vacía.
    */
-  async resolve(flow: Flow, values: FlowValues, tenantId: string, opts: { strict?: boolean } = {}): Promise<FlowResolution> {
+  async resolve(flow: Flow, values: FlowValues, tenantId: string, opts: { strict?: boolean; solicitante?: string } = {}): Promise<FlowResolution> {
+    // Identidad confiable del JWT; nunca del formulario enviado por el cliente.
+    values = { ...values, solicitante: opts.solicitante ?? '' };
     const tables = await this.load(flow, values, tenantId);
     const run: LookupExecutor = async (query, inputs): Promise<LookupHit | null> => {
       const t = tables.get(query.table);

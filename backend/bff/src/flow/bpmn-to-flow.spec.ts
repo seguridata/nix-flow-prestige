@@ -175,3 +175,49 @@ describe('bpmnToFlow · diagramas dibujados a mano', () => {
     expect(validateFlow(r.flow)).toEqual([]);
   });
 });
+
+describe('businessRuleTask como consulta previa explícita', () => {
+  const definition = { key: 'nivel', label: 'Nivel de aprobación', type: 'number', query: { table: 'niveles', match: [{ column: 'usuario', op: 'eq', source: { var: 'solicitante' } }] }, column: 'nivel', onMiss: 'fail' };
+  const escaped = (value: unknown) => JSON.stringify(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const diagram = (rule = `<bpmn:businessRuleTask id="R" name="Determinar nivel" prestige:lookup="${escaped(definition)}"/>`, after = false) => `
+    <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:prestige="urn:prestige">
+    <bpmn:process id="P" prestige:order="SECUENCIAL" prestige:slaHours="72">
+      <bpmn:startEvent id="S"/>${rule}<bpmn:userTask id="U" name="Firmar" prestige:who="initiator" prestige:role="FIRMANTE"/><bpmn:endEvent id="E"/>
+      <bpmn:sequenceFlow id="f1" sourceRef="S" targetRef="${after ? 'U' : 'R'}"/>
+      <bpmn:sequenceFlow id="f2" sourceRef="${after ? 'U' : 'R'}" targetRef="${after ? 'R' : 'U'}"/>
+      <bpmn:sequenceFlow id="f3" sourceRef="${after ? 'R' : 'U'}" targetRef="E"/>
+    </bpmn:process></bpmn:definitions>`;
+  it('convierte a variable derivada validada; no agrega una firma ficticia', () => {
+    const result = bpmnToFlow(diagram());
+    expect(result.errors).toEqual([]);
+    expect(result.flow?.derived).toEqual([definition]);
+    expect(result.flow?.steps.map(s => s.id)).toEqual(['U']);
+    expect(validateFlow(result.flow)).toEqual([]);
+    // Al exportar se normaliza a prestige:derived del proceso, sin perder semántica.
+    expect(bpmnToFlow(flowToBpmn(result.flow!, { key: 'regla', name: 'Regla' })).flow).toEqual(result.flow);
+  });
+  it('rechaza regla sin extensión, JSON inválido o definición no tipada', () => {
+    for (const attribute of ['', 'prestige:lookup="no-json"', `prestige:lookup="${escaped({ query: definition.query })}"`]) {
+      const result = bpmnToFlow(diagram(`<bpmn:businessRuleTask id="R" ${attribute}/>`));
+      expect(result.flow).toBeUndefined();
+      expect(result.errors.length).toBeGreaterThan(0);
+    }
+  });
+  it('valida variables fuente, operadores y reserva solicitante', () => {
+    for (const value of [
+      { ...definition, key: 'solicitante' },
+      { ...definition, query: { ...definition.query, match: [{ column: 'usuario', op: 'unknown', source: { var: 'solicitante' } }] } },
+      { ...definition, query: { ...definition.query, match: [{ column: 'usuario', op: 'eq', source: { var: 'desconocida' } }] } },
+    ]) expect(bpmnToFlow(diagram(`<bpmn:businessRuleTask id="R" prestige:lookup="${escaped(value)}"/>`)).flow).toBeUndefined();
+  });
+  it('no adelanta silenciosamente una consulta posterior a una firma', () => {
+    const result = bpmnToFlow(diagram(undefined, true));
+    expect(result.flow).toBeUndefined();
+    expect(result.errors.join()).toContain('antes de todas');
+  });
+  it('rechaza identificadores duplicados y consultas con salidas condicionales', () => {
+    expect(bpmnToFlow(diagram().replace('<bpmn:endEvent id="E"/>', '<bpmn:endEvent id="E"/><bpmn:userTask id="R"/>')).errors.join()).toContain('repetido');
+    const xml = diagram().replace('<bpmn:sequenceFlow id="f2" sourceRef="R" targetRef="U"/>', '<bpmn:sequenceFlow id="f2" sourceRef="R" targetRef="U"><bpmn:conditionExpression>${x == 1}</bpmn:conditionExpression></bpmn:sequenceFlow>');
+    expect(bpmnToFlow(xml).errors.join()).toContain('salida condicional');
+  });
+});

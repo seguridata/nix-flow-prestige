@@ -79,6 +79,8 @@ export const RESPONSABLES_TABLE: TableSpec = {
     { key: 'area', label: 'Área del solicitante', type: 'text' },
     { key: 'tipoGasto', label: 'Tipo de gasto', type: 'text' },
     { key: 'concepto', label: 'Concepto', type: 'text' },
+    { key: 'modalidadGasto', label: 'Modalidad del gasto', type: 'text' },
+    { key: 'solicitante', label: 'Usuario solicitante (autenticado)', type: 'text' },
     { key: 'montoMin', label: 'Monto desde', type: 'number' },
     { key: 'montoMax', label: 'Monto hasta', type: 'number' },
     { key: 'signerId', label: 'Usuario responsable', type: 'text' },

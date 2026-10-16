@@ -62,6 +62,8 @@ describe('flujos por defecto de Adquisiciones', () => {
       ['etapa', 'eq', '{"value":"tipoGasto"}'],
       ['tipoGasto', 'eq', '{"var":"tipoGasto"}'],
       ['concepto', 'eq', '{"var":"concepto"}'],
+      ['solicitante', 'eq', '{"var":"solicitante"}'],
+      ['modalidadGasto', 'eq', '{"var":"modalidadGasto"}'],
       ['montoMin', 'gte', '{"var":"monto"}'],
       ['montoMax', 'lte', '{"var":"monto"}'],
     ]);
@@ -74,7 +76,7 @@ describe('flujos por defecto de Adquisiciones', () => {
   });
 
   it('las consultas citan solo variables declaradas y no hay derivadas', () => {
-    const declared = new Set(ADQUISICIONES_FLOW.variables.map((v) => v.key));
+    const declared = new Set([...ADQUISICIONES_FLOW.variables.map((v) => v.key), 'solicitante']);
     for (const { query } of flowQueries(ADQUISICIONES_FLOW)) {
       for (const c of query.match) if (c.source && 'var' in c.source) expect(declared.has(c.source.var)).toBe(true);
     }
@@ -123,6 +125,8 @@ describe('flujos por defecto de Adquisiciones', () => {
       { key: 'area', label: 'Área', type: 'text' },
       { key: 'tipoGasto', label: 'Tipo', type: 'text' },
       { key: 'concepto', label: 'Concepto', type: 'text' },
+      { key: 'solicitante', label: 'Solicitante', type: 'text' },
+      { key: 'modalidadGasto', label: 'Modalidad', type: 'text' },
       { key: 'montoMin', label: 'Desde', type: 'number' },
       { key: 'montoMax', label: 'Hasta', type: 'number' },
       { key: 'signerId', label: 'Responsable', type: 'text' },
@@ -186,6 +190,8 @@ describe('flujos por defecto de Adquisiciones', () => {
       { key: 'area', label: 'Área', type: 'text' },
       { key: 'tipoGasto', label: 'Tipo', type: 'text' },
       { key: 'concepto', label: 'Concepto', type: 'text' },
+      { key: 'solicitante', label: 'Solicitante', type: 'text' },
+      { key: 'modalidadGasto', label: 'Modalidad', type: 'text' },
       { key: 'montoMin', label: 'Desde', type: 'number' },
       { key: 'montoMax', label: 'Hasta', type: 'number' },
       { key: 'signerId', label: 'Responsable', type: 'text' },

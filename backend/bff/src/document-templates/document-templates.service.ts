@@ -334,7 +334,7 @@ export class DocumentTemplatesService {
     const flow = t.flow as unknown as Flow;
     const values = this.looseValues(rawValues);
     const required = new Set(flow.variables.filter((v) => v.required).map((v) => v.key));
-    const { resolved, picks, awaiting } = await this.resolver.resolve(flow, values, actor.tenantId);
+    const { resolved, picks, awaiting } = await this.resolver.resolve(flow, values, actor.tenantId, { solicitante: actor.actorId });
     return {
       steps: resolved.map((r) => ({
         stepId: r.step.id,
@@ -361,7 +361,7 @@ export class DocumentTemplatesService {
 
     // 1) Todo lo que puede fallar por datos del usuario, ANTES de crear nada.
     const clean = this.coerceValues(flow, fields, input.values, actor);
-    const resolution = await this.resolver.resolve(flow, clean, actor.tenantId, { strict: true });
+    const resolution = await this.resolver.resolve(flow, clean, actor.tenantId, { strict: true, solicitante: actor.actorId });
     const { resolved, picks, awaiting } = resolution;
     const { signers, stepSigner } = this.signersFor(resolved, input.askedSigners ?? {}, actor, picks);
     if (input.folderId) await this.folders.assertOwned(input.folderId, { tenantId: actor.tenantId, ownerId: actor.actorId });

@@ -137,6 +137,7 @@ export function validateFlow(input: unknown): string[] {
       if (!KEY_RE.test(key)) {
         return errors.push(`Variable «${key}»: la clave debe empezar con letra y usar solo letras, números y guion bajo`);
       }
+      if (key === 'solicitante') return errors.push('solicitante es una variable integrada reservada');
       if (vars.has(key)) return errors.push(`Variable «${key}» repetida`);
       if (typeof v.label !== 'string' || !v.label.trim()) errors.push(`Variable «${key}»: falta la etiqueta`);
       if (!(VAR_TYPES as readonly unknown[]).includes(v.type)) {
@@ -154,7 +155,7 @@ export function validateFlow(input: unknown): string[] {
   }
 
   // Variables derivadas de una tabla (ADR-008 §5): se calculan ANTES de decidir qué pasos aplican, así que pueden usarse en `when`.
-  const declared = new Set(vars.keys());
+  const declared = new Set([...vars.keys(), 'solicitante']);
   const derivedKeys = new Set<string>();
   if (input.derived !== undefined) {
     if (!Array.isArray(input.derived)) errors.push('Las variables derivadas deben ser una lista');
@@ -177,7 +178,7 @@ export function validateFlow(input: unknown): string[] {
       });
     }
   }
-  const lookupVars = new Set(vars.keys());
+  const lookupVars = new Set([...vars.keys(), 'solicitante']);
 
   if (!Array.isArray(steps) || steps.length === 0) {
     errors.push('El flujo necesita al menos un paso');

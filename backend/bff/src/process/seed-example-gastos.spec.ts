@@ -102,8 +102,8 @@ describe('armado del ejemplo', () => {
     expect(f.steps).toEqual(ADQUISICIONES_FLOW.steps);
     expect(f.order).toBe(ADQUISICIONES_FLOW.order);
     expect(f.slaHours).toBe(ADQUISICIONES_FLOW.slaHours);
-    expect(f.variables.map((v) => v.key)).toEqual(['area', 'tipoGasto', 'concepto', 'monto', 'descripcion', 'justificacion', 'proyecto']);
-    expect(ADQUISICIONES_FLOW.variables).toHaveLength(4); // el original no se muta
+    expect(f.variables.map((v) => v.key)).toEqual(['area', 'tipoGasto', 'concepto', 'modalidadGasto', 'monto', 'descripcion', 'justificacion', 'proyecto']);
+    expect(ADQUISICIONES_FLOW.variables).toHaveLength(5); // el original no se muta
     expect(f.steps).not.toBe(ADQUISICIONES_FLOW.steps);
   });
 
@@ -149,7 +149,7 @@ describe('armado del ejemplo', () => {
     expect(ROLES_TABLE.description).toMatch(/EJEMPLO EDITABLE/);
     expect(ROLES_EXAMPLE_ROW).toEqual({ rol: ROL_EJECUTIVO_AYT, signerId: 'javazquez', nombre: 'Jesús Vázquez', correo: 'javazquez@seguridata.com' });
     expect(RESPONSABLES_TABLE.key).toBe(TABLA_RESPONSABLES);
-    expect(RESPONSABLES_TABLE.columns.map((c) => c.key)).toEqual(['etapa', 'area', 'tipoGasto', 'concepto', 'montoMin', 'montoMax', 'signerId', 'nombre', 'correo']);
+    expect(RESPONSABLES_TABLE.columns.map((c) => c.key)).toEqual(['etapa', 'area', 'tipoGasto', 'concepto', 'modalidadGasto', 'solicitante', 'montoMin', 'montoMax', 'signerId', 'nombre', 'correo']);
     expect(RESPONSABLES_TABLE.columns[0]).toMatchObject({ type: 'select', options: ['area', 'tipoGasto'] });
   });
 
@@ -158,7 +158,7 @@ describe('armado del ejemplo', () => {
     const gen = await buildFormPdf({ name: b.name, description: b.description, variables: b.flow.variables, steps: b.flow.steps, attachmentSpecs: b.attachmentSpecs });
     const { meta, errors } = parseTemplateMeta({ ...b, fields: gen.fields, signatureBoxes: gen.signatureBoxes }, gen.pageCount);
     expect(errors).toEqual([]);
-    expect(meta!.fields).toHaveLength(7);
+    expect(meta!.fields).toHaveLength(8);
     expect(meta!.signatureBoxes).toHaveLength(b.flow.steps.length);
     expect(meta!.attachmentSpecs).toHaveLength(2);
   });
@@ -205,9 +205,9 @@ describe('runSeed con los servicios reales sobre datos en memoria', () => {
     expect(w.stored()).toHaveLength(1);
     expect(form).toMatchObject({ tenantId: 'seguridata', name: FORM_NAME, kind: 'FORM', category: FORM_CATEGORY, published: true, methods: ['ACCEPT', 'AUTOGRAFA', 'DIGITAL'], createdBy: SEED_ACTOR_ID });
     expect(has(r, 'creado', /Métodos de firma: ACCEPT, AUTOGRAFA, DIGITAL/)).toBe(true);
-    expect(form.flow.variables.map((v: any) => v.key)).toEqual(['area', 'tipoGasto', 'concepto', 'monto', 'descripcion', 'justificacion', 'proyecto']);
+    expect(form.flow.variables.map((v: any) => v.key)).toEqual(['area', 'tipoGasto', 'concepto', 'modalidadGasto', 'monto', 'descripcion', 'justificacion', 'proyecto']);
     expect(form.attachmentSpecs.map((s: any) => s.key)).toEqual(['cotizaciones', 'otros']);
-    expect(form.fields).toHaveLength(7);
+    expect(form.fields).toHaveLength(8);
     expect(form.signatureBoxes).toHaveLength(form.flow.steps.length);
   });
 

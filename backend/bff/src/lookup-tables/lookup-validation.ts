@@ -164,6 +164,7 @@ export function checkQueryAgainstColumns(
 export function checkFlowAgainstTables(flow: Flow, tables: ReadonlyMap<string, readonly LookupColumn[]>): string[] {
   const errors: string[] = [];
   const varTypes = new Map(allVariables(flow).map((v) => [v.key, v.type as string]));
+  varTypes.set('solicitante', 'text');
   for (const { where, query, columns } of flowQueries(flow)) {
     const cols = tables.get(query.table);
     if (!cols) {

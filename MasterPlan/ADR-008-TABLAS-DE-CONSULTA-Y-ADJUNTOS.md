@@ -132,3 +132,17 @@ POST   /lookup-tables/:id/test {query:LookupQuery, inputs:{[var]:value}} → {ma
 
 - El flujo sigue siendo lineal: la consulta decide con lo que se sabe **al crear la solicitud**, no con resultados de pasos anteriores.
 - Las solicitudes en curso conservan lo congelado; cambiar una tabla no las reencamina.
+
+## 10. Importación BPMN de consultas explícitas (2026-10-16)
+
+Un `bpmn:businessRuleTask` representa una **variable derivada**, no un paso de firma. Debe estar en el camino lineal obligatorio inmediatamente después del inicio (puede haber varias consultas seguidas), antes de cualquier tarea de usuario o compuerta. Esta restricción conserva la semántica del motor: todas las consultas se resuelven al crear la solicitud, antes de decidir los pasos activos. Una consulta posterior o condicional se rechaza, no se adelanta silenciosamente.
+
+El atributo `prestige:lookup` contiene un objeto JSON con el contrato `DerivedVariable`: `key`, `label`, `type`, `query`, `column` y opcionalmente `onMiss`. Ejemplo conceptual (en XML, escapar las comillas como `&quot;`):
+
+```json
+{"key":"nivel","label":"Nivel de aprobación","type":"number","query":{"table":"niveles","match":[{"column":"usuario","op":"eq","source":{"var":"solicitante"}}]},"column":"nivel","onMiss":"fail"}
+```
+
+La importación agrega la definición a `Flow.derived` y aplica `validateFlow`: claves únicas, tipos válidos, operadores y fuentes existentes. La existencia de tabla y columnas se valida al guardar el formato con `assertTables`, en el tenant del administrador. No se infieren reglas DMN ni consultas a partir del nombre de la tarea. Extensión ausente o inválida bloquea la conversión. Al exportar de nuevo, las consultas se normalizan a `prestige:derived` del proceso, manteniendo su semántica.
+
+`solicitante` es una fuente integrada de texto reservada: el BFF la obtiene de `actorId` autenticado (`preferred_username`), tanto en la vista previa como al crear el expediente. No puede declararse como campo editable o variable derivada, y cualquier valor enviado por el cliente se sustituye antes de consultar.

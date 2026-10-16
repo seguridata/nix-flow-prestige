@@ -156,6 +156,8 @@ const consultaTipoGasto: LookupQuery = {
     cond('etapa', 'eq', { value: 'tipoGasto' }, false),
     cond('tipoGasto', 'eq', { var: 'tipoGasto' }),
     cond('concepto', 'eq', { var: 'concepto' }),
+    cond('solicitante', 'eq', { var: 'solicitante' }),
+    cond('modalidadGasto', 'eq', { var: 'modalidadGasto' }),
     // Un rango son dos condiciones: monto ≥ «Monto desde» y monto ≤ «Monto hasta» (vacío = sin límite).
     cond('montoMin', 'gte', { var: 'monto' }),
     cond('montoMax', 'lte', { var: 'monto' }),
@@ -199,6 +201,7 @@ export const ADQUISICIONES_FLOW: Flow = {
     { key: 'area', label: 'Área del solicitante', type: 'select', required: true, options: [...AREAS] },
     { key: 'tipoGasto', label: 'Tipo de gasto', type: 'select', required: true, options: [...TIPOS_GASTO] },
     { key: 'concepto', label: 'Concepto de gasto', type: 'select', required: true, options: [...CONCEPTOS] },
+    { key: 'modalidadGasto', label: 'Modalidad del gasto', type: 'select', required: false, options: ['Compra', 'Reembolso'] },
     { key: 'monto', label: 'Monto (MXN)', type: 'number', required: true },
   ],
   steps: [
