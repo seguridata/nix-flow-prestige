@@ -32,10 +32,23 @@ Los builds Docker BFF/web agotaron C: (~430 MB libres) y WSL devolvió EIO y lue
 
 ## Siguiente paso técnico
 
-1. Recuperar WSL y suficiente espacio; levantar con `bun run dev -- --no-demo` (no recrear usuarios ficticios).
-2. Reiniciar BFF con nuevo código y credenciales MinIO. Repetir verificación HTTP con draygoza y ejecutar seed del formato de gastos con la nueva modalidad.
-3. Probar UI real: borradores → revisión → guardar FORM, y anexos → envío → descarga autorizada.
-4. Ejecutar build y escaneo de imágenes con espacio suficiente; verificar colector OTLP.
+### Reanudación tras liberar disco (16 de octubre, tarde)
+
+- WSL recuperado reiniciando su máquina virtual después de comprobar que Ubuntu era la única distribución instalada y estaba detenida. Los volúmenes persistentes se conservaron.
+- Corregida la provisión repetida de MinIO: `mc admin policy attach` devuelve error cuando la asociación ya existe; se acepta únicamente ese resultado idempotente. Acceso al bucket aprobado y administración denegada tras reiniciar.
+- `backfill-storage-aad.ts --verify` añade una comprobación de solo lectura: descifrado estricto y SHA-256 de todas las referencias. **55 referencias verificadas**, sin modificar objetos. Modo estricto activado en el entorno privado local.
+- Corregido `saveFormDocument`: excluye campos de ubicación PDF que `CreateFormDto` rechaza. Pruebas dirigidas frontend aprobadas.
+- Colector OTLP real recibió traza, contador y duración con `tenant.id` y ruta normalizada. Prueba con interceptor real y contexto autenticado sintético; no equivale a comprobar todo el pipeline HTTP del BFF.
+- Backend levantado con `bun run dev -- --no-demo`; worker Temporal RUNNING. `GET /operations/health`: Postgres y objectStorage verdaderos, ambos `true`.
+- Verificación HTTP autenticada repetida tras el reinicio: OIDC `draygoza`, 401 sin token, 403 con tenant ajeno, y 200 para salud, tablas, formatos y borradores.
+- Formato de gastos generado con modalidad. Seed de decisiones HTTP repetible: primera pasada hizo 3 escrituras (solo formato), la segunda cero; tablas de responsables y roles sin cambios. **20 previews**: seis reembolsos, seis intentos de suplantación rechazados, seis compras de Marketing y dos conceptos CRM/Aliados. Ruteo esperado aprobado.
+- Corrección del payload FORM: test dirigido 4/4 y `tsc` frontend aprobados. E2E real de navegador aprobado: login, borrador sintético, revisión, formato FORM no publicado, publicación temporal de QA, PDF base, carga de PDF por selector, comprobación de hash/tamaño/estado y eliminación con HTTP 204. Limpieza del formato hecha; borrador de Redis removido tras la primera corrida fallida.
+- Encontrado y corregido HTTP 400 en la campana de notificaciones: el front enviaba `userId` en query, pero `PageQueryDto` lo rechaza y el BFF ya obtiene el actor del JWT. La UI ahora llama `/me/notifications` sin identidad enviada por el cliente; GET autenticado devuelve HTTP 200.
+
+Los pasos siguientes se mantienen abiertos hasta registrar sus resultados reales.
+
+1. Verificar build BFF de contenedor con disco estable. Build iniciado por script de agente fue cancelado por saturación de E/S mientras bloqueaba el runtime; no hay imagen resultante.
+2. Consolidar commit de MinIO/collector tras validación YAML/Compose. No hay despliegue a clúster.
 
 ## Pendientes que siguen abiertos
 
