@@ -1,4 +1,14 @@
 /** Definición de flujo (misma forma que el BFF: backend/bff/src/flow/flow.types.ts). */
+import {
+  describeQuery,
+  KEY_RE,
+  queryProblems,
+  type LookupPerson,
+  type LookupQuery,
+  type LookupTableSummary,
+  type SourceVar,
+} from "@/libs/lookup";
+
 export type VarType = "text" | "date" | "number" | "select";
 export type Op = ">" | ">=" | "<" | "<=" | "==" | "!=";
 
@@ -20,15 +30,25 @@ export type Who =
   | { type: "initiator" }
   | { type: "fixed"; signerId: string; name?: string; email?: string }
   | { type: "ask"; prompt: string }
-  /** Lo resuelve la matriz de responsables de gasto; si no hay coincidencia se pregunta con `prompt`. */
-  | { type: "matrix"; stage: MatrixStage; prompt: string };
+  /**
+   * Lo resuelve una tabla de consulta (ADR-008): `query` elige la fila y `person` dice qué columnas
+   * traen a la persona. Sin coincidencia se pregunta con `prompt`.
+   */
+  | { type: "lookup"; query: LookupQuery; person: LookupPerson; prompt: string };
 
-export type MatrixStage = "area" | "tipoGasto";
+export type LookupWho = Extract<Who, { type: "lookup" }>;
 
-export const MATRIX_STAGE_LABEL: Record<MatrixStage, string> = {
-  area: "Autorización por área",
-  tipoGasto: "Autorización por tipo de gasto",
-};
+/** Variable calculada desde una tabla: se resuelve antes de decidir qué pasos aplican y sirve en `when`. */
+export interface DerivedVariable {
+  key: string;
+  label: string;
+  type: VarType;
+  query: LookupQuery;
+  /** Columna de la fila ganadora que se copia a la variable. */
+  column: string;
+  /** Sin coincidencia: queda vacía (`empty`, por defecto) o no se puede crear la solicitud (`fail`). */
+  onMiss?: "empty" | "fail";
+}
 
 export interface FlowStep {
   id: string;
@@ -41,6 +61,8 @@ export interface FlowStep {
 
 export interface Flow {
   variables: FlowVariable[];
+  /** Variables calculadas desde una tabla de consulta. */
+  derived?: DerivedVariable[];
   steps: FlowStep[];
   order: "SECUENCIAL" | "PARALELO";
   slaHours: number;
@@ -96,6 +118,14 @@ export function slugKey(label: string, taken: readonly string[] = []): string {
   return `${base}_${n}`;
 }
 
+/** Variables del formulario más las calculadas: lo que puede usarse en una condición de `when`. */
+export function allVariables(flow: Pick<Flow, "variables" | "derived">): FlowVariable[] {
+  return [
+    ...flow.variables,
+    ...(flow.derived ?? []).map((d): FlowVariable => ({ key: d.key, label: d.label, type: d.type, required: false })),
+  ];
+}
+
 /** "Si Días de vacaciones es mayor que 5" — para mostrar la condición en lenguaje natural. */
 export function describeWhen(when: Condition[] | undefined, variables: readonly FlowVariable[]): string {
   if (!when?.length) return "Siempre";
@@ -107,15 +137,30 @@ export function describeWhen(when: Condition[] | undefined, variables: readonly 
     .join(" y ");
 }
 
-export function describeWho(who: Who): string {
+export interface DescribeCtx {
+  /** Nombre visible de cada tabla por su clave. */
+  tableNames?: Readonly<Record<string, string>>;
+  variables?: readonly SourceVar[];
+}
+
+export function describeWho(who: Who, ctx: DescribeCtx = {}): string {
   if (who.type === "initiator") return "Quien solicita";
   if (who.type === "fixed") return who.name || who.email || who.signerId;
-  if (who.type === "matrix") return `Según la matriz de gastos: ${MATRIX_STAGE_LABEL[who.stage].toLowerCase()}`;
+  if (who.type === "lookup") {
+    // Quien no es administrador recibe el participante sin la consulta (el usuario nunca ve las tablas): se asigna solo.
+    const query = (who as { query?: LookupQuery }).query;
+    if (!query) return "Se asigna automáticamente según los datos del formato";
+    const name = ctx.tableNames?.[query.table] ?? query.table;
+    return `Según la tabla «${name}»: ${describeQuery(query, undefined, ctx.variables)}`;
+  }
   return who.prompt || "Se elige al usar el formato";
 }
 
-/** Errores que el BFF también rechazaría, para avisar antes de guardar. */
-export function flowProblems(flow: Flow): string[] {
+/**
+ * Errores que el BFF también rechazaría, para avisar antes de guardar. Con `tables` (las tablas de
+ * consulta del tenant) también comprueba que existan, estén activas y que las columnas citadas existan.
+ */
+export function flowProblems(flow: Flow, tables?: readonly LookupTableSummary[]): string[] {
   const out: string[] = [];
   if (flow.steps.length === 0) out.push("Agrega al menos un paso.");
   const keys = new Set<string>();
@@ -125,15 +170,49 @@ export function flowProblems(flow: Flow): string[] {
     keys.add(v.key);
     if (v.type === "select" && !(v.options?.length)) out.push(`«${v.label}» necesita al menos una opción.`);
   }
+  const sourcesForDerived: SourceVar[] = flow.variables.map((v) => ({ key: v.key, label: v.label || v.key }));
+  const tableOf = (key: string) => tables?.find((t) => t.key === key);
+  const tableMissing = (key: string, where: string) =>
+    tables && key.trim() && !tableOf(key) ? [`${where}: la tabla «${key}» ya no existe.`] : [];
+
+  for (const d of flow.derived ?? []) {
+    const where = `Variable calculada «${d.label || d.key || "sin nombre"}»`;
+    if (!d.label.trim()) out.push("Hay una variable calculada sin nombre.");
+    if (!KEY_RE.test(d.key)) out.push(`${where}: la clave debe empezar con letra y usar solo letras, números y guion bajo.`);
+    if (keys.has(d.key)) out.push(`${where}: la clave «${d.key}» ya la usa otro dato.`);
+    keys.add(d.key);
+    const t = tableOf(d.query.table);
+    out.push(...tableMissing(d.query.table, where));
+    out.push(...queryProblems(d.query, { where, table: t, sources: sourcesForDerived }));
+    if (!d.column) out.push(`${where}: elige la columna que se copia.`);
+    else if (t && !t.columns.some((c) => c.key === d.column)) out.push(`${where}: la columna «${d.column}» ya no existe en la tabla.`);
+  }
+
+  const every = allVariables(flow);
+  const sourcesForSteps: SourceVar[] = every.map((v) => ({ key: v.key, label: v.label || v.key }));
   for (const s of flow.steps) {
+    const name = s.label || "Paso";
     if (!s.label.trim()) out.push("Hay un paso sin nombre.");
-    if (s.who.type === "fixed" && !s.who.signerId.trim()) out.push(`«${s.label || "Paso"}»: elige a quién se envía.`);
-    if (s.who.type === "ask" && !s.who.prompt.trim()) out.push(`«${s.label || "Paso"}»: escribe qué se le pregunta a quien usa el formato.`);
-    if (s.who.type === "matrix" && !s.who.prompt.trim())
-      out.push(`«${s.label || "Paso"}»: escribe la pregunta que se hace si la matriz no encuentra a nadie.`);
+    if (s.who.type === "fixed" && !s.who.signerId.trim()) out.push(`«${name}»: elige a quién se envía.`);
+    if (s.who.type === "ask" && !s.who.prompt.trim()) out.push(`«${name}»: escribe qué se le pregunta a quien usa el formato.`);
+    if (s.who.type === "lookup") {
+      const w = s.who;
+      const t = tableOf(w.query.table);
+      out.push(...tableMissing(w.query.table, `«${name}»`));
+      out.push(...queryProblems(w.query, { where: `«${name}»`, table: t, sources: sourcesForSteps }));
+      if (!w.person.signerId.trim()) out.push(`«${name}»: elige la columna que identifica a la persona.`);
+      for (const [label, col] of [
+        ["identificador", w.person.signerId],
+        ["nombre", w.person.name],
+        ["correo", w.person.email],
+      ] as const) {
+        if (col && t && !t.columns.some((c) => c.key === col)) out.push(`«${name}»: la columna de ${label} «${col}» ya no existe en la tabla.`);
+      }
+      if (!w.prompt.trim()) out.push(`«${name}»: escribe la pregunta que se hace si la tabla no encuentra a nadie.`);
+    }
     for (const c of s.when ?? []) {
-      if (!flow.variables.some((v) => v.key === c.variable)) out.push(`«${s.label || "Paso"}»: la condición usa una variable que ya no existe.`);
-      if (String(c.value).trim() === "") out.push(`«${s.label || "Paso"}»: falta el valor de la condición.`);
+      if (!every.some((v) => v.key === c.variable)) out.push(`«${name}»: la condición usa una variable que ya no existe.`);
+      if (String(c.value).trim() === "") out.push(`«${name}»: falta el valor de la condición.`);
     }
   }
   return out;

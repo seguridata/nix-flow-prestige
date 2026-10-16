@@ -18,8 +18,8 @@ import {
   Search,
   Send,
   Server,
+  Table2,
   UserPlus,
-  Wallet,
   Workflow,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/layout/notifications-bell";
@@ -47,7 +47,7 @@ const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[
   { href: "/tasks", label: "Tareas", icon: ListChecks },
   { href: "/process", label: "Proceso", icon: GitBranch, roles: ["sender", "admin"] },
   { href: "/flujos" as Route, label: "Flujos", icon: Workflow, roles: ["admin"] },
-  { href: "/responsables-gasto" as Route, label: "Responsables de gasto", icon: Wallet, roles: ["admin"] },
+  { href: "/tablas-consulta" as Route, label: "Tablas de consulta", icon: Table2, roles: ["admin"] },
   { href: "/operations", label: "Operación", icon: Server, roles: ["sender", "rh", "admin"] },
 ];
 

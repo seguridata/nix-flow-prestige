@@ -8,12 +8,14 @@ import { ArrowLeft, Crosshair, FileUp, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { FormatAiAssistant } from "@/components/ai/format-ai-assistant";
+import { AttachmentSpecsEditor } from "@/components/formats/attachment-specs-editor";
 import { FlowEditor } from "@/components/formats/flow-editor";
 import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { specProblems, type AttachmentSpec } from "@/libs/attachments";
 import { ENVELOPE_METHOD_OPTIONS, KYC_OPTIONS } from "@/libs/envelope-template";
 import { emptyFlow, flowProblems, type Flow } from "@/libs/flow";
 import { placeField, syncFields, unplacedVariables } from "@/libs/format-draft";
@@ -25,13 +27,16 @@ import {
   fetchFlowDefinitions,
   fetchSignaturePolicy,
   formatPdfUrl,
+  saveFormDocument,
   setFormatPublished,
   updateFormat,
   type FormatDetail,
   type FormatDraft,
   type FormatField,
+  type FormatKind,
   type SignatureBox,
 } from "@/services/formats-service";
+import { fetchLookupTables } from "@/services/lookup-tables-service";
 
 const PREFILLS: { value: NonNullable<FormatField["prefill"]> | ""; label: string }[] = [
   { value: "", label: "Lo escribe quien usa el formato" },
@@ -43,8 +48,13 @@ const PREFILLS: { value: NonNullable<FormatField["prefill"]> | ""; label: string
 const selectClass =
   "h-10 rounded-md border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40";
 
-/** Alta y edición de un formato: PDF base, datos, flujo, colocación de campos y reglas de firma. */
-export function FormatEditor({ initial }: { initial?: FormatDetail }) {
+/**
+ * Alta y edición de un formato: PDF base (o formato digital, cuya hoja base genera el sistema), datos,
+ * flujo, anexos, colocación de campos y reglas de firma.
+ */
+export function FormatEditor({ initial, mode = "PDF" }: { initial?: FormatDetail; mode?: FormatKind }) {
+  const kind: FormatKind = initial?.kind ?? mode;
+  const isForm = kind === "FORM";
   const router = useRouter();
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
@@ -60,6 +70,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
   );
   const [fields, setFields] = useState<FormatField[]>(initial?.fields ?? []);
   const [boxes, setBoxes] = useState<SignatureBox[]>(initial?.signatureBoxes ?? []);
+  const [specs, setSpecs] = useState<AttachmentSpec[]>(initial?.attachmentSpecs ?? []);
   const [methods, setMethods] = useState<SignatureMethod[] | null>((initial?.methods as SignatureMethod[] | undefined) ?? null);
   const [kycPolicy, setKycPolicy] = useState<FormatDraft["kycPolicy"]>(initial?.kycPolicy ?? "NONE");
   const [requirePasskey, setRequirePasskey] = useState(initial?.requirePasskey ?? false);
@@ -83,14 +94,20 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
   ).filter((m) => !allowed || allowed.includes(m));
 
   const published = useQuery({ queryKey: ["flows", "published"], queryFn: () => fetchFlowDefinitions(true) });
+  // Con las tablas se validan las consultas del flujo (existen, están activas, sus columnas existen).
+  const lookupTables = useQuery({ queryKey: ["lookup-tables"], queryFn: fetchLookupTables, staleTime: 30_000 });
+  // Un formato digital publicado no se edita: se despublica primero (la hoja base se regenera al guardar).
+  const locked = isForm && !!saved?.published;
   const baseFlows = (published.data ?? []).filter((d) => d.flow);
 
   const cleanFields = useMemo(() => syncFields(fields, flow.variables), [fields, flow.variables]);
   const unplaced = unplacedVariables(cleanFields, flow.variables);
   const problems = [
     ...(name.trim().length < 3 ? ["Ponle un nombre al formato (mínimo 3 letras)."] : []),
-    ...(!saved && !file ? ["Sube el PDF base."] : []),
-    ...flowProblems(flow),
+    ...(!isForm && !saved && !file ? ["Sube el PDF base."] : []),
+    ...(isForm && flow.variables.length === 0 ? ["Agrega al menos un dato que se pida."] : []),
+    ...flowProblems(flow, lookupTables.data),
+    ...specProblems(specs),
   ];
 
   const draft = (): FormatDraft => ({
@@ -99,6 +116,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
     category: category.trim() || undefined,
     fields: cleanFields,
     signatureBoxes: boxes,
+    attachmentSpecs: specs,
     flow,
     flowKey: flowRef?.key,
     flowVersion: flowRef?.version,
@@ -108,15 +126,18 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
   });
 
   const save = useMutation({
-    mutationFn: () => (saved ? updateFormat(saved.id, draft()) : createFormat(file!, draft())),
+    mutationFn: () =>
+      isForm ? saveFormDocument(draft(), saved?.id) : saved ? updateFormat(saved.id, draft()) : createFormat(file!, draft()),
     onSuccess: async (f) => {
       const wasNew = !saved;
       setSaved(f);
       setFields(f.fields);
       setBoxes(f.signatureBoxes);
+      setSpecs(f.attachmentSpecs ?? specs);
+      setPages(f.pageCount || 1);
       setDirty(false);
       setFile(null);
-      toast.success(wasNew ? "Formato creado como borrador." : "Cambios guardados.");
+      toast.success(wasNew ? (isForm ? "Formato digital creado como borrador." : "Formato creado como borrador.") : "Cambios guardados.");
       await queryClient.invalidateQueries({ queryKey: ["formats"] });
       await queryClient.invalidateQueries({ queryKey: ["format", f.id] });
       if (wasNew) router.replace(`/formatos/${f.id}/editar` as never);
@@ -158,10 +179,24 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
           <ArrowLeft className="size-4" /> Todos los formatos
         </Link>
 
+        {locked ? (
+          <p role="status" className="rounded-md border border-border bg-muted/50 p-3 text-sm">
+            Este formato digital está publicado y no se edita. Despublícalo para cambiarlo; la hoja base se vuelve a generar al guardar.
+          </p>
+        ) : null}
+
+        <fieldset disabled={locked} className="m-0 min-w-0 space-y-10 border-0 p-0">
         <section aria-labelledby="ed-gen" className="space-y-4">
           <h2 id="ed-gen" className="text-base font-semibold">
-            Documento base
+            {isForm ? "Formato digital" : "Documento base"}
           </h2>
+          {isForm ? (
+            <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
+              No subes un PDF: el sistema genera la hoja base con el título, una caja por cada dato, la lista de anexos y una caja de firma por paso. Después
+              se comporta como cualquier formato: se rellena, sigue el flujo y se firma.
+            </p>
+          ) : null}
+          {!isForm ? (
           <div className="flex items-center gap-3 rounded-lg border border-border p-3">
             <FileUp className="size-5 shrink-0 text-muted-foreground" aria-hidden />
             <span className="min-w-0 flex-1 truncate text-sm">{file ? file.name : saved ? "PDF guardado" : "Aún no hay PDF"}</span>
@@ -188,7 +223,8 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
               </Button>
             ) : null}
           </div>
-          {!saved && file ? (
+          ) : null}
+          {!isForm && !saved && file ? (
             <FormatAiAssistant
               file={file}
               onApply={(meta) => {
@@ -257,6 +293,26 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
           />
         </section>
 
+        <section aria-labelledby="ed-anexos" className="space-y-3">
+          <div>
+            <h2 id="ed-anexos" className="text-base font-semibold">
+              Anexos del formato
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Archivos que quien llena el formato debe adjuntar, por ejemplo tres cotizaciones. Se guardan cifrados en el mismo expediente y quienes
+              reciben la solicitud pueden leerlos.
+            </p>
+          </div>
+          <AttachmentSpecsEditor
+            value={specs}
+            onChange={(v) => {
+              setSpecs(v);
+              setDirty(true);
+            }}
+          />
+        </section>
+
+        {!isForm ? (
         <section aria-labelledby="ed-campos" className="space-y-3">
           <div>
             <h2 id="ed-campos" className="text-base font-semibold">
@@ -339,6 +395,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
             </ul>
           )}
         </section>
+        ) : null}
 
         <section aria-labelledby="ed-reglas" className="space-y-4">
           <h2 id="ed-reglas" className="text-base font-semibold">
@@ -383,6 +440,7 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
             </label>
           </div>
         </section>
+        </fieldset>
 
         {problems.length > 0 && dirty ? (
           <ul role="status" className="space-y-1 rounded-md border border-border bg-muted/50 p-3 text-sm">
@@ -391,15 +449,15 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
             ))}
           </ul>
         ) : null}
-        {unplaced.length > 0 && saved ? (
+        {!isForm && unplaced.length > 0 && saved ? (
           <p className="text-sm text-muted-foreground">
             Sin colocar en el documento: {unplaced.map((v) => v.label || v.key).join(", ")}. Se piden, pero no aparecen impresos.
           </p>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
-          <Button disabled={problems.length > 0 || !dirty || chosenMethods.length === 0 || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? "Guardando…" : saved ? "Guardar cambios" : "Crear formato"}
+          <Button disabled={locked || problems.length > 0 || !dirty || chosenMethods.length === 0 || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Guardando…" : saved ? "Guardar cambios" : isForm ? "Crear formato digital" : "Crear formato"}
           </Button>
           {saved ? (
             <Button variant="outline" disabled={dirty || publish.isPending} onClick={() => publish.mutate(!saved.published)}>
@@ -463,7 +521,9 @@ export function FormatEditor({ initial }: { initial?: FormatDetail }) {
             </PdfSurface>
           </>
         ) : (
-          <div className="grid h-80 place-items-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">Elige un PDF para ver el documento aquí.</div>
+          <div className="grid h-80 place-items-center rounded-lg border border-dashed border-border px-6 text-center text-sm text-muted-foreground">
+            {isForm ? "La hoja base se genera al guardar el formato; aquí la verás." : "Elige un PDF para ver el documento aquí."}
+          </div>
         )}
       </div>
 

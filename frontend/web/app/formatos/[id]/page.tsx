@@ -7,15 +7,18 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Check, CircleDashed, Pencil, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
+import { AttachmentsBlock, useAttachments } from "@/components/formats/attachments-block";
 import { PersonPicker, type Person } from "@/components/formats/person-picker";
 import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { attachmentErrorsFrom, unmetSpecs } from "@/libs/attachments";
 import { describeWho, type FlowVariable } from "@/libs/flow";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
+import { ApiError } from "@/services/api-client";
 import {
   fetchFormat,
   formatPdfUrl,
@@ -26,10 +29,11 @@ import {
   type ResolvedStep,
 } from "@/services/formats-service";
 
-/** Un paso necesita que quien usa el formato elija a la persona: «ask», o «matrix» sin responsable. */
+/** Un paso necesita que quien usa el formato elija a la persona: «ask», o «lookup» sin coincidencia. */
 const needsPerson = (s: Pick<ResolvedStep, "who" | "unresolved">) =>
-  s.who.type === "ask" || (s.who.type === "matrix" && s.unresolved === true);
-const resolvedByMatrix = (s: Pick<ResolvedStep, "who" | "resolved">) => s.who.type === "matrix" && !!s.resolved;
+  s.who.type === "ask" || (s.who.type === "lookup" && s.unresolved === true);
+/** El sistema ya resolvió a la persona (una tabla de consulta que quien usa el formato nunca ve). */
+const resolvedPerson = (s: Pick<ResolvedStep, "who" | "resolved">) => (s.who.type === "lookup" ? s.resolved : undefined);
 
 const today = () => new Date().toISOString().slice(0, 10);
 /** El PDF final imprime las fechas como DD/MM/AAAA; la vista previa debe verse igual. */
@@ -105,27 +109,41 @@ function UsarForm({ format }: { format: FormatDetail }) {
     retry: false,
   });
 
+  const specs = format.attachmentSpecs ?? [];
+  const att = useAttachments(format.id, specs);
+  const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({});
+  const pendingSpecs = unmetSpecs(specs, att.counts);
+
   const missing = format.flow.variables.filter((v) => v.required && !String(values[v.key] ?? "").trim());
   const activeAsk = (preview.data?.steps ?? []).filter((s) => s.active && needsPerson(s));
   const missingPeople = activeAsk.filter((s) => !asked[s.stepId]);
-  const ready = missing.length === 0 && missingPeople.length === 0;
+  const ready = missing.length === 0 && missingPeople.length === 0 && pendingSpecs.length === 0 && !att.uploading;
 
   const send = useMutation({
     mutationFn: () =>
       instantiateFormat(format.id, {
         values: typed,
-        // Solo los pasos que de verdad se preguntan: los que resolvió la matriz no llevan askedSigners.
+        // Solo los pasos que de verdad se preguntan: los que resolvió la tabla no llevan askedSigners.
         askedSigners: Object.fromEntries(
           Object.entries(asked)
             .filter(([stepId]) => activeAsk.some((s) => s.stepId === stepId))
             .map(([k, p]) => [k, { signerId: p.signerId, name: p.name, email: p.email } satisfies AskedSigner]),
         ),
+        ...(specs.length > 0 ? { attachments: att.staged() } : {}),
       }),
+    onMutate: () => setAttachmentErrors({}),
     onSuccess: (r) => {
       toast.success("Enviado a firma.");
       router.push(`/documents/${r.documentId}` as never);
     },
-    onError: (e: Error) => toast.error(e.message || "No se pudo enviar."),
+    onError: (e: Error) => {
+      // El servidor valida los anexos antes de crear nada: se muestra el error en el anexo que corresponde.
+      const perSpec = e instanceof ApiError ? attachmentErrorsFrom(e.body) : {};
+      if (Object.keys(perSpec).length > 0) {
+        setAttachmentErrors(perSpec);
+        toast.error("Revisa los anexos marcados.");
+      } else toast.error(e.message || "No se pudo enviar.");
+    },
   });
 
   const { ref, width } = useContainerWidth(560);
@@ -149,7 +167,9 @@ function UsarForm({ format }: { format: FormatDetail }) {
           {format.flow.variables.length === 0 ? <p className="text-sm text-muted-foreground">Este formato no pide datos.</p> : null}
         </div>
 
-        <section aria-labelledby="se-envia" className="rounded-lg border border-border p-4">
+        <AttachmentsBlock specs={specs} state={att} serverErrors={attachmentErrors} />
+
+        <section aria-labelledby="se-envia" className="rounded-lg border border-border p-4" aria-busy={preview.isFetching}>
           <h2 id="se-envia" className="text-sm font-semibold">
             Se enviará a
           </h2>
@@ -162,27 +182,27 @@ function UsarForm({ format }: { format: FormatDetail }) {
                 <span className="min-w-0 flex-1">
                   <span className={cn("block font-medium", !s.active && "line-through")}>{s.label}</span>
                   <span className="block">
-                    {s.active && resolvedByMatrix(s) ? (
+                    {s.active && resolvedPerson(s) ? (
                       <span className="inline-flex items-center gap-1.5">
                         <ShieldCheck className="size-4 shrink-0" aria-hidden />
                         <span>
-                          Resuelto por la matriz: <span className="font-medium">{s.resolved!.name || s.resolved!.email || s.resolved!.signerId}</span>
-                          {s.resolved!.email && s.resolved!.name ? <span className="text-muted-foreground"> · {s.resolved!.email}</span> : null}
+                          <span className="font-medium">{resolvedPerson(s)!.name || resolvedPerson(s)!.email || resolvedPerson(s)!.signerId}</span>
+                          {resolvedPerson(s)!.email && resolvedPerson(s)!.name ? <span className="text-muted-foreground"> · {resolvedPerson(s)!.email}</span> : null}
                         </span>
                       </span>
                     ) : needsPerson(s) ? (
-                      s.active ? "Elige a la persona:" : s.who.type === "ask" || s.who.type === "matrix" ? s.who.prompt : ""
+                      s.active ? "Elige a la persona:" : s.who.type === "ask" || s.who.type === "lookup" ? s.who.prompt : ""
                     ) : (
                       describeWho(s.who)
                     )}
                     {!s.active ? " · no aplica con estos datos" : ""}
                   </span>
-                  {s.active && needsPerson(s) && (s.who.type === "ask" || s.who.type === "matrix") ? (
+                  {s.active && needsPerson(s) && (s.who.type === "ask" || s.who.type === "lookup") ? (
                     <div className="mt-1.5">
                       <PersonPicker label={s.who.prompt} value={asked[s.stepId] ?? null} onChange={(p) => setAsked((a) => { const n = { ...a }; if (p) n[s.stepId] = p; else delete n[s.stepId]; return n; })} />
                       <p className="mt-1 text-xs text-muted-foreground">{s.who.prompt}</p>
-                      {s.who.type === "matrix" ? (
-                        <p className="mt-1 text-xs text-muted-foreground">Sin responsable en la matriz; elige a la persona.</p>
+                      {s.who.type === "lookup" ? (
+                        <p className="mt-1 text-xs text-muted-foreground">No se pudo asignar a nadie con estos datos; elige a la persona.</p>
                       ) : null}
                     </div>
                   ) : null}
@@ -190,6 +210,11 @@ function UsarForm({ format }: { format: FormatDetail }) {
               </li>
             ))}
           </ol>
+          {preview.isError ? (
+            <p role="alert" className="mt-3 text-sm text-[#8c2018]">
+              No se pudo calcular a quién se enviará con estos datos. {preview.error instanceof Error ? preview.error.message : ""}
+            </p>
+          ) : null}
         </section>
 
         <div className="space-y-2">
@@ -198,7 +223,13 @@ function UsarForm({ format }: { format: FormatDetail }) {
           </Button>
           {!ready ? (
             <p role="status" className="text-center text-sm text-muted-foreground">
-              {missing.length > 0 ? `Falta: ${missing.map((m) => m.label || m.key).join(", ")}.` : "Elige a quién se envía en los pasos de arriba."}
+              {missing.length > 0
+                ? `Falta: ${missing.map((m) => m.label || m.key).join(", ")}.`
+                : pendingSpecs.length > 0
+                  ? `Faltan anexos: ${pendingSpecs.map((x) => x.label).join(", ")}.`
+                  : att.uploading
+                    ? "Espera a que terminen de subirse los archivos."
+                    : "Elige a quién se envía en los pasos de arriba."}
             </p>
           ) : null}
         </div>

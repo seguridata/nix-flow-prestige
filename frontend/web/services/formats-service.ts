@@ -1,5 +1,11 @@
-import { apiClient } from "./api-client";
+import { ApiError, apiClient } from "./api-client";
+import type { AttachmentSpec } from "@/libs/attachments";
 import type { Flow, FlowStep, VarType } from "@/libs/flow";
+
+export type { AttachmentSpec } from "@/libs/attachments";
+
+/** `PDF`: el administrador sube el documento. `FORM`: el sistema genera la hoja base (ADR-008 §7). */
+export type FormatKind = "PDF" | "FORM";
 
 export interface FormatField {
   key: string;
@@ -38,6 +44,8 @@ export interface FormatSummary {
   fieldCount: number;
   stepCount: number;
   createdAt: string;
+  kind?: FormatKind;
+  attachmentCount?: number;
 }
 
 export interface FormatDetail {
@@ -46,6 +54,9 @@ export interface FormatDetail {
   description: string | null;
   category: string | null;
   published: boolean;
+  kind?: FormatKind;
+  /** Anexos que pide el formato (vacío si no pide ninguno). */
+  attachmentSpecs?: AttachmentSpec[];
   pageCount: number;
   fields: FormatField[];
   signatureBoxes: SignatureBox[];
@@ -64,6 +75,7 @@ export interface FormatDraft {
   category?: string;
   fields: FormatField[];
   signatureBoxes: SignatureBox[];
+  attachmentSpecs?: AttachmentSpec[];
   flow: Flow;
   flowKey?: string;
   flowVersion?: number;
@@ -78,9 +90,9 @@ export interface ResolvedStep {
   role: FlowStep["role"];
   who: FlowStep["who"];
   active: boolean;
-  /** Persona que la matriz de gastos resolvió para un paso `matrix`. */
+  /** Persona que una tabla de consulta resolvió para un paso `lookup`. */
   resolved?: { signerId: string; name?: string; email?: string };
-  /** Paso `matrix` sin coincidencia: se pregunta con el `prompt` del paso. */
+  /** Paso `lookup` sin coincidencia: se pregunta con el `prompt` del paso. */
   unresolved?: boolean;
 }
 
@@ -116,6 +128,10 @@ export function createFormat(file: File, draft: FormatDraft) {
   return apiClient.post<FormatDetail>("/document-templates", form);
 }
 
+/** Formato digital (sin PDF): con `id` regenera la hoja base mientras el formato no esté publicado. */
+export const saveFormDocument = (draft: FormatDraft, id?: string) =>
+  apiClient.post<FormatDetail>("/document-templates/form", id ? { ...draft, id } : draft);
+
 export const updateFormat = (id: string, draft: FormatDraft) =>
   apiClient.put<FormatDetail>(`/document-templates/${id}`, draft);
 
@@ -132,6 +148,8 @@ export const instantiateFormat = (
   body: {
     values: Record<string, string | number>;
     askedSigners?: Record<string, AskedSigner>;
+    /** Archivos ya subidos (staging) por especificación de anexo: `{ [specKey]: stagedId[] }`. */
+    attachments?: Record<string, string[]>;
     folderId?: string;
     caseId?: string;
     title?: string;
@@ -141,6 +159,79 @@ export const instantiateFormat = (
     `/document-templates/${id}/instantiate`,
     body,
   );
+
+/* ───────── Anexos: carga previa (staging, caduca en 24 h) ───────── */
+
+export interface StagedAttachment {
+  stagedId: string;
+  name: string;
+  size: number;
+  mime: string;
+  sha256: string;
+}
+
+export interface UploadHandle {
+  promise: Promise<StagedAttachment>;
+  abort: () => void;
+}
+
+/** Sube un archivo a la zona previa. Usa XHR para poder mostrar el progreso (fetch no lo expone). */
+export function uploadStagedAttachment(
+  templateId: string,
+  specKey: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): UploadHandle {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<StagedAttachment>((resolve, reject) => {
+    const url = `/api/bff/document-templates/${encodeURIComponent(templateId)}/attachments?specKey=${encodeURIComponent(specKey)}`;
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onerror = () => reject(new ApiError("No hay conexión: no se pudo subir el archivo.", 0));
+    xhr.onabort = () => reject(new ApiError("Carga cancelada.", 0));
+    xhr.onload = () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(body as StagedAttachment);
+      if (xhr.status === 401 && typeof window !== "undefined") {
+        window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
+      }
+      const message = (body as { message?: unknown } | undefined)?.message;
+      reject(
+        new ApiError(
+          typeof message === "string" ? message : Array.isArray(message) ? message.join(" ") : `No se pudo subir el archivo (error ${xhr.status}).`,
+          xhr.status,
+          body,
+        ),
+      );
+    };
+    const form = new FormData();
+    form.append("file", file, file.name);
+    xhr.send(form);
+  });
+  return { promise, abort: () => xhr.abort() };
+}
+
+export const deleteStagedAttachment = (stagedId: string) =>
+  apiClient.delete<void>(`/document-templates/attachments/staged/${encodeURIComponent(stagedId)}`);
+
+export interface CaseAttachment {
+  documentId: string;
+  attachmentKey: string;
+  filename: string;
+  sizeBytes: number;
+  mimeType: string;
+  hash: string;
+}
+
+export const fetchCaseAttachments = (caseId: string) =>
+  apiClient.get<CaseAttachment[]>(`/cases/${encodeURIComponent(caseId)}/attachments`);
 
 /* ───────── Flujos publicables (ProcessDefinition con `flow`) ───────── */
 

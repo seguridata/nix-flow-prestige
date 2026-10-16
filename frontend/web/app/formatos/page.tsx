@@ -97,7 +97,7 @@ export default function FormatosPage() {
           <DocumentIcon className="size-16" />
           <p className="mt-4 text-base font-medium">{formats.data?.length ? "Ningún formato coincide" : "Aún no hay formatos publicados"}</p>
           {isAdmin && !formats.data?.length ? (
-            <p className="mt-1 max-w-sm text-sm text-muted-foreground">Sube un PDF, marca dónde van los datos y define el flujo. Por ejemplo, un formato de vacaciones.</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">Sube un PDF y marca dónde van los datos, o crea un formato digital sin PDF. Define el flujo y los anexos. Por ejemplo, un formato de vacaciones.</p>
           ) : null}
         </div>
       ) : (
@@ -126,6 +126,7 @@ function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: bo
             {f.category ? <span className="rounded-full border border-border px-2 py-0.5">{f.category}</span> : null}
             <span>{plural(f.fieldCount, "dato", "datos")}</span>
             <span>{plural(f.stepCount, "paso", "pasos")}</span>
+            {f.kind === "FORM" ? <span className="rounded-full border border-border px-2 py-0.5">Digital</span> : null}
             {!f.published ? <span className="rounded-full border border-foreground px-2 py-0.5 font-medium text-foreground">Borrador</span> : null}
           </span>
         </span>
