@@ -4,18 +4,20 @@ import { use, useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, CircleDashed, Pencil, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { AttachmentsBlock, useAttachments } from "@/components/formats/attachments-block";
-import { PersonPicker, type Person } from "@/components/formats/person-picker";
+import { type Person } from "@/components/formats/person-picker";
+import { SendToSteps } from "@/components/formats/send-to-steps";
 import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { attachmentErrorsFrom, unmetSpecs } from "@/libs/attachments";
-import { describeWho, type FlowVariable } from "@/libs/flow";
+import { type FlowVariable } from "@/libs/flow";
+import { needsPerson } from "@/libs/format-steps";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
 import { ApiError } from "@/services/api-client";
@@ -28,12 +30,6 @@ import {
   type FormatDetail,
   type ResolvedStep,
 } from "@/services/formats-service";
-
-/** Un paso necesita que quien usa el formato elija a la persona: «ask», o «lookup» sin coincidencia. */
-const needsPerson = (s: Pick<ResolvedStep, "who" | "unresolved">) =>
-  s.who.type === "ask" || (s.who.type === "lookup" && s.unresolved === true);
-/** El sistema ya resolvió a la persona (una tabla de consulta que quien usa el formato nunca ve). */
-const resolvedPerson = (s: Pick<ResolvedStep, "who" | "resolved">) => (s.who.type === "lookup" ? s.resolved : undefined);
 
 const today = () => new Date().toISOString().slice(0, 10);
 /** El PDF final imprime las fechas como DD/MM/AAAA; la vista previa debe verse igual. */
@@ -173,43 +169,21 @@ function UsarForm({ format }: { format: FormatDetail }) {
           <h2 id="se-envia" className="text-sm font-semibold">
             Se enviará a
           </h2>
-          <ol className="mt-3 space-y-3">
-            {(preview.data?.steps ??
+          <SendToSteps
+            steps={
+              preview.data?.steps ??
               format.flow.steps.map((s): ResolvedStep => ({ stepId: s.id, label: s.label, role: s.role, who: s.who, active: !s.when?.length }))
-            ).map((s) => (
-              <li key={s.stepId} className={cn("flex items-start gap-3 text-sm", !s.active && "text-muted-foreground")}>
-                <span className="mt-0.5 shrink-0">{s.active ? <Check className="size-4" aria-hidden /> : <CircleDashed className="size-4" aria-hidden />}</span>
-                <span className="min-w-0 flex-1">
-                  <span className={cn("block font-medium", !s.active && "line-through")}>{s.label}</span>
-                  <span className="block">
-                    {s.active && resolvedPerson(s) ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <ShieldCheck className="size-4 shrink-0" aria-hidden />
-                        <span>
-                          <span className="font-medium">{resolvedPerson(s)!.name || resolvedPerson(s)!.email || resolvedPerson(s)!.signerId}</span>
-                          {resolvedPerson(s)!.email && resolvedPerson(s)!.name ? <span className="text-muted-foreground"> · {resolvedPerson(s)!.email}</span> : null}
-                        </span>
-                      </span>
-                    ) : needsPerson(s) ? (
-                      s.active ? "Elige a la persona:" : s.who.type === "ask" || s.who.type === "lookup" ? s.who.prompt : ""
-                    ) : (
-                      describeWho(s.who)
-                    )}
-                    {!s.active ? " · no aplica con estos datos" : ""}
-                  </span>
-                  {s.active && needsPerson(s) && (s.who.type === "ask" || s.who.type === "lookup") ? (
-                    <div className="mt-1.5">
-                      <PersonPicker label={s.who.prompt} value={asked[s.stepId] ?? null} onChange={(p) => setAsked((a) => { const n = { ...a }; if (p) n[s.stepId] = p; else delete n[s.stepId]; return n; })} />
-                      <p className="mt-1 text-xs text-muted-foreground">{s.who.prompt}</p>
-                      {s.who.type === "lookup" ? (
-                        <p className="mt-1 text-xs text-muted-foreground">No se pudo asignar a nadie con estos datos; elige a la persona.</p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ol>
+            }
+            asked={asked}
+            onAsk={(stepId, p) =>
+              setAsked((a) => {
+                const n = { ...a };
+                if (p) n[stepId] = p;
+                else delete n[stepId];
+                return n;
+              })
+            }
+          />
           {preview.isError ? (
             <p role="alert" className="mt-3 text-sm text-[#8c2018]">
               No se pudo calcular a quién se enviará con estos datos. {preview.error instanceof Error ? preview.error.message : ""}
@@ -258,7 +232,7 @@ function UsarForm({ format }: { format: FormatDetail }) {
               </span>
             ))}
         </PdfSurface>
-        {format.pageCount > 1 ? <p className="mt-2 text-xs text-muted-foreground">Se muestra la primera página; el PDF final lleva las {format.pageCount}.</p> : null}
+        {format.pageCount > 1 ? <p className="mt-2 text-xs text-muted-foreground">Se muestra la primera página; el documento final lleva las {format.pageCount}.</p> : null}
       </div>
     </div>
   );

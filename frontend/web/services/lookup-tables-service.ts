@@ -1,4 +1,5 @@
 import { apiClient } from "./api-client";
+import { MAX_PAGE_LIMIT, MAX_ROWS, rowsQueryString } from "@/libs/lookup";
 import type {
   CellValue,
   LookupColumn,
@@ -7,6 +8,11 @@ import type {
   LookupTable,
   LookupTableSummary,
   LookupTestResult,
+  MoveBody,
+  MoveResult,
+  RowsFilters,
+  RowsPage,
+  RowsQuery,
 } from "@/libs/lookup";
 
 /** Endpoints de ADR-008 §6. Todos son solo para administradores: no hay consulta pública. */
@@ -22,11 +28,6 @@ export interface LookupTableInput {
 
 export type LookupTablePatch = Partial<Pick<LookupTableInput, "name" | "description" | "columns">> & { active?: boolean };
 
-export interface RowsPage {
-  items: LookupRow[];
-  nextCursor: string | null;
-}
-
 export type RowValues = Record<string, CellValue>;
 
 export const fetchLookupTables = () => apiClient.get<LookupTableSummary[]>(base);
@@ -37,29 +38,41 @@ export const updateLookupTable = (tableId: string, body: LookupTablePatch) =>
 /** 409 si la usan formatos o flujos: el mensaje del error trae la lista. */
 export const deleteLookupTable = (tableId: string) => apiClient.delete<void>(`${base}/${id(tableId)}`);
 
-export function fetchLookupRows(tableId: string, opts: { cursor?: string | null; limit?: number; q?: string } = {}) {
-  const p = new URLSearchParams();
-  if (opts.cursor) p.set("cursor", opts.cursor);
-  if (opts.limit) p.set("limit", String(opts.limit));
-  if (opts.q?.trim()) p.set("q", opts.q.trim());
-  const qs = p.toString();
-  return apiClient.get<RowsPage>(`${base}/${id(tableId)}/rows${qs ? `?${qs}` : ""}`);
+/** Una página de filas por cursor. `limit` se recorta a 1..200 (lo que acepta el BFF); `q` y `active` se resuelven en el servidor. */
+export function fetchLookupRows(tableId: string, opts: RowsQuery = {}) {
+  return apiClient.get<RowsPage>(`${base}/${id(tableId)}/rows?${rowsQueryString(opts)}`);
 }
 
-/** Recorre todas las páginas (hasta 5000 filas): el orden de las filas decide cuál gana, así que se necesita completo. */
-export async function fetchAllLookupRows(tableId: string, pageSize = 500): Promise<LookupRow[]> {
+export interface FetchAllOptions extends Partial<RowsFilters> {
+  /** Se llama tras cada página con lo cargado y el total. */
+  onProgress?: (p: { loaded: number; total: number }) => void;
+  /** Para cancelar entre página y página (lanza `AbortError`). */
+  signal?: AbortSignal;
+}
+
+/**
+ * Recorre TODAS las páginas por cursor (de 200 en 200, el máximo del BFF). Solo para lo que de verdad necesita la tabla
+ * completa (exportar a CSV); la pantalla trabaja por páginas de 50.
+ */
+export async function fetchAllLookupRows(tableId: string, opts: FetchAllOptions = {}): Promise<LookupRow[]> {
   const all: LookupRow[] = [];
   let cursor: string | null = null;
-  // Tope defensivo: 5000 filas / pageSize + margen, por si el servidor devolviera un cursor que no avanza.
-  for (let i = 0; i < 50; i++) {
-    const page: RowsPage = await fetchLookupRows(tableId, { cursor, limit: pageSize });
+  // Tope defensivo: 5000 filas / 200 + margen, por si el servidor devolviera un cursor que no avanza.
+  const maxPages = Math.ceil(MAX_ROWS / MAX_PAGE_LIMIT) + 2;
+  for (let i = 0; i < maxPages; i++) {
+    if (opts.signal?.aborted) throw new DOMException("Exportación cancelada", "AbortError");
+    const page: RowsPage = await fetchLookupRows(tableId, { cursor, limit: MAX_PAGE_LIMIT, q: opts.q, active: opts.active });
     all.push(...page.items);
-    if (!page.nextCursor) break;
+    opts.onProgress?.({ loaded: all.length, total: page.total });
+    if (!page.nextCursor || page.nextCursor === cursor) break;
     cursor = page.nextCursor;
   }
   return all;
 }
 
+/** Reubica UNA fila sin reescribir toda la tabla: arriba/abajo, al inicio o detrás de otra (`null` = al inicio). */
+export const moveLookupRow = (tableId: string, rowId: string, body: MoveBody) =>
+  apiClient.post<MoveResult>(`${base}/${id(tableId)}/rows/${id(rowId)}/move`, body);
 export const createLookupRow = (tableId: string, values: RowValues) =>
   apiClient.post<LookupRow>(`${base}/${id(tableId)}/rows`, { values });
 

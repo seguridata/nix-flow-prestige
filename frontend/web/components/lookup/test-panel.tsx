@@ -1,10 +1,9 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useId, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { CircleCheck, CircleX, FlaskConical, TriangleAlert } from "lucide-react";
 
-import { rowsKey } from "@/components/lookup/rows-grid";
 import { QueryBuilder } from "@/components/lookup/query-builder";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,7 @@ import {
   type LookupTableSummary,
   type LookupTestResult,
 } from "@/libs/lookup";
-import { fetchAllLookupRows, testLookupQuery } from "@/services/lookup-tables-service";
+import { testLookupQuery } from "@/services/lookup-tables-service";
 
 const MAX_EXPLAIN = 50;
 
@@ -26,8 +25,6 @@ export function TestPanel({ table }: { table: LookupTable }) {
   const uid = useId();
   const [query, setQuery] = useState<LookupQuery>({ table: table.key, match: [] });
   const [result, setResult] = useState<{ for: LookupQuery; data: LookupTestResult } | null>(null);
-  const rowsQ = useQuery({ queryKey: rowsKey(table.id), queryFn: () => fetchAllLookupRows(table.id) });
-  const positionOf = useMemo(() => new Map((rowsQ.data ?? []).map((r, i) => [r.id, i + 1])), [rowsQ.data]);
 
   const problems = queryProblems(query, { table, sources: [], where: "Consulta de prueba" });
   const run = useMutation({
@@ -79,7 +76,7 @@ export function TestPanel({ table }: { table: LookupTable }) {
         </p>
       ) : null}
 
-      {result ? <TestResult table={table} query={result.for} data={result.data} positionOf={positionOf} /> : null}
+      {result ? <TestResult table={table} query={result.for} data={result.data} /> : null}
     </section>
   );
 }
@@ -88,12 +85,10 @@ function TestResult({
   table,
   query,
   data,
-  positionOf,
 }: {
   table: LookupTable;
   query: LookupQuery;
   data: LookupTestResult;
-  positionOf: Map<string, number>;
 }) {
   const cols = table.columns.slice(0, 6);
   const failed = data.explain.filter((e) => e.failedAt !== undefined);
@@ -132,7 +127,7 @@ function TestResult({
               <tbody>
                 {matches.map((m, i) => (
                   <tr key={m.rowId} className="border-b border-border last:border-0">
-                    <td className="px-3 py-2 tabular-nums">{positionOf.get(m.rowId) ?? m.position + 1}</td>
+                    <td className="px-3 py-2 tabular-nums">{m.order ?? m.position + 1}</td>
                     {cols.map((c) => (
                       <td key={c.key} className="px-3 py-2">
                         {cellText(m.values[c.key]) || <span className="text-muted-foreground">(cualquiera)</span>}
@@ -163,7 +158,7 @@ function TestResult({
           <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
             {failed.slice(0, MAX_EXPLAIN).map((e) => (
               <li key={e.rowId} className="flex gap-2">
-                <span className="w-16 shrink-0 tabular-nums text-muted-foreground">Fila {positionOf.get(e.rowId) ?? "?"}</span>
+                <span className="w-16 shrink-0 tabular-nums text-muted-foreground">Fila {e.order ?? "?"}</span>
                 <span>{describeFailure(e.failedAt, query, table.columns)}</span>
               </li>
             ))}

@@ -427,6 +427,8 @@ export function describeQuery(query: LookupQuery, columns?: readonly LookupColum
 export interface LookupTestMatch {
   rowId: string;
   position: number;
+  /** Lugar en el orden de evaluación de toda la tabla, desde 1 (lo calcula el BFF). */
+  order?: number;
   values: Record<string, CellValue | null | undefined>;
 }
 
@@ -434,7 +436,7 @@ export interface LookupTestResult {
   matches: LookupTestMatch[];
   first: LookupTestMatch | null;
   /** Por fila: dónde dejó de coincidir (índice de condición desde 0, o clave de columna); sin `failedAt` coincide. */
-  explain: { rowId: string; failedAt?: number | string }[];
+  explain: { rowId: string; order?: number; failedAt?: number | string }[];
 }
 
 /** Qué condición falló, en español, a partir de lo que devuelve /test (índice o clave de columna). */
@@ -458,4 +460,175 @@ export function guessPersonColumns(columns: readonly LookupColumn[]): LookupPers
   const name = find(/nombre|name|responsable|persona/);
   const signerId = find(/signer|identificador|^id$/) ?? email ?? "";
   return { signerId, name: name && name !== signerId ? name : undefined, email };
+}
+
+/* ───────── Filas por páginas (ADR-008 §6) ───────── */
+
+/** El BFF acepta de 1 a 200 filas por página; más que eso responde 400. */
+export const MAX_PAGE_LIMIT = 200;
+/** Filas por página en la cuadrícula: solo se pinta lo cargado. */
+export const ROWS_PAGE_SIZE = 50;
+
+export const clampPageLimit = (n: number | undefined, fallback = ROWS_PAGE_SIZE): number =>
+  Math.min(MAX_PAGE_LIMIT, Math.max(1, Math.trunc(n ?? fallback) || fallback));
+
+export type ActiveFilter = "all" | "active" | "inactive";
+
+export interface RowsFilters {
+  q: string;
+  active: ActiveFilter;
+}
+
+export const NO_FILTERS: RowsFilters = { q: "", active: "all" };
+export const isFiltering = (f: RowsFilters): boolean => f.q.trim() !== "" || f.active !== "all";
+
+export interface RowsPage {
+  items: LookupRow[];
+  nextCursor: string | null;
+  /** Filas que cumplen los filtros en TODA la tabla, no solo en la página. */
+  total: number;
+}
+
+/** Forma de `useInfiniteQuery` (`InfiniteData`), sin depender de la librería. */
+export interface RowsData {
+  pages: RowsPage[];
+  pageParams: unknown[];
+}
+
+export interface RowsQuery extends Partial<RowsFilters> {
+  cursor?: string | null;
+  limit?: number;
+}
+
+/** Query string de `GET /lookup-tables/:id/rows`: el límite nunca pasa de 200 y los filtros vacíos no se mandan. */
+export function rowsQueryString(o: RowsQuery = {}): string {
+  const p = new URLSearchParams();
+  if (o.cursor) p.set("cursor", o.cursor);
+  p.set("limit", String(clampPageLimit(o.limit)));
+  if (o.q?.trim()) p.set("q", o.q.trim());
+  if (o.active === "active") p.set("active", "true");
+  if (o.active === "inactive") p.set("active", "false");
+  return p.toString();
+}
+
+/** Respuesta de `POST …/rows/:rowId/move`. */
+export interface MoveResult {
+  id: string;
+  moved: boolean;
+  /** Lugar de la fila en el orden de evaluación de TODA la tabla, desde 1. */
+  index: number;
+  position: number;
+  total: number;
+  revision: number;
+  changed: { id: string; position: number }[];
+}
+
+export type MoveBody = { direction: "up" | "down" } | { toTop: true } | { afterRowId: string | null };
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/** Orden de evaluación del servidor: `position` y, a igualdad, `id`. */
+export const byOrder = (a: LookupRow, b: LookupRow): number => a.position - b.position || cmp(a.id, b.id);
+
+/** Cursor del BFF: `position:id` de la última fila. */
+export const rowCursor = (r: LookupRow): string => `${r.position}:${r.id}`;
+
+/** Todas las filas cargadas, sin repetidos (si una fila llegó en dos páginas gana la más reciente). */
+export function flattenRows(pages: readonly RowsPage[]): LookupRow[] {
+  const byId = new Map<string, LookupRow>();
+  for (const p of pages) for (const r of p.items) byId.set(r.id, r);
+  return [...byId.values()];
+}
+
+/** ¿Quedan filas por cargar? */
+export const hasMoreRows = (data: RowsData | undefined): boolean => (data?.pages[data.pages.length - 1]?.nextCursor ?? null) !== null;
+export const rowsTotal = (data: RowsData | undefined): number => data?.pages[data.pages.length - 1]?.total ?? 0;
+
+/** Filas que faltan por cargar según el total. */
+export const rowsRemaining = (data: RowsData | undefined): number => (data ? Math.max(0, rowsTotal(data) - flattenRows(data.pages).length) : 0);
+
+/**
+ * Vuelve a repartir `rows` en las mismas páginas que tenía `data` (la última absorbe el resto), actualiza `total` y deja
+ * los cursores coherentes con la última fila de cada página. Es lo que permite mover/borrar/agregar sin recargar.
+ */
+export function reflowRows(data: RowsData, rows: readonly LookupRow[], total: number): RowsData {
+  const hasMore = hasMoreRows(data);
+  const lens = data.pages.map((p) => p.items.length);
+  const chunks: LookupRow[][] = [];
+  let at = 0;
+  lens.forEach((len, i) => {
+    const last = i === lens.length - 1;
+    const items = last ? rows.slice(at) : rows.slice(at, at + len);
+    at += len;
+    if (items.length > 0 || (last && chunks.length === 0)) chunks.push(items);
+  });
+  const pages = chunks.map((items, i) => ({
+    items,
+    total,
+    nextCursor: items.length > 0 && (i < chunks.length - 1 || hasMore) ? rowCursor(items[items.length - 1]!) : null,
+  }));
+  return { pages, pageParams: data.pageParams.slice(0, pages.length) };
+}
+
+/**
+ * Aplica el resultado de un `move` a lo cargado. Devuelve `null` si el movimiento tocó filas que aún no se cargaron
+ * (p. ej. bajar la última fila cargada): entonces hay que recargar.
+ */
+export function rowsAfterMove(data: RowsData, res: MoveResult): RowsData | null {
+  if (!res.moved) return data;
+  const rows = flattenRows(data.pages);
+  const loaded = new Set(rows.map((r) => r.id));
+  if (!res.changed.every((c) => loaded.has(c.id))) return null;
+  const pos = new Map(res.changed.map((c) => [c.id, c.position]));
+  const next = rows.map((r) => (pos.has(r.id) ? { ...r, position: pos.get(r.id)! } : r)).sort(byOrder);
+  return reflowRows(data, next, rowsTotal(data));
+}
+
+export function rowsAfterRemove(data: RowsData, rowId: string): RowsData {
+  const rows = flattenRows(data.pages);
+  const next = rows.filter((r) => r.id !== rowId);
+  return reflowRows(data, next, next.length === rows.length ? rowsTotal(data) : Math.max(0, rowsTotal(data) - 1));
+}
+
+/** ¿La fila cumple los filtros activos? (misma idea que el servidor: texto sin mayúsculas ni acentos en cualquier celda). */
+export function rowMatchesFilters(row: LookupRow, filters: RowsFilters): boolean {
+  if (filters.active === "active" && !row.active) return false;
+  if (filters.active === "inactive" && row.active) return false;
+  const q = norm(filters.q);
+  if (!q) return true;
+  return Object.values(row.values).some((v) => norm(cellText(v)).includes(q));
+}
+
+/** Una fila guardada reemplaza a la cargada; si con el filtro de estado ya no cumple, sale de la lista. */
+export function rowsAfterUpdate(data: RowsData, saved: LookupRow, filters: RowsFilters): { data: RowsData; removed: boolean } {
+  const rows = flattenRows(data.pages);
+  if (!rows.some((r) => r.id === saved.id)) return { data, removed: false };
+  const stillShown = filters.active === "all" || (filters.active === "active") === saved.active;
+  const next = rows.flatMap((r) => (r.id !== saved.id ? [r] : stillShown ? [{ ...r, ...saved }] : []));
+  return { data: reflowRows(data, next, stillShown ? rowsTotal(data) : Math.max(0, rowsTotal(data) - 1)), removed: !stillShown };
+}
+
+/**
+ * Una fila nueva va al final de la tabla: si ya está todo cargado se agrega ahí; si no, solo sube el total y se verá con
+ * «Cargar más». Si no cumple los filtros activos no cambia nada.
+ */
+export function rowsAfterAdd(data: RowsData, row: LookupRow, filters: RowsFilters): RowsData {
+  if (!rowMatchesFilters(row, filters)) return data;
+  const rows = flattenRows(data.pages);
+  const total = rowsTotal(data) + 1;
+  if (hasMoreRows(data)) return reflowRows(data, rows, total);
+  return reflowRows(data, [...rows.filter((r) => r.id !== row.id), row].sort(byOrder), total);
+}
+
+/* ───────── Exportación CSV ───────── */
+
+/** Una celda de texto que empezara con `=`, `+`, `-` o `@` la tomaría Excel como fórmula: se antepone una comilla. */
+const FORMULA = /^[=+\-@\t\r]/;
+
+/** CSV con la cabecera de claves (la misma de la plantilla) y las filas en orden de evaluación. */
+export function lookupRowsCsv(columns: readonly LookupColumn[], rows: readonly LookupRow[]): string {
+  const cell = (c: LookupColumn, v: CellValue | null | undefined): string => {
+    const t = cellText(v);
+    return c.type !== "number" && FORMULA.test(t) ? `'${t}` : t;
+  };
+  return toCsv([columns.map((c) => c.key), ...rows.map((r) => columns.map((c) => cell(c, r.values[c.key])))]);
 }

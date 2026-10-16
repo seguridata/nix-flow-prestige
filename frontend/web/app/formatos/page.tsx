@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FilePlus2, Pencil, Search } from "lucide-react";
+import { FilePlus2, FileText, Pencil, Search } from "lucide-react";
 
 import { DocumentIcon } from "@/components/drive/drive-icons";
 import { AppShell } from "@/components/layout/app-shell";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { plural } from "@/libs/drive";
+import { kindIconLabel, kindLabel } from "@/libs/format-steps";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
 import { fetchFormats, type FormatSummary } from "@/services/formats-service";
@@ -118,7 +119,7 @@ function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: bo
         href={`/formatos/${f.id}` as never}
         className="flex h-full gap-4 rounded-lg border border-border p-4 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <DocumentIcon className="size-14 shrink-0" />
+        <DocumentIcon label={kindIconLabel(f.kind)} className="size-14 shrink-0" />
         <span className="min-w-0 flex-1">
           <span className="block text-base font-medium leading-snug">{f.name}</span>
           {f.description ? <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{f.description}</span> : null}
@@ -126,7 +127,11 @@ function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: bo
             {f.category ? <span className="rounded-full border border-border px-2 py-0.5">{f.category}</span> : null}
             <span>{plural(f.fieldCount, "dato", "datos")}</span>
             <span>{plural(f.stepCount, "paso", "pasos")}</span>
-            {f.kind === "FORM" ? <span className="rounded-full border border-border px-2 py-0.5">Digital</span> : null}
+            {f.kind === "FORM" ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5">
+                <FileText className="size-3.5" aria-hidden /> {kindLabel(f.kind)}
+              </span>
+            ) : null}
             {!f.published ? <span className="rounded-full border border-foreground px-2 py-0.5 font-medium text-foreground">Borrador</span> : null}
           </span>
         </span>

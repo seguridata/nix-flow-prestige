@@ -92,8 +92,16 @@ export interface ResolvedStep {
   active: boolean;
   /** Persona que una tabla de consulta resolvió para un paso `lookup`. */
   resolved?: { signerId: string; name?: string; email?: string };
-  /** Paso `lookup` sin coincidencia: se pregunta con el `prompt` del paso. */
+  /**
+   * Paso `lookup` con todos sus datos de entrada completos pero sin coincidencia en la tabla: se pregunta con el `prompt`.
+   * Es excluyente con `awaiting`.
+   */
   unresolved?: boolean;
+  /**
+   * Paso `lookup` activo cuyos datos de entrada aún no están completos: variables obligatorias que faltan (etiquetas del
+   * flujo, nunca la consulta). La persona se asigna al llenar; todavía no se pregunta nada.
+   */
+  awaiting?: { key: string; label: string }[];
 }
 
 export interface FlowPreview {

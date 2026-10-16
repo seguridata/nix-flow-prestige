@@ -8,6 +8,7 @@ import { ArrowLeft, Download, Pencil, Trash2, TriangleAlert, Upload } from "luci
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ExportRowsButton } from "@/components/lookup/export-button";
 import { downloadTemplate, ImportDialog } from "@/components/lookup/import-dialog";
 import { RowsGrid, rowsKey } from "@/components/lookup/rows-grid";
 import { TableSchemaDialog } from "@/components/lookup/table-schema-dialog";
@@ -107,6 +108,7 @@ export default function TablaConsultaPage({ params }: { params: Promise<{ id: st
                 <Button variant="outline" size="sm" onClick={() => downloadTemplate(t)}>
                   <Download /> Plantilla CSV
                 </Button>
+                <ExportRowsButton table={t} />
                 <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmDelete(true)}>
                   <Trash2 /> Eliminar
                 </Button>
