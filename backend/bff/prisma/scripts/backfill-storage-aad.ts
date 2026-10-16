@@ -1,4 +1,5 @@
-/** Dry-run por defecto. --apply copia, verifica y cambia referencias con CAS; jamás borra originales. */
+/** Dry-run por defecto. --apply migra con CAS; --verify lee todo en modo AAD estricto sin escrituras. Nunca borra originales. */
+import { createHash } from 'node:crypto';
 import { PrismaClient, Prisma, type DocumentTemplate, type OnboardingCase } from '@prisma/client';
 import { StorageService } from '../../src/storage/storage.service';
 import { type EncMeta } from '../../src/storage/object-crypto';
@@ -7,10 +8,21 @@ import { migrateStorageObject, needsStorageMigration, type MigrationObject } fro
 const prisma = new PrismaClient();
 const storage = new StorageService();
 const apply = process.argv.includes('--apply');
+const verify = process.argv.includes('--verify');
+let verified = 0;
 let pending = 0;
 let migrated = 0;
 
 async function migrate(ref: MigrationObject, save: (key: string, enc: Prisma.InputJsonValue) => Promise<number>) {
+  if (verify) {
+    if (needsStorageMigration(ref)) throw new Error('Objeto pendiente de migración; verificación estricta cancelada');
+    const bytes = await storage.getObject(ref.key, ref.enc, ref.tenantId);
+    if (!ref.hash || createHash('sha256').update(bytes).digest('hex') !== ref.hash) {
+      throw new Error('Hash de objeto incorrecto en verificación estricta');
+    }
+    verified++;
+    return;
+  }
   if (!needsStorageMigration(ref)) return;
   pending++;
   if (!apply) return;
@@ -21,7 +33,9 @@ async function migrate(ref: MigrationObject, save: (key: string, enc: Prisma.Inp
 }
 
 async function main() {
-  if (process.env.STORAGE_REQUIRE_TENANT_AAD === 'true') throw new Error('Ejecutar antes de activar STORAGE_REQUIRE_TENANT_AAD');
+  if (verify && apply) throw new Error('--verify es solo lectura y no admite --apply');
+  if (verify) process.env.STORAGE_REQUIRE_TENANT_AAD = 'true';
+  if (!verify && process.env.STORAGE_REQUIRE_TENANT_AAD === 'true') throw new Error('Ejecutar antes de activar STORAGE_REQUIRE_TENANT_AAD');
   // Lecturas paginadas: no carga PDFs ni todo el catálogo en memoria.
   let cursor: string | undefined;
   for (;;) {
@@ -63,6 +77,6 @@ async function main() {
     }
     cursor = rows[rows.length - 1].id;
   }
-  console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', pending, migrated, originalsRetained: true }));
+  console.log(JSON.stringify({ mode: verify ? 'verify-strict-readonly' : apply ? 'apply' : 'dry-run', pending, migrated, verified, originalsRetained: true }));
 }
 main().catch((error) => { console.error(error.message); process.exitCode = 1; }).finally(() => prisma.$disconnect());
