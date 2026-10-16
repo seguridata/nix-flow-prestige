@@ -22,8 +22,8 @@
  * la lee); la lista gruesa no debe crecer.
  *
  * Modo (`TENANT_GUARD`): `enforce` lanza `TenantGuardError`; `log` registra una vez por
- * (modelo, operación) y deja pasar; `off` desactiva. Por defecto: `enforce` en tests y
- * `log` en el resto.
+ * (modelo, operación) y deja pasar; `off` desactiva. Por defecto: `enforce` en tests y en
+ * desarrollo, `log` solo en producción (hasta validar staging; ahí basta TENANT_GUARD=enforce).
  *
  * Cómo activarlo en un entorno (dev/stage/prod): definir `TENANT_GUARD=enforce` en el
  * entorno del BFF y reiniciarlo (el modo se lee en cada consulta, pero la variable de
@@ -149,7 +149,10 @@ export function tenantViolation(model: string, operation: string, args: unknown)
 export function resolveGuardMode(env: NodeJS.ProcessEnv = process.env): TenantGuardMode {
   const v = env.TENANT_GUARD?.toLowerCase();
   if (v === 'enforce' || v === 'log' || v === 'off') return v;
-  return env.NODE_ENV === 'test' || env.VITEST ? 'enforce' : 'log';
+  // Falla cerrado donde se desarrolla y se prueba (una consulta nueva sin tenant no llega a producción); en producción
+  // queda en `log` hasta validar un entorno de staging con TENANT_GUARD=enforce (validado en desarrollo el 2026-10-16:
+  // 0 rechazos ni errores 5xx en la batería de punta a punta, y el barrido estático corre como prueba de regresión).
+  return env.NODE_ENV === 'production' && !env.VITEST ? 'log' : 'enforce';
 }
 
 export interface TenantGuardOptions {

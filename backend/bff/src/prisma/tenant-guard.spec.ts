@@ -77,8 +77,10 @@ describe('tenant-guard', () => {
     expect(onViolation).toHaveBeenCalledOnce();
   });
 
-  it('modo por defecto: enforce en test, log fuera; TENANT_GUARD manda', () => {
+  it('modo por defecto: enforce en test y desarrollo, log solo en producción; TENANT_GUARD manda', () => {
     expect(resolveGuardMode({ NODE_ENV: 'test' })).toBe('enforce');
+    expect(resolveGuardMode({ NODE_ENV: 'development' })).toBe('enforce');
+    expect(resolveGuardMode({})).toBe('enforce');
     expect(resolveGuardMode({ NODE_ENV: 'production' })).toBe('log');
     expect(resolveGuardMode({ NODE_ENV: 'production', TENANT_GUARD: 'enforce' })).toBe('enforce');
     expect(resolveGuardMode({ NODE_ENV: 'test', TENANT_GUARD: 'off' })).toBe('off');

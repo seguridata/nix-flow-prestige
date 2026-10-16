@@ -24,12 +24,11 @@ export function SendToSteps({
   const { applicable, skipped } = groupSteps(steps);
   return (
     <div className="mt-3 space-y-3">
-      <ol className="space-y-3">
-        {applicable.map(({ number, step: s }) => (
+      <ol className="list-none space-y-3">
+        {applicable.map(({ step: s }) => (
+          // Sin número de orden propio: cada etiqueta ya trae la numeración oficial del proceso (p. ej. «16. Notificar…»)
+          // y una segunda numeración confundía. El orden lo sigue transmitiendo la lista ordenada a los lectores de pantalla.
           <li key={s.stepId} className="flex items-start gap-3 text-sm">
-            <span className="mt-0.5 w-5 shrink-0 text-right font-medium tabular-nums" aria-hidden>
-              {number}.
-            </span>
             <span className="mt-0.5 shrink-0">{isAwaiting(s) ? <Clock className="size-4" aria-hidden /> : <Check className="size-4" aria-hidden />}</span>
             <span className="min-w-0 flex-1">
               <span className="block font-medium">{s.label}</span>
