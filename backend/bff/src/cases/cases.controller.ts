@@ -5,6 +5,7 @@ import { Roles } from '../auth/roles.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { PageQueryDto, type Page } from '../common/pagination';
 import { CasesService, type Case } from './cases.service';
+import { AttachmentsService, type AttachmentListItem } from '../attachments/attachments.service';
 
 class CreateCaseDto {
   @IsString()
@@ -45,7 +46,10 @@ class ListCasesQueryDto extends PageQueryDto {
 
 @Controller('cases')
 export class CasesController {
-  constructor(private readonly cases: CasesService) {}
+  constructor(
+    private readonly cases: CasesService,
+    private readonly attachments: AttachmentsService,
+  ) {}
 
   @Roles('sender', 'admin')
   @Post()
@@ -68,6 +72,16 @@ export class CasesController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: UpdateCaseDto, @CurrentUser() user: AuthenticatedUser): Promise<Case> {
     return this.cases.update(id, body, { tenantId: user.tenantId, ownerId: user.actorId });
+  }
+
+  /**
+   * ADR-008 — anexos del expediente `[{documentId, attachmentKey, filename, sizeBytes, mimeType, hash}]`. Solo el dueño
+   * del expediente y los firmantes/destinatarios de sus solicitudes (404 para cualquier otro). La descarga usa
+   * `GET /documents/:documentId/content`, con la misma regla.
+   */
+  @Get(':id/attachments')
+  attachmentsOf(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<AttachmentListItem[]> {
+    return this.attachments.listForCase(id, { tenantId: user.tenantId, actorId: user.actorId, name: user.name });
   }
 
   @Get(':id')

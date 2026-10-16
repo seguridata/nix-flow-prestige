@@ -81,7 +81,7 @@ export class FoldersService {
         take: limit + 1,
         ...(page.cursor ? { cursor: { id: page.cursor }, skip: 1 } : {}),
         include: {
-          _count: { select: { documents: true } },
+          _count: { select: { documents: { where: { attachmentKey: null } } } },
           documents: {
             take: 1,
             orderBy: { createdAt: 'asc' },
@@ -129,7 +129,7 @@ export class FoldersService {
         status: true,
         createdAt: true,
         folder: { select: { name: true } },
-        _count: { select: { documents: true } },
+        _count: { select: { documents: { where: { attachmentKey: null } } } },
       },
     });
     return rows.map(({ folder, _count, ...c }) => ({ ...c, folderName: folder?.name ?? null, documentCount: _count.documents }));

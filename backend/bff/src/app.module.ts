@@ -34,7 +34,7 @@ import { ControlPlaneModule } from './control-plane/control-plane.module';
 import { WebauthnModule } from './webauthn/webauthn.module';
 import { AiModule } from './ai/ai.module';
 import { ChatModule } from './chat/chat.module';
-import { ExpenseResponsiblesModule } from './expense-responsibles/expense-responsibles.module';
+import { LookupTablesModule } from './lookup-tables/lookup-tables.module';
 
 /** Misma instancia dinámica para AppModule y ThrottleGuardModule (comparten opciones y storage). */
 const THROTTLER = ThrottlerModule.forRoot({
@@ -96,7 +96,7 @@ class ThrottleGuardModule {}
     WebauthnModule,
     AiModule,
     ChatModule,
-    ExpenseResponsiblesModule,
+    LookupTablesModule,
     // SIEMPRE después de AuthModule: sus APP_GUARD corren en orden de registro y el
     // tracker necesita `req.user` (ya autenticado) para limitar por `tenantId:actorId`.
     ThrottleGuardModule,

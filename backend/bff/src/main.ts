@@ -56,6 +56,15 @@ async function bootstrap() {
     }),
   );
 
+  // La importación de una tabla de consulta (hasta 5000 filas) necesita más margen que el resto de la API. Este parser
+  // solo actúa en esa ruta (`type` devuelve falso en las demás, que pasan al parser global de abajo, con el límite normal).
+  const importLimit = process.env.LOOKUP_IMPORT_BODY_LIMIT ?? '12mb';
+  const isLookupImport = (req: { method?: string; url?: string; originalUrl?: string; headers: Record<string, unknown> }) =>
+    req.method === 'POST' &&
+    /^\/lookup-tables\/[^/?]+\/rows\/import\/?(\?|$)/.test(req.originalUrl ?? req.url ?? '') &&
+    /json/i.test(String(req.headers['content-type'] ?? ''));
+  app.useBodyParser('json', { limit: importLimit, type: (req: Parameters<typeof isLookupImport>[0]) => isLookupImport(req) });
+
   const bodyLimit = process.env.BODY_LIMIT ?? '2mb';
   app.useBodyParser('json', { limit: bodyLimit });
   app.useBodyParser('urlencoded', { limit: bodyLimit, extended: true });

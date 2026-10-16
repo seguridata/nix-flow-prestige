@@ -22,6 +22,7 @@
     "bootstrap:tenant": "bun run prisma/scripts/bootstrap-tenant.ts",
     "backfill:tenant-ids": "bun run prisma/scripts/backfill-tenant-ids.ts",
     "backfill:audit-chain": "bun run prisma/scripts/backfill-audit-chain.ts",
+    "seed:example-gastos": "tsc -p tsconfig.json --outDir node_modules/.cache/seed-example-gastos --incremental false && node node_modules/.cache/seed-example-gastos/prisma/scripts/seed-example-gastos.js",
     "sdk:gen": "openapi-typescript ../contracts/openapi.generated.json -o ../sdk/typescript/schema.d.ts"
   },
   "dependencies": {

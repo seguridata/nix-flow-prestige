@@ -853,6 +853,19 @@ describe('SignatureRequestsService.create — freeze y biometría', () => {
     await service.create(createBody({ methods: ['BIOMETRICA'] }));
     expect(created).toHaveLength(1);
   });
+
+  it('ADR-008: un anexo (Document con attachmentKey) no se puede enviar a firma', async () => {
+    const { service, documents, created } = makeCreate();
+    (service as unknown as { prisma: { document: { findFirst: () => unknown } } }).prisma.document.findFirst = async () => ({
+      id: DOCUMENT_ID,
+      tenantId: 'seguridata',
+      caseId: 'case-1',
+      attachmentKey: 'cotizaciones',
+    });
+    await expect(service.create(createBody())).rejects.toBeInstanceOf(BadRequestException);
+    expect(documents.freeze).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+  });
 });
 
 describe('SignatureRequestsService.sign — métodos permitidos según el estado del PDF', () => {

@@ -8,12 +8,16 @@ import { DocumentsService } from '../documents/documents.service';
 import { SignatureRequestsService } from '../signature-requests/signature-requests.service';
 import { SignatureFieldsService } from '../signature-fields/signature-fields.service';
 import { FoldersService } from '../folders/folders.service';
-import { flowToBpmn, missingForConditions, resolveFlow } from '../flow/flow';
-import type { Flow, FlowValues, MatrixStage, ResolvedStep, Who } from '../flow/flow.types';
-import { ExpenseResponsiblesService } from '../expense-responsibles/expense-responsibles.service';
-import { pickResponsible, type Match } from '../expense-responsibles/expense-responsibles.resolver';
+import { flowToBpmn, missingForConditions, publicFlow, publicWho } from '../flow/flow';
+import type { Flow, FlowValues, ResolvedStep, Who } from '../flow/flow.types';
+import { FlowResolverService, type LookupPick } from '../lookup-tables/flow-resolver.service';
 import { countPages, fillPdf } from './pdf-fill';
+import { buildFormPdf, type FormPdfResult } from './form-pdf';
+import { AttachmentsService, type MaterializedAttachment } from '../attachments/attachments.service';
+import { parseAttachmentSpecs } from '../attachments/attachment-specs';
 import { parseTemplateMeta, type TemplateMeta } from './template-meta';
+import { SignaturePolicyService } from '../signing/signature-policy';
+import { defaultSignatureMethods, disallowedMethods, methodsNotAllowedError, staleMethodsError } from './signature-methods';
 import type { SignatureBox, TemplateActor, TemplateField } from './template.types';
 
 const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
@@ -27,7 +31,22 @@ export interface InstantiateInput {
   folderId?: string;
   caseId?: string;
   title?: string;
+  /** ADR-008 — `{ [specKey]: stagedId[] }`: cargas previas (`POST :id/attachments`) que pasan a ser anexos del expediente. */
+  attachments?: Record<string, string[]>;
 }
+
+/** Serialización con llaves ordenadas: jsonb no conserva el orden y JSON.stringify daría falsos cambios. */
+function canon(v: unknown): string {
+  const sort = (x: unknown): unknown =>
+    Array.isArray(x)
+      ? x.map(sort)
+      : x && typeof x === 'object'
+        ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, sort((x as Record<string, unknown>)[k])]))
+        : x;
+  return JSON.stringify(sort(v ?? null));
+}
+
+const MAX_FORM_VARIABLES = 100;
 
 @Injectable()
 export class DocumentTemplatesService {
@@ -40,7 +59,9 @@ export class DocumentTemplatesService {
     private readonly requests: SignatureRequestsService,
     private readonly fieldsService: SignatureFieldsService,
     private readonly folders: FoldersService,
-    private readonly matrix: ExpenseResponsiblesService,
+    private readonly resolver: FlowResolverService,
+    private readonly attachments: AttachmentsService,
+    private readonly signaturePolicy: SignaturePolicyService,
   ) {}
 
   /** Formato del tenant; a quien no es admin los borradores le responden 404 (no se revela que existen). */
@@ -56,10 +77,11 @@ export class DocumentTemplatesService {
     const rows = await this.prisma.documentTemplate.findMany({
       where: { tenantId: actor.tenantId, ...(actor.isAdmin && all ? {} : { published: true }) },
       orderBy: [{ name: 'asc' }],
-      select: { id: true, name: true, description: true, category: true, published: true, createdAt: true, fields: true, flow: true },
+      select: { id: true, name: true, description: true, category: true, published: true, createdAt: true, fields: true, flow: true, kind: true, attachmentSpecs: true },
     });
-    return rows.map(({ fields, flow, ...r }) => ({
+    return rows.map(({ fields, flow, attachmentSpecs, ...r }) => ({
       ...r,
+      attachmentCount: Array.isArray(attachmentSpecs) ? attachmentSpecs.length : 0,
       fieldCount: Array.isArray(fields) ? fields.length : 0,
       stepCount: (flow as unknown as Flow | null)?.steps?.length ?? 0,
     }));
@@ -69,7 +91,8 @@ export class DocumentTemplatesService {
   async get(id: string, actor: TemplateActor) {
     const { objectKey: _k, enc: _e, tenantId: _t, ...detail } = await this.visible(id, actor);
     void _k; void _e; void _t;
-    return detail;
+    // Quien llena el formato no ve la configuración de las consultas (ADR-008 §2).
+    return actor.isAdmin ? detail : { ...detail, flow: publicFlow(detail.flow) };
   }
 
   async getPdf(id: string, actor: TemplateActor): Promise<{ bytes: Buffer; filename: string }> {
@@ -90,7 +113,8 @@ export class DocumentTemplatesService {
     } catch {
       throw new BadRequestException('No se pudo leer el PDF base');
     }
-    const meta = this.validated(rawMeta, pageCount);
+    const meta = await this.withMethods(this.validated(rawMeta, pageCount), actor.tenantId, true);
+    await this.resolver.assertTables(meta.flow, actor.tenantId);
     await this.assertNameFree(actor.tenantId, meta.name);
 
     const stored = await this.storage.putObject({
@@ -116,6 +140,127 @@ export class DocumentTemplatesService {
     return this.get(created.id, actor);
   }
 
+  /**
+   * ADR-008 §7 — formato DIGITAL: sin PDF subido. Genera la hoja base (variables, anexos, cajas de firma por paso) y
+   * calcula `fields` y `signatureBoxes`. Con `id` regenera uno propio de tipo FORM que aún no esté publicado (409 si lo está).
+   */
+  async createForm(rawBody: unknown, actor: TemplateActor) {
+    const body = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) ? rawBody : {}) as Record<string, unknown>;
+    const { id, ...given } = body;
+    if (id === undefined || id === null) {
+      const built = await this.buildForm(given);
+      const gen = built.gen;
+      const meta = await this.withMethods(built.meta, actor.tenantId, true);
+      await this.resolver.assertTables(meta.flow, actor.tenantId);
+      await this.assertNameFree(actor.tenantId, meta.name);
+      const stored = await this.storeFormPdf(meta.name, gen.pdf, actor);
+      try {
+        const created = await this.prisma.documentTemplate.create({
+          data: {
+            ...this.data(meta),
+            tenantId: actor.tenantId,
+            kind: 'FORM',
+            objectKey: stored.objectKey,
+            enc: stored.enc as unknown as Prisma.InputJsonValue,
+            hash: createHash('sha256').update(gen.pdf).digest('hex'),
+            sizeBytes: stored.sizeBytes,
+            pageCount: gen.pageCount,
+            published: false,
+            createdBy: actor.actorId,
+          },
+        });
+        return this.get(created.id, actor);
+      } catch (e) {
+        await this.storage.deleteObject(stored.objectKey, actor.tenantId).catch(() => undefined);
+        throw e;
+      }
+    }
+    if (typeof id !== 'string') throw new BadRequestException('El id del formato no es válido');
+    const current = await this.visible(id, actor);
+    if (current.kind !== 'FORM') throw new BadRequestException('Ese formato trae su propio PDF: no es un formato digital');
+    if (current.published) throw new ConflictException('El formato está publicado: despublícalo para regenerar su hoja');
+    const merged = {
+      name: current.name,
+      description: current.description,
+      category: current.category,
+      flow: current.flow,
+      methods: current.methods,
+      kycPolicy: current.kycPolicy,
+      requirePasskey: current.requirePasskey,
+      flowKey: current.flowKey,
+      flowVersion: current.flowVersion,
+      attachmentSpecs: current.attachmentSpecs,
+      ...Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)),
+    };
+    return this.regenerateForm(current, merged, actor);
+  }
+
+  /** Valida el cuerpo, genera la hoja y revalida con los campos y cajas calculados contra las páginas reales. */
+  private async buildForm(raw: Record<string, unknown>): Promise<{ meta: TemplateMeta; gen: FormPdfResult }> {
+    const base = { ...raw, fields: [], signatureBoxes: [] };
+    const pre = this.validated(base, 1);
+    if (pre.flow.variables.length > MAX_FORM_VARIABLES) {
+      throw new BadRequestException(`Un formato digital admite hasta ${MAX_FORM_VARIABLES} variables`);
+    }
+    const gen = await buildFormPdf({
+      name: pre.name,
+      description: pre.description,
+      variables: pre.flow.variables,
+      steps: pre.flow.steps,
+      attachmentSpecs: pre.attachmentSpecs,
+    });
+    const meta = this.validated({ ...base, fields: gen.fields, signatureBoxes: gen.signatureBoxes }, gen.pageCount);
+    return { meta, gen };
+  }
+
+  private storeFormPdf(name: string, bytes: Buffer, actor: TemplateActor) {
+    return this.storage.putObject({
+      prefix: `templates/${actor.tenantId}`,
+      filename: `${name}.pdf`,
+      bytes,
+      contentType: 'application/pdf',
+      tenantId: actor.tenantId,
+    });
+  }
+
+  /** Reemplaza la hoja base de un FORM no publicado y recalcula sus campos y cajas. */
+  private async regenerateForm(current: DocumentTemplate, merged: Record<string, unknown>, actor: TemplateActor, validateMethods = true) {
+    const built = await this.buildForm(merged);
+    const gen = built.gen;
+    const meta = await this.withMethods(built.meta, actor.tenantId, validateMethods);
+    await this.resolver.assertTables(meta.flow, actor.tenantId);
+    if (meta.name.toLowerCase() !== current.name.toLowerCase()) await this.assertNameFree(actor.tenantId, meta.name);
+    assertTenantKey(actor.tenantId, current.objectKey);
+    const stored = await this.storeFormPdf(meta.name, gen.pdf, actor);
+    try {
+      await this.prisma.documentTemplate.update({
+        where: { id: current.id },
+        data: {
+          ...this.data(meta),
+          objectKey: stored.objectKey,
+          enc: stored.enc as unknown as Prisma.InputJsonValue,
+          hash: createHash('sha256').update(gen.pdf).digest('hex'),
+          sizeBytes: stored.sizeBytes,
+          pageCount: gen.pageCount,
+        },
+      });
+    } catch (e) {
+      await this.storage.deleteObject(stored.objectKey, actor.tenantId).catch(() => undefined);
+      throw e;
+    }
+    await this.storage.deleteObject(current.objectKey, actor.tenantId).catch((e: Error) => this.log.warn(`No se pudo borrar ${current.objectKey}: ${e.message}`));
+    return this.get(current.id, actor);
+  }
+
+  /** Carga previa de un anexo (solo formatos publicados). Ver `AttachmentsService.stage`. */
+  stageAttachment(templateId: string, specKey: string | undefined, file: { buffer: Buffer; originalname?: string } | undefined, actor: TemplateActor) {
+    return this.attachments.stage(templateId, specKey, file, { tenantId: actor.tenantId, actorId: actor.actorId, name: actor.name });
+  }
+
+  discardAttachment(stagedId: string, actor: TemplateActor) {
+    return this.attachments.discard(stagedId, { tenantId: actor.tenantId, actorId: actor.actorId, name: actor.name });
+  }
+
   async update(id: string, rawMeta: unknown, actor: TemplateActor) {
     const current = await this.visible(id, actor);
     // Edición parcial: lo que no venga conserva el valor actual.
@@ -131,16 +276,43 @@ export class DocumentTemplatesService {
       requirePasskey: current.requirePasskey,
       flowKey: current.flowKey,
       flowVersion: current.flowVersion,
+      attachmentSpecs: current.attachmentSpecs,
       ...Object.fromEntries(Object.entries((rawMeta ?? {}) as Record<string, unknown>).filter(([, v]) => v !== undefined)),
     };
-    const meta = this.validated(merged, current.pageCount);
+    if (current.kind === 'FORM') {
+      // La hoja de un formato digital la genera el sistema: campos y cajas no se editan a mano.
+      merged.fields = current.fields;
+      merged.signatureBoxes = current.signatureBoxes;
+      const patch = (rawMeta ?? {}) as Record<string, unknown>;
+      const layoutChanged = (['name', 'description', 'flow', 'attachmentSpecs'] as const).some(
+        (k) => patch[k] !== undefined && canon(patch[k]) !== canon(current[k]),
+      );
+      if (layoutChanged) {
+        if (current.published) throw new ConflictException('El formato está publicado: despublícalo para cambiar su hoja, flujo o anexos');
+        return this.regenerateForm(current, merged, actor, patch.methods !== undefined);
+      }
+    }
+    // Los métodos de firma se validan contra la política del tenant solo si vienen en la edición (o al publicar).
+    const meta = await this.withMethods(
+      this.validated(merged, current.pageCount),
+      actor.tenantId,
+      (rawMeta as { methods?: unknown } | null | undefined)?.methods !== undefined,
+    );
+    // Solo si el flujo viene en la edición: renombrar un formato no debe fallar porque una tabla se desactivó después.
+    if ((rawMeta as { flow?: unknown } | null | undefined)?.flow !== undefined) await this.resolver.assertTables(meta.flow, actor.tenantId);
     if (meta.name.toLowerCase() !== current.name.toLowerCase()) await this.assertNameFree(actor.tenantId, meta.name);
     await this.prisma.documentTemplate.update({ where: { id }, data: this.data(meta) });
     return this.get(id, actor);
   }
 
   async setPublished(id: string, published: boolean, actor: TemplateActor) {
-    await this.visible(id, actor);
+    const current = await this.visible(id, actor);
+    if (published && current.methods.length) {
+      // Publicar un formato con métodos que la política no permite lo dejaría fallando al llenarlo: se avisa aquí.
+      const policy = await this.signaturePolicy.resolve(actor.tenantId);
+      const bad = disallowedMethods(current.methods, policy);
+      if (bad.length) throw methodsNotAllowedError(bad, policy);
+    }
     await this.prisma.documentTemplate.update({ where: { id }, data: { published } });
     return this.get(id, actor);
   }
@@ -162,16 +334,15 @@ export class DocumentTemplatesService {
     const flow = t.flow as unknown as Flow;
     const values = this.looseValues(rawValues);
     const required = new Set(flow.variables.filter((v) => v.required).map((v) => v.key));
-    const resolved = resolveFlow(flow, values);
-    const picks = await this.matrixPicks(resolved, values, actor.tenantId);
+    const { resolved, picks } = await this.resolver.resolve(flow, values, actor.tenantId);
     return {
       steps: resolved.map((r) => ({
         stepId: r.step.id,
         label: r.step.label,
         role: r.step.role,
-        who: r.step.who,
+        who: publicWho(r.step.who),
         active: r.active,
-        ...this.matrixInfo(r, picks),
+        ...this.lookupInfo(r, picks),
       })),
       missing: missingForConditions(flow, values).filter((k) => required.has(k)),
     };
@@ -179,45 +350,67 @@ export class DocumentTemplatesService {
 
   async instantiate(id: string, input: InstantiateInput, actor: TemplateActor) {
     const t = await this.visible(id, actor);
+    // 0) Métodos de firma: si la política cambió desde que se guardó el formato, falla aquí, antes de crear nada.
+    const policy = await this.signaturePolicy.resolve(actor.tenantId);
+    const methods = (t.methods.length ? t.methods : defaultSignatureMethods(policy)) as SignatureMethod[];
+    const stale = disallowedMethods(methods, policy);
+    if (stale.length) throw staleMethodsError(t.name, stale, policy);
     const flow = t.flow as unknown as Flow;
     const fields = t.fields as unknown as TemplateField[];
     const boxes = t.signatureBoxes as unknown as SignatureBox[];
 
     // 1) Todo lo que puede fallar por datos del usuario, ANTES de crear nada.
     const clean = this.coerceValues(flow, fields, input.values, actor);
-    const resolved = resolveFlow(flow, clean);
-    const picks = await this.matrixPicks(resolved, clean, actor.tenantId);
+    const resolution = await this.resolver.resolve(flow, clean, actor.tenantId, { strict: true });
+    const { resolved, picks } = resolution;
     const { signers, stepSigner } = this.signersFor(resolved, input.askedSigners ?? {}, actor, picks);
     if (input.folderId) await this.folders.assertOwned(input.folderId, { tenantId: actor.tenantId, ownerId: actor.actorId });
+    // Anexos (ADR-008): TODO se valida aquí, antes de crear nada.
+    const attachmentActor = { tenantId: actor.tenantId, actorId: actor.actorId, name: actor.name };
+    const wantsAttachments = parseAttachmentSpecs(t.attachmentSpecs).specs.length > 0 || Object.keys(input.attachments ?? {}).length > 0;
+    const selected = wantsAttachments ? await this.attachments.resolveSelection(t, input.attachments, attachmentActor) : [];
 
     // 2) PDF rellenado.
     assertTenantKey(actor.tenantId, t.objectKey);
     const base = await this.storage.getObject(t.objectKey, t.enc as unknown as EncMeta, actor.tenantId);
     const filled = await fillPdf(base, fields, clean);
+    // Reserva atómica de las cargas (una carga solo va a una solicitud); si algo falla antes de materializarlas se liberan.
+    await this.attachments?.claim(selected);
+    const guard = <T>(p: Promise<T>): Promise<T> =>
+      p.catch(async (e) => {
+        await this.attachments?.release(selected);
+        throw e;
+      });
 
     // 3) Expediente (nuevo o uno propio) y documento.
     const firstText = flow.variables.find((v) => v.type === 'text' && clean[v.key])?.key;
     const title = (input.title?.trim() || `${t.name}${firstText ? ` — ${clean[firstText]}` : ''}`).slice(0, 200);
     const caseId = input.caseId
-      ? await this.ownCase(input.caseId, actor)
+      ? await guard(this.ownCase(input.caseId, actor))
       : (
-          await this.prisma.case.create({
-            data: { tenantId: actor.tenantId, title: title.length >= 3 ? title : `${title} (formato)`, ownerId: actor.actorId, folderId: input.folderId ?? null },
-          })
+          await guard(
+            this.prisma.case.create({
+              data: { tenantId: actor.tenantId, title: title.length >= 3 ? title : `${title} (formato)`, ownerId: actor.actorId, folderId: input.folderId ?? null },
+            }),
+          )
         ).id;
-    const document = await this.documents.create({
-      caseId,
-      filename: `${t.name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`,
-      bytes: filled,
-      tenantId: actor.tenantId,
-      actorId: actor.actorId,
-      actorName: actor.name,
-    });
+    const document = await guard(
+      this.documents.create({
+        caseId,
+        filename: `${t.name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`,
+        bytes: filled,
+        tenantId: actor.tenantId,
+        actorId: actor.actorId,
+        actorName: actor.name,
+      }),
+    );
+    // Anexos: cada carga pasa a ser un Document del mismo expediente (attachmentKey, cifrado con AAD del tenant, hash, congelado).
+    const attached: MaterializedAttachment[] = selected.length ? await this.attachments.materialize(selected, { caseId, actor: attachmentActor }) : [];
 
     // 4) Solicitud de firma (llamada interna: no pasa por el guard de roles del controlador).
     const request = await this.requests.create({
       documentId: document.id,
-      methods: t.methods.length ? (t.methods as SignatureMethod[]) : ['ACCEPT'],
+      methods,
       order: flow.order,
       slaHours: flow.slaHours,
       requestedBy: actor.actorId,
@@ -226,6 +419,21 @@ export class DocumentTemplatesService {
       signers: signers.map((s) => ({ signerId: s.signerId, name: s.name, email: s.email, role: s.role })),
       requirePasskey: t.requirePasskey,
       kycPolicy: t.kycPolicy as KycPolicy,
+    });
+
+    if (attached.length) {
+      await this.attachments
+        .recordAdded(attached, { caseId, signatureRequestId: request.id, documentId: document.id, actor: attachmentActor })
+        .catch((e: Error) => this.log.warn(`No se pudo auditar ATTACHMENTS_ADDED de ${request.id}: ${e.message}`));
+    }
+
+    await this.resolver.recordResolved({
+      tenantId: actor.tenantId,
+      actorId: actor.actorId,
+      templateId: t.id,
+      requestId: request.id,
+      documentId: document.id,
+      resolution,
     });
 
     // 5) Cajas de firma de los pasos activos, a nombre del firmante ya resuelto (identidad canónica).
@@ -253,7 +461,8 @@ export class DocumentTemplatesService {
       documentId: document.id,
       signatureRequestId: request.id,
       signatureFieldsPlaced,
-      steps: resolved.map((r) => ({ stepId: r.step.id, label: r.step.label, role: r.step.role, who: r.step.who, active: r.active, ...this.matrixInfo(r, picks) })),
+      attachments: attached.map((a) => ({ documentId: a.documentId, attachmentKey: a.specKey, sha256: a.sha256 })),
+      steps: resolved.map((r) => ({ stepId: r.step.id, label: r.step.label, role: r.step.role, who: publicWho(r.step.who), active: r.active, ...this.lookupInfo(r, picks) })),
     };
   }
 
@@ -262,6 +471,19 @@ export class DocumentTemplatesService {
   private validated(raw: unknown, pageCount: number): TemplateMeta {
     const { meta, errors } = parseTemplateMeta(raw, pageCount);
     if (!meta) throw new BadRequestException({ message: 'El formato no es válido', errors });
+    return meta;
+  }
+
+  /**
+   * Métodos de firma del formato contra la política de firma efectiva del tenant. Con `validate`: sin métodos → los
+   * «simples» que la política permita (ver `defaultSignatureMethods`); con métodos no permitidos → 400 accionable.
+   */
+  private async withMethods(meta: TemplateMeta, tenantId: string, validate: boolean): Promise<TemplateMeta> {
+    if (!validate) return meta;
+    const policy = await this.signaturePolicy.resolve(tenantId);
+    if (!meta.methods.length) return { ...meta, methods: defaultSignatureMethods(policy) };
+    const bad = disallowedMethods(meta.methods, policy);
+    if (bad.length) throw methodsNotAllowedError(bad, policy);
     return meta;
   }
 
@@ -278,6 +500,7 @@ export class DocumentTemplatesService {
       methods: meta.methods as SignatureMethod[],
       kycPolicy: meta.kycPolicy as KycPolicy,
       requirePasskey: meta.requirePasskey,
+      attachmentSpecs: meta.attachmentSpecs as unknown as Prisma.InputJsonValue,
     };
   }
 
@@ -343,33 +566,9 @@ export class DocumentTemplatesService {
     return clean;
   }
 
-  /**
-   * Resuelve con la matriz de responsables los pasos `matrix` activos, con las variables del flujo `area`, `tipoGasto`,
-   * `concepto` y `monto`. Una sola consulta por llamada (filas candidatas de todas las etapas usadas); sin coincidencia → null.
-   */
-  private async matrixPicks(resolved: ResolvedStep[], values: FlowValues, tenantId: string): Promise<Map<string, Match | null>> {
-    const picks = new Map<string, Match | null>();
-    const steps = resolved.filter((r) => r.active && r.step.who.type === 'matrix');
-    if (!steps.length) return picks;
-    const text = (v: unknown) => (v === undefined || v === null ? '' : String(v).trim());
-    const area = text(values.area);
-    const tipo = text(values.tipoGasto);
-    const concept = text(values.concepto);
-    const n = text(values.monto) === '' ? NaN : Number(values.monto);
-    const amount = Number.isFinite(n) ? n : undefined;
-    const stageOf = (r: ResolvedStep) => (r.step.who as { stage: MatrixStage }).stage;
-    const rows = await this.matrix.candidates(tenantId, [...new Set(steps.map(stageOf))], { area, expenseType: tipo, concept });
-    for (const r of steps) {
-      const stage = stageOf(r);
-      const needed = stage === 'area' ? area : tipo || concept;
-      picks.set(r.step.id, needed ? pickResponsible(rows, { stage, area, expenseType: tipo, concept, amount }) : null);
-    }
-    return picks;
-  }
-
-  /** Para la vista previa y el resultado: quién salió de la matriz, o `unresolved` si se cae a preguntar. */
-  private matrixInfo(r: ResolvedStep, picks: Map<string, Match | null>) {
-    if (!r.active || r.step.who.type !== 'matrix') return {};
+  /** Para la vista previa y el resultado: quién salió de la consulta, o `unresolved` si se cae a preguntar. */
+  private lookupInfo(r: ResolvedStep, picks: Map<string, LookupPick | null>) {
+    if (!r.active || r.step.who.type !== 'lookup') return {};
     const m = picks.get(r.step.id);
     return m ? { resolved: { signerId: m.signerId, name: m.name, email: m.email } } : { unresolved: true as const };
   }
@@ -379,7 +578,7 @@ export class DocumentTemplatesService {
     resolved: ResolvedStep[],
     asked: NonNullable<InstantiateInput['askedSigners']>,
     actor: TemplateActor,
-    picks: Map<string, Match | null> = new Map(),
+    picks: Map<string, LookupPick | null> = new Map(),
   ) {
     const signers: { signerId: string; name?: string; email?: string; role: 'FIRMANTE' | 'REVISOR' }[] = [];
     const stepSigner = new Map<string, number>();
@@ -405,13 +604,13 @@ export class DocumentTemplatesService {
     label: string,
     asked: NonNullable<InstantiateInput['askedSigners']>,
     actor: TemplateActor,
-    picks: Map<string, Match | null>,
+    picks: Map<string, LookupPick | null>,
   ) {
     if (who.type === 'initiator') return { signerId: actor.actorId, name: actor.name, email: actor.email };
     if (who.type === 'fixed') return { signerId: who.signerId, name: who.name, email: who.email };
-    if (who.type === 'matrix') {
+    if (who.type === 'lookup') {
       const m = picks.get(stepId);
-      // Sin coincidencia en la matriz se comporta como «preguntar» (usa askedSigners[stepId]).
+      // Sin coincidencia en la consulta se comporta como «preguntar» (usa askedSigners[stepId]).
       if (m) return { signerId: m.signerId, name: m.name ?? undefined, email: m.email ?? undefined };
     }
     const a = asked[stepId];

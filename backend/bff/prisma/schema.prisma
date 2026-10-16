@@ -69,6 +69,8 @@ model Document {
   presentedHash      String?
   sizeBytes     Int      @default(0)
   mimeType      String   @default("application/pdf")
+  /// ADR-008 — si no es nulo, el documento es un anexo de la solicitud (clave de la especificación de anexos del formato).
+  attachmentKey String?
   createdAt     DateTime @default(now())
 
   case              Case               @relation(fields: [caseId], references: [id])
@@ -79,6 +81,7 @@ model Document {
   @@index([tenantId])
   @@index([tenantId, caseId])
   @@index([tenantId, createdAt])
+  @@index([caseId, attachmentKey])
 }
 
 enum SignatureMethod {
@@ -787,6 +790,10 @@ model DocumentTemplate {
   methods       SignatureMethod[]
   kycPolicy     KycPolicy @default(NONE)
   requirePasskey Boolean @default(false)
+  /// ADR-008 — 'PDF' (el administrador sube el PDF) o 'FORM' (el sistema genera la hoja base desde las variables).
+  kind          String   @default("PDF")
+  /// ADR-008 — [{key,label,help?,required,min,max,accept[],maxSizeMB}] anexos que pide el formato (p. ej. 3 cotizaciones).
+  attachmentSpecs Json   @default("[]")
   published     Boolean  @default(false)
   createdBy     String
   createdAt     DateTime @default(now())
@@ -796,30 +803,41 @@ model DocumentTemplate {
   @@index([tenantId, published])
 }
 
-/// Matriz de responsables de gasto (por tenant). El flujo de Adquisiciones la consulta para resolver quién autoriza
-/// por área ('area') o por tipo de gasto ('tipoGasto'), según el monto. `tenantId` es el slug del guard.
-model ExpenseResponsible {
+/// ADR-008 — Tabla de consulta definida por un administrador. Las consultas de los flujos leen sus filas.
+model LookupTable {
   id          String   @id @default(uuid())
   tenantId    String
-  area        String
-  /// null = cualquier tipo de gasto.
-  expenseType String?
-  /// Concepto de gasto (p. ej. «Renta oficinas»); null = cualquiera.
-  concept     String?
-  /// 'area' | 'tipoGasto'
-  stage       String
-  /// null = desde 0.
-  minAmount   Decimal? @db.Decimal(18, 2)
-  /// null = sin tope.
-  maxAmount   Decimal? @db.Decimal(18, 2)
-  signerId    String
-  name        String?
-  email       String?
+  key         String
+  name        String
+  description String?
+  /// [{key,label,type:'text'|'number'|'date'|'select',options?}]
+  columns     Json
+  /// Sube con cada cambio de columnas o filas; queda en el evento de auditoría de cada consulta.
+  revision    Int      @default(1)
   active      Boolean  @default(true)
+  createdBy   String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([tenantId, stage, area])
-  @@index([tenantId, stage, expenseType])
-  @@index([tenantId, stage, concept])
+  rows LookupRow[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, active])
+}
+
+model LookupRow {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tableId   String
+  /// {[columnKey]: valor}; una celda vacía vale «cualquiera» salvo que la condición diga lo contrario.
+  values    Json
+  /// Orden de evaluación: gana la primera fila que coincide.
+  position  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  table LookupTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, tableId, active, position])
 }

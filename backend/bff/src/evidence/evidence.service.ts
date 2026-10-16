@@ -518,6 +518,7 @@ export class EvidenceService {
     const doc = await this.prisma.document.findUnique({
       where: { id: m.documentId },
       select: {
+        caseId: true,
         objectKey: true,
         enc: true,
         hash: true,
@@ -601,6 +602,34 @@ export class EvidenceService {
           )
           .join('\n') + (events.length ? '\n' : ''),
     });
+
+    // ADR-008 — anexos del expediente: nombre, tamaño y hash de cada uno (los bytes se bajan por GET /documents/:id/content).
+    // Queda dentro de pack.sha256; el cuerpo firmado del manifiesto no cambia (no altera la verificación de los ya emitidos).
+    const attachments = await this.prisma.document.findMany({
+      where: { caseId: doc.caseId, tenantId, attachmentKey: { not: null } },
+      orderBy: [{ attachmentKey: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, attachmentKey: true, filename: true, sizeBytes: true, mimeType: true, hash: true },
+    });
+    if (attachments.length) {
+      files.push({
+        path: 'anexos.json',
+        content: JSON.stringify(
+          {
+            caseId: doc.caseId,
+            anexos: attachments.map((a) => ({
+              documentId: a.id,
+              attachmentKey: a.attachmentKey,
+              nombre: a.filename,
+              tamanoBytes: a.sizeBytes,
+              mimeType: a.mimeType,
+              sha256: a.hash,
+            })),
+          },
+          null,
+          2,
+        ),
+      });
+    }
 
     files.push({
       path: 'LEEME.txt',

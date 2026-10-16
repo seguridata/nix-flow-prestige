@@ -1,5 +1,6 @@
 import { validateFlow } from '../flow/flow';
 import type { Flow } from '../flow/flow.types';
+import { parseAttachmentSpecs, type AttachmentSpec } from '../attachments/attachment-specs';
 import type { SignatureBox, TemplateField } from './template.types';
 
 const METHODS = ['DIGITAL', 'AUTOGRAFA', 'BIOMETRICA', 'ACCEPT', 'PASSKEY'];
@@ -22,6 +23,8 @@ export interface TemplateMeta {
   requirePasskey: boolean;
   flowKey?: string | null;
   flowVersion?: number | null;
+  /** ADR-008 — anexos que pide el formato (vacío = ninguno). */
+  attachmentSpecs: AttachmentSpec[];
 }
 
 function rect(o: Record<string, unknown>, label: string, pageCount: number, errors: string[]) {
@@ -108,6 +111,9 @@ export function parseTemplateMeta(input: unknown, pageCount: number): { meta?: T
   }
   if (input.flowVersion != null && !Number.isInteger(input.flowVersion)) errors.push('flowVersion inválida');
 
+  const attachments = parseAttachmentSpecs(input.attachmentSpecs);
+  errors.push(...attachments.errors);
+
   if (errors.length || !flow) return { errors };
   return {
     errors,
@@ -123,6 +129,7 @@ export function parseTemplateMeta(input: unknown, pageCount: number): { meta?: T
       requirePasskey: Boolean(input.requirePasskey),
       flowKey: (input.flowKey as string | null | undefined) ?? null,
       flowVersion: (input.flowVersion as number | null | undefined) ?? null,
+      attachmentSpecs: attachments.specs,
     },
   };
 }

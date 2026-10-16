@@ -75,7 +75,7 @@ export class DocumentsController {
 
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<PublicDocument> {
-    return this.documents.get(id, user.tenantId);
+    return this.documents.get(id, user.tenantId, { actorId: user.actorId });
   }
 
   /**
@@ -88,12 +88,13 @@ export class DocumentsController {
     @Res() res: Response,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
-    const { bytes, mimeType, filename } = await this.documents.getContent(id, user.tenantId);
+    const { bytes, mimeType, filename } = await this.documents.getContent(id, user.tenantId, { actorId: user.actorId });
     res
       .status(200)
       .setHeader('Content-Type', mimeType)
       .setHeader('Content-Length', bytes.length)
       .setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`)
+      .setHeader('X-Content-Type-Options', 'nosniff')
       .setHeader('Cache-Control', 'private, no-store')
       .end(bytes);
   }

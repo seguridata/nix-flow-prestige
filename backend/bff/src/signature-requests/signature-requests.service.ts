@@ -260,9 +260,11 @@ export class SignatureRequestsService {
     // A-07 — el documento debe ser del tenant del solicitante.
     const doc = await this.prisma.document.findFirst({
       where: { id: body.documentId, tenantId: body.tenantId },
-      select: { id: true, tenantId: true, caseId: true },
+      select: { id: true, tenantId: true, caseId: true, attachmentKey: true },
     });
     if (!doc) throw new NotFoundException(`Documento ${body.documentId} no encontrado`);
+    // ADR-008 — un anexo es evidencia adjunta, no un documento a firmar.
+    if (doc.attachmentKey) throw new BadRequestException('Un anexo no se puede enviar a firma');
 
     // BIOMETRICA sólo si hay proveedor configurado: si no, la solicitud nacería
     // con un método imposible de completar.

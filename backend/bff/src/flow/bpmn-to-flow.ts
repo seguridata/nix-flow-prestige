@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { ISO_DATE_RE, STEP_ID_RE, isObj, validateFlow } from './flow';
-import type { Condition, Flow, FlowStep, FlowVariable, Op } from './flow.types';
+import type { Condition, DerivedVariable, Flow, FlowStep, FlowVariable, LookupPerson, LookupQuery, Op } from './flow.types';
 
 export interface BpmnToFlowResult {
   /** Solo si el diagrama se pudo convertir y el flujo pasa `validateFlow`. */
@@ -201,13 +201,20 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
       const signerEmail = attrOf(n.el, 'signerEmail');
       if (signerName) who.name = signerName;
       if (signerEmail) who.email = signerEmail;
-    } else if (whoAttr === 'matrix') {
-      const stage = attrOf(n.el, 'stage');
+    } else if (whoAttr === 'lookup') {
       const prompt = attrOf(n.el, 'prompt')?.trim() || `¿Quién participa en «${name}»?`;
-      if (stage === 'area' || stage === 'tipoGasto') who = { type: 'matrix', stage, prompt };
-      else {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(attrOf(n.el, 'lookup') ?? '');
+      } catch {
+        parsed = undefined;
+      }
+      if (isObj(parsed) && isObj(parsed.query) && isObj(parsed.person)) {
+        // La forma exacta (tabla, columnas, operadores) la valida `validateFlow` al final.
+        who = { type: 'lookup', query: parsed.query as unknown as LookupQuery, person: parsed.person as unknown as LookupPerson, prompt };
+      } else {
         who = { type: 'ask', prompt };
-        warnings.push(`«${name}» tiene una matriz sin etapa válida; se preguntará al crear el sobre.`);
+        warnings.push(`«${name}» tiene una consulta que no se pudo leer; se preguntará al crear el sobre.`);
       }
     } else if (whoAttr === 'ask') {
       who = { type: 'ask', prompt: attrOf(n.el, 'prompt')?.trim() || `¿Quién participa en «${name}»?` };
@@ -304,8 +311,21 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
     }
   }
   (known.variables ?? []).forEach(addVar);
+
+  // Variables derivadas de una tabla (las condiciones pueden citarlas: no se infieren como capturadas).
+  const derived: DerivedVariable[] = [];
+  const embeddedDerived = attrOf(proc, 'derived');
+  if (embeddedDerived) {
+    try {
+      const list: unknown = JSON.parse(embeddedDerived);
+      if (Array.isArray(list)) list.forEach((d) => isObj(d) && derived.push(d as unknown as DerivedVariable));
+    } catch {
+      warnings.push('No se pudieron leer las variables derivadas guardadas en el diagrama.');
+    }
+  }
   for (const step of steps) {
     for (const c of step.when ?? []) {
+      if (derived.some((d) => d.key === c.variable)) continue;
       if (variables.some((v) => v.key === c.variable)) continue;
       const type: FlowVariable['type'] =
         typeof c.value === 'number' ? 'number' : ISO_DATE_RE.test(c.value) ? 'date' : 'text';
@@ -321,6 +341,7 @@ export function bpmnToFlow(xml: string, known: { variables?: FlowVariable[] } = 
     steps,
     order: attrOf(proc, 'order') === 'PARALELO' ? 'PARALELO' : 'SECUENCIAL',
     slaHours: Number.isFinite(sla) ? sla : 72,
+    ...(derived.length ? { derived } : {}),
   };
 
   errors.push(...validateFlow(flow));

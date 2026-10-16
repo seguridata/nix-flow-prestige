@@ -1,4 +1,4 @@
-import type { Condition, Flow, FlowStep } from '../flow/flow.types';
+import type { Condition, Flow, FlowStep, LookupQuery, Who } from '../flow/flow.types';
 
 /**
  * Flujos por defecto de Adquisiciones (SD-ADMINFINANZAS-03 v08), interpretados desde los BPMN de `adquisiciones.ts`.
@@ -12,13 +12,18 @@ import type { Condition, Flow, FlowStep } from '../flow/flow.types';
  *  - los carriles pasan a la pregunta «¿Quién…?» de cada paso y los pasos contiguos de un mismo carril se condensan
  *    para no pasar del máximo de pasos.
  *
- * Autorizaciones por MATRIZ (proceso real «Registro inicial - proceso adquisición» de Monday): en vez de preguntar quién
- * autoriza, los pasos `matrix` consultan la matriz de responsables de gasto del tenant (módulo expense-responsibles) con
- * las variables `area`, `tipoGasto`, `concepto` y `monto`. Si la matriz no tiene coincidencia, el paso se comporta como
- * «preguntar» (la pregunta de respaldo es el `prompt`). Etapas: Autorizar solicitante (T01, quien inicia) → Autorización
- * por ÁREA (AUT_AREA) → Autorización por TIPO DE GASTO (AUT_TIPO) → Revisión y cotizaciones (T02, T04) → Cotización y
- * negociación (T05…). Reemplazan al antiguo T01b «Aprobar solicitud» (que preguntaba a los aprobadores). T26 (aprobar
- * factura) y T27 (autorizar pago) también usan la matriz de tipo de gasto.
+ * Autorizaciones por CONSULTA (proceso real «Registro inicial - proceso adquisición» de Monday): en vez de preguntar quién
+ * autoriza, los pasos `lookup` consultan la tabla de consulta `responsables-gasto` del tenant (ADR-008) con las variables
+ * `area`, `tipoGasto`, `concepto` y `monto`; gana la primera fila coincidente (el administrador ordena de lo específico a lo
+ * general). Si la tabla no tiene coincidencia, el paso se comporta como «preguntar» (la pregunta de respaldo es el `prompt`).
+ * Etapas: Autorizar solicitante (T01, quien inicia) → Autorización por ÁREA (AUT_AREA) → Autorización por TIPO DE GASTO
+ * (AUT_TIPO) → Revisión y cotizaciones (T02, T04) → Cotización y negociación (T05…). Reemplazan al antiguo T01b «Aprobar
+ * solicitud» (que preguntaba a los aprobadores). T26 (aprobar factura) y T27 (autorizar pago) también consultan la etapa de
+ * tipo de gasto.
+ *
+ * Participantes: los pasos del solicitante (T01, T10, T13, T14, T22) son `initiator` (quien crea la solicitud); los del
+ * «Ejecutivo de Administración y Tesorería» consultan la tabla `roles-adquisiciones` (rol = «Ejecutivo de Administración y
+ * Tesorería»), con la pregunta «¿Quién es el ejecutivo…?» como respaldo.
  *
  * Pasos fusionados para no pasar de MAX_STEPS (20): T22 «Notificar al responsable y verificar lo recibido» y
  * T25 «Aceptar lo recibido y solicitar la factura» quedaron en un solo paso T22 (mismo carril, misma condición).
@@ -130,7 +135,55 @@ const soloSi = (...tipos: Tipo[]): Condition[] =>
 const ask = (prompt: string) => ({ type: 'ask' as const, prompt });
 const SOLICITANTE = '¿Quién es el solicitante o responsable de área?';
 const AYF = '¿Quién es el ejecutivo de Administración y Tesorería?';
-const matrix = (stage: 'area' | 'tipoGasto', prompt: string) => ({ type: 'matrix' as const, stage, prompt });
+/** Tabla de consulta con la matriz de responsables de gasto (columnas: etapa, area, tipoGasto, concepto, montoMin, montoMax, signerId, nombre, correo). */
+export const TABLA_RESPONSABLES = 'responsables-gasto';
+
+const cond = (column: string, op: 'eq' | 'gte' | 'lte', source: { var: string } | { value: string }, emptyMatchesAny = true) => ({
+  column,
+  op,
+  source,
+  emptyMatchesAny,
+});
+
+/** La etapa nunca vale «cualquiera»: una fila sin etapa no debe autorizar ni por área ni por tipo de gasto. */
+const consultaArea: LookupQuery = {
+  table: TABLA_RESPONSABLES,
+  match: [cond('etapa', 'eq', { value: 'area' }, false), cond('area', 'eq', { var: 'area' })],
+};
+const consultaTipoGasto: LookupQuery = {
+  table: TABLA_RESPONSABLES,
+  match: [
+    cond('etapa', 'eq', { value: 'tipoGasto' }, false),
+    cond('tipoGasto', 'eq', { var: 'tipoGasto' }),
+    cond('concepto', 'eq', { var: 'concepto' }),
+    // Un rango son dos condiciones: monto ≥ «Monto desde» y monto ≤ «Monto hasta» (vacío = sin límite).
+    cond('montoMin', 'gte', { var: 'monto' }),
+    cond('montoMax', 'lte', { var: 'monto' }),
+  ],
+};
+
+const lookup = (query: LookupQuery, prompt: string): Who => ({
+  type: 'lookup',
+  query,
+  person: { signerId: 'signerId', name: 'nombre', email: 'correo' },
+  prompt,
+});
+
+/** Tabla de consulta con los roles fijos del proceso (columnas: rol, signerId, nombre, correo). El administrador cambia a la persona desde la pantalla de tablas. */
+export const TABLA_ROLES = 'roles-adquisiciones';
+export const ROL_EJECUTIVO_AYT = 'Ejecutivo de Administración y Tesorería';
+
+/**
+ * Los pasos del «Ejecutivo de Administración y Tesorería» consultan su fila en `roles-adquisiciones` (rol = valor fijo; el rol
+ * nunca vale «cualquiera»). Sin la tabla o sin la fila el paso cae a «preguntar» con la pregunta de siempre (el resolvedor
+ * trata una tabla inexistente como «sin coincidencia»).
+ */
+const consultaEjecutivoAyT: LookupQuery = {
+  table: TABLA_ROLES,
+  match: [cond('rol', 'eq', { value: ROL_EJECUTIVO_AYT }, false)],
+};
+const ejecutivoAyT: Who = lookup(consultaEjecutivoAyT, AYF);
+
 const AUT_AREA = '¿Quién autoriza por el área del solicitante?';
 const AUT_TIPO = '¿Quién es el responsable del gasto según el tipo y el concepto?';
 
@@ -150,25 +203,25 @@ export const ADQUISICIONES_FLOW: Flow = {
   ],
   steps: [
     step({ id: 'T01', label: '1. Generar requerimiento con ≥3 cotizaciones', role: 'FIRMANTE', who: { type: 'initiator' } }),
-    step({ id: 'AUT_AREA', label: 'Autorización por área (responsable del área según la matriz)', role: 'FIRMANTE', who: matrix('area', AUT_AREA) }),
-    step({ id: 'AUT_TIPO', label: 'Autorización por tipo de gasto (responsable del concepto según la matriz)', role: 'FIRMANTE', who: matrix('tipoGasto', AUT_TIPO) }),
-    step({ id: 'T02', label: '2-3. Validar aprobaciones, presupuesto y congruencia de la compra (sin aprobación o presupuesto, se rechaza)', role: 'REVISOR', who: ask(AYF) }),
-    step({ id: 'T04', label: '4. Validar cotizaciones (≥3; mystery shopper)', role: 'REVISOR', who: ask(AYF) }),
-    step({ id: 'T05', label: '5-6. Negociar condiciones, documentar la negociación y elegir propuesta', role: 'REVISOR', who: ask(AYF) }),
-    step({ id: 'T07', label: '7-8. Solicitar y recibir cotización de Entrust', role: 'REVISOR', who: ask(AYF), when: soloSi('Costo de venta directo (Entrust)') }),
-    step({ id: 'T09', label: '9. Generar orden de compra (FOR-ADF-03)', role: 'REVISOR', who: ask(AYF), when: soloSi(...BIENES_Y_DIRECTO) }),
-    step({ id: 'T14', label: '14-15. Subir formato de reembolso y comprobantes (FOR-ADF-02) y revisarlos según el tipo de gasto', role: 'REVISOR', who: ask(SOLICITANTE), when: soloSi(...OFICINA_Y_MARKETING) }),
-    step({ id: 'T10', label: '10. Solicitar reserva de hotel / avión', role: 'FIRMANTE', who: ask(SOLICITANTE), when: soloSi('Viaje') }),
-    step({ id: 'T11', label: '11-12. Cotizar con 3 agencias e informar la mejor opción al solicitante', role: 'REVISOR', who: ask(AYF), when: soloSi('Viaje') }),
-    step({ id: 'T13', label: '13. Confirmar conformidad de lo cotizado', role: 'FIRMANTE', who: ask(SOLICITANTE), when: soloSi('Viaje') }),
-    step({ id: 'T16', label: '16. Notificar compra o reserva y registrar en SAP', role: 'REVISOR', who: ask(AYF) }),
-    step({ id: 'T18', label: '18. Solicitar el bien o servicio al proveedor', role: 'REVISOR', who: ask(AYF), when: soloSi('Bienes y servicios') }),
-    step({ id: 'T19', label: '19-21. Solicitar equipo Entrust, recibir guía y gestionar el retiro en aduana', role: 'REVISOR', who: ask(AYF), when: soloSi('Costo de venta directo (Entrust)') }),
-    step({ id: 'T30', label: '30-32. Compra en línea, factura, pago con tarjeta y pago de la tarjeta el día de vencimiento', role: 'REVISOR', who: ask(AYF), when: soloSi('Gastos de oficina, seguros y comunicación') }),
-    step({ id: 'T17', label: '17, 33-35. Pagar anticipo, revisar saldo y pagar el reembolso o notificar el cargo', role: 'REVISOR', who: ask(AYF), when: soloSi('Marketing', 'Viaje') }),
-    step({ id: 'T22', label: '22-25. Notificar al responsable, verificar el bien o servicio recibido (si no se acepta, se pide el reemplazo y se vuelve a verificar), aceptarlo y solicitar la factura', role: 'FIRMANTE', who: ask(SOLICITANTE), when: soloSi(...BIENES_Y_DIRECTO) }),
-    step({ id: 'T26', label: '26. Aprobar factura (valida SAT)', role: 'FIRMANTE', who: matrix('tipoGasto', AUT_TIPO), when: soloSi(...BIENES_Y_DIRECTO) }),
-    step({ id: 'T27', label: '27-28. Autorizar el pago, iniciar Tesorería y ejecutar la liberación de pagos', role: 'FIRMANTE', who: matrix('tipoGasto', AUT_TIPO), when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'AUT_AREA', label: 'Autorización por área (responsable del área según la matriz)', role: 'FIRMANTE', who: lookup(consultaArea, AUT_AREA) }),
+    step({ id: 'AUT_TIPO', label: 'Autorización por tipo de gasto (responsable del concepto según la matriz)', role: 'FIRMANTE', who: lookup(consultaTipoGasto, AUT_TIPO) }),
+    step({ id: 'T02', label: '2-3. Validar aprobaciones, presupuesto y congruencia de la compra (sin aprobación o presupuesto, se rechaza)', role: 'REVISOR', who: ejecutivoAyT }),
+    step({ id: 'T04', label: '4. Validar cotizaciones (≥3; mystery shopper)', role: 'REVISOR', who: ejecutivoAyT }),
+    step({ id: 'T05', label: '5-6. Negociar condiciones, documentar la negociación y elegir propuesta', role: 'REVISOR', who: ejecutivoAyT }),
+    step({ id: 'T07', label: '7-8. Solicitar y recibir cotización de Entrust', role: 'REVISOR', who: ejecutivoAyT, when: soloSi('Costo de venta directo (Entrust)') }),
+    step({ id: 'T09', label: '9. Generar orden de compra (FOR-ADF-03)', role: 'REVISOR', who: ejecutivoAyT, when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'T14', label: '14-15. Subir formato de reembolso y comprobantes (FOR-ADF-02) y revisarlos según el tipo de gasto', role: 'REVISOR', who: { type: 'initiator' }, when: soloSi(...OFICINA_Y_MARKETING) }),
+    step({ id: 'T10', label: '10. Solicitar reserva de hotel / avión', role: 'FIRMANTE', who: { type: 'initiator' }, when: soloSi('Viaje') }),
+    step({ id: 'T11', label: '11-12. Cotizar con 3 agencias e informar la mejor opción al solicitante', role: 'REVISOR', who: ejecutivoAyT, when: soloSi('Viaje') }),
+    step({ id: 'T13', label: '13. Confirmar conformidad de lo cotizado', role: 'FIRMANTE', who: { type: 'initiator' }, when: soloSi('Viaje') }),
+    step({ id: 'T16', label: '16. Notificar compra o reserva y registrar en SAP', role: 'REVISOR', who: ejecutivoAyT }),
+    step({ id: 'T18', label: '18. Solicitar el bien o servicio al proveedor', role: 'REVISOR', who: ejecutivoAyT, when: soloSi('Bienes y servicios') }),
+    step({ id: 'T19', label: '19-21. Solicitar equipo Entrust, recibir guía y gestionar el retiro en aduana', role: 'REVISOR', who: ejecutivoAyT, when: soloSi('Costo de venta directo (Entrust)') }),
+    step({ id: 'T30', label: '30-32. Compra en línea, factura, pago con tarjeta y pago de la tarjeta el día de vencimiento', role: 'REVISOR', who: ejecutivoAyT, when: soloSi('Gastos de oficina, seguros y comunicación') }),
+    step({ id: 'T17', label: '17, 33-35. Pagar anticipo, revisar saldo y pagar el reembolso o notificar el cargo', role: 'REVISOR', who: ejecutivoAyT, when: soloSi('Marketing', 'Viaje') }),
+    step({ id: 'T22', label: '22-25. Notificar al responsable, verificar el bien o servicio recibido (si no se acepta, se pide el reemplazo y se vuelve a verificar), aceptarlo y solicitar la factura', role: 'FIRMANTE', who: { type: 'initiator' }, when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'T26', label: '26. Aprobar factura (valida SAT)', role: 'FIRMANTE', who: lookup(consultaTipoGasto, AUT_TIPO), when: soloSi(...BIENES_Y_DIRECTO) }),
+    step({ id: 'T27', label: '27-28. Autorizar el pago, iniciar Tesorería y ejecutar la liberación de pagos', role: 'FIRMANTE', who: lookup(consultaTipoGasto, AUT_TIPO), when: soloSi(...BIENES_Y_DIRECTO) }),
   ],
 };
 

@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService, assertTenantKey } from '../storage/storage.service';
 import { STABLE_ORDER, finishPage, pageArgs, prismaPage, type Page, type PageQueryDto } from '../common/pagination';
 import type { EncMeta } from '../storage/object-crypto';
+import { ATTACHMENT_MIMES } from '../attachments/content-sniff';
 
 export type { Document };
 
@@ -30,6 +31,8 @@ export interface PublicDocument {
   hasPresented: boolean;
   sizeBytes: number;
   mimeType: string;
+  /** ADR-008 — no nulo = anexo de la solicitud (clave de la especificación del formato); nunca es firmable. */
+  attachmentKey?: string | null;
   createdAt: Date;
 }
 
@@ -52,6 +55,7 @@ const ROW_SELECT = {
   presentedObjectKey: true,
   sizeBytes: true,
   mimeType: true,
+  attachmentKey: true,
   createdAt: true,
 } as const;
 
@@ -67,8 +71,14 @@ type DocumentRow = {
   presentedObjectKey: string | null;
   sizeBytes: number;
   mimeType: string;
+  attachmentKey?: string | null;
   createdAt: Date;
 };
+
+/** Quién pide leer un documento (solo importa para los anexos). */
+export interface DocumentViewer {
+  actorId: string;
+}
 
 export function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -98,12 +108,21 @@ export class DocumentsService {
     tenantId: string;
     actorId: string;
     actorName?: string;
+    /**
+     * ADR-008 — alta de un ANEXO: el llamador ya validó el tipo por contenido (`sniffContent`). Se guarda con ese
+     * `mimeType`, ya congelado (locked/frozenAt) y sin nombre de archivo en la auditoría. Sin esto, solo PDF.
+     */
+    attachmentKey?: string;
+    mimeType?: string;
   }): Promise<PublicDocument> {
-    const { caseId, filename, bytes, tenantId, actorId, actorName } = params;
+    const { caseId, filename, bytes, tenantId, actorId, actorName, attachmentKey } = params;
+    const mimeType = attachmentKey ? (params.mimeType ?? '') : 'application/pdf';
     if (!bytes?.length) {
       throw new BadRequestException('El archivo está vacío');
     }
-    if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    if (attachmentKey) {
+      if (!ATTACHMENT_MIMES.has(mimeType)) throw new BadRequestException('Tipo de anexo no permitido');
+    } else if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
       throw new BadRequestException('El archivo no es un PDF válido');
     }
     const kase = await this.prisma.case.findUnique({
@@ -117,7 +136,7 @@ export class DocumentsService {
       prefix: `documents/${tenantId}/${caseId}`,
       filename,
       bytes,
-      contentType: 'application/pdf',
+      contentType: mimeType,
       tenantId,
     });
     if (stored.sha256 !== sha256) {
@@ -134,11 +153,13 @@ export class DocumentsService {
         filename,
         version: 1,
         hash: sha256,
-        locked: false,
+        locked: Boolean(attachmentKey),
+        frozenAt: attachmentKey ? new Date() : null,
         objectKey: stored.objectKey,
         enc: stored.enc as unknown as object,
         sizeBytes: stored.sizeBytes,
-        mimeType: 'application/pdf',
+        mimeType,
+        ...(attachmentKey ? { attachmentKey } : {}),
       },
       select: ROW_SELECT,
     });
@@ -148,7 +169,10 @@ export class DocumentsService {
       actorId,
       actorName,
       action: 'DOC_UPLOADED',
-      payload: { sha256, tenantId, filename, sizeBytes: stored.sizeBytes },
+      // El nombre de un anexo puede ser personal: en la bitácora va la clave de la especificación, no el archivo.
+      payload: attachmentKey
+        ? { sha256, tenantId, attachmentKey, mimeType, sizeBytes: stored.sizeBytes }
+        : { sha256, tenantId, filename, sizeBytes: stored.sizeBytes },
     });
 
     return publish(created);
@@ -203,6 +227,31 @@ export class DocumentsService {
     return publish(updated);
   }
 
+  /**
+   * ADR-008 — ¿`actorId` es el dueño del expediente o firmante/revisor/delegado de alguna solicitud de él?
+   * Es la regla de lectura de los ANEXOS: nadie fuera del tenant, y dentro solo estos participantes.
+   */
+  async participatesInCase(caseId: string, tenantId: string, actorId: string | undefined): Promise<boolean> {
+    if (!tenantId || !actorId || !caseId) return false;
+    const kase = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { ownerId: true } });
+    if (!kase) return false;
+    if (kase.ownerId && kase.ownerId === actorId) return true;
+    const n = await this.prisma.signer.count({
+      where: {
+        OR: [{ signerId: actorId }, { delegatedTo: actorId }],
+        signatureRequest: { tenantId, document: { caseId } },
+      },
+    });
+    return n > 0;
+  }
+
+  /** Un anexo solo lo lee quien participa en su expediente; a los demás se les responde 404 (no se revela que existe). */
+  private async assertAttachmentReadable(id: string, caseId: string, tenantId: string, viewer?: DocumentViewer): Promise<void> {
+    if (!(await this.participatesInCase(caseId, tenantId, viewer?.actorId))) {
+      throw new NotFoundException(`Documento ${id} no encontrado`);
+    }
+  }
+
   async list(
     caseId: string | undefined,
     tenantId: string,
@@ -210,7 +259,8 @@ export class DocumentsService {
   ): Promise<PublicDocument[] | Page<PublicDocument>> {
     const args = pageArgs(page);
     const rows = await this.prisma.document.findMany({
-      where: { tenantId, ...(caseId ? { caseId } : {}) },
+      // Los anexos (ADR-008) no son documentos a firmar: se listan por `GET /cases/:id/attachments`.
+      where: { tenantId, ...(caseId ? { caseId } : {}), attachmentKey: null },
       orderBy: STABLE_ORDER,
       select: ROW_SELECT,
       ...prismaPage(args),
@@ -235,19 +285,21 @@ export class DocumentsService {
       .then((row) => (row ? publish(row) : null));
   }
 
-  async get(id: string, tenantId: string): Promise<PublicDocument> {
+  async get(id: string, tenantId: string, viewer?: DocumentViewer): Promise<PublicDocument> {
     const found = await this.find(id, tenantId);
     if (!found) throw new NotFoundException(`Documento ${id} no encontrado`);
+    if (found.attachmentKey) await this.assertAttachmentReadable(id, found.caseId, tenantId, viewer);
     return found;
   }
 
   /** Bytes canónicos descifrados. Nunca el base64, nunca la copia firmada. */
-  async getContent(id: string, tenantId: string): Promise<DocumentContent> {
+  async getContent(id: string, tenantId: string, viewer?: DocumentViewer): Promise<DocumentContent> {
     const doc = await this.prisma.document.findFirst({
       where: { id, tenantId },
-      select: { objectKey: true, enc: true, mimeType: true, filename: true, hash: true },
+      select: { objectKey: true, enc: true, mimeType: true, filename: true, hash: true, caseId: true, attachmentKey: true },
     });
     if (!doc) throw new NotFoundException(`Documento ${id} no encontrado`);
+    if (doc.attachmentKey) await this.assertAttachmentReadable(id, doc.caseId, tenantId, viewer);
     assertTenantKey(tenantId, doc.objectKey);
     const bytes = await this.storage.getObject(doc.objectKey, doc.enc as unknown as EncMeta, tenantId);
     return { bytes, mimeType: doc.mimeType, filename: doc.filename, hash: doc.hash };

@@ -1,0 +1,170 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Prisma en memoria SOLO para las pruebas de las tablas de consulta: implementa las pocas llamadas que usan
+ * `LookupTablesService` y `FlowResolverService`, respetando `where` por tenant. No es código de producción.
+ */
+
+/** Espía mínimo (sin depender de vitest para que el archivo compile en el build): guarda las llamadas en `.mock.calls`. */
+function spy<A extends any[], R>(fn: (...a: A) => R): ((...a: A) => R) & { mock: { calls: A[] } } {
+  const calls: A[] = [];
+  const wrapped = ((...a: A) => {
+    calls.push(a);
+    return fn(...a);
+  }) as ((...a: A) => R) & { mock: { calls: A[] } };
+  wrapped.mock = { calls };
+  return wrapped;
+}
+
+type Rec = Record<string, any>;
+
+const matches = (rec: Rec, where: Rec = {}): boolean =>
+  Object.entries(where).every(([k, v]) => {
+    if (v && typeof v === 'object' && !Array.isArray(v) && 'in' in v) return (v.in as unknown[]).includes(rec[k]);
+    return rec[k] === v;
+  });
+
+const sorter = (orderBy: Rec[] | Rec | undefined) => {
+  const list = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
+  return (a: Rec, b: Rec) => {
+    for (const o of list) {
+      const [k, dir] = Object.entries(o)[0] as [string, 'asc' | 'desc'];
+      const c = a[k] < b[k] ? -1 : a[k] > b[k] ? 1 : 0;
+      if (c) return dir === 'desc' ? -c : c;
+    }
+    return 0;
+  };
+};
+
+const pick = (rec: Rec, select?: Rec) => {
+  if (!select) return { ...rec };
+  return Object.fromEntries(Object.keys(select).filter((k) => select[k]).map((k) => [k, rec[k]]));
+};
+
+export function makeLookupDb(seed: { tables?: Rec[]; rows?: Rec[]; templates?: Rec[]; definitions?: Rec[] } = {}) {
+  let n = 0;
+  const id = (p: string) => `${p}-${String(++n).padStart(4, '0')}`;
+  const state: { tables: Rec[]; rows: Rec[]; templates: Rec[]; definitions: Rec[] } = {
+    tables: (seed.tables ?? []).map((t) => ({ revision: 1, active: true, description: null, ...t })),
+    rows: (seed.rows ?? []).map((r) => ({ active: true, position: 0, ...r })),
+    templates: seed.templates ?? [],
+    definitions: seed.definitions ?? [],
+  };
+
+  const rowQuery = (args: Rec = {}) => {
+    let out = state.rows.filter((r) => matches(r, args.where)).sort(sorter(args.orderBy));
+    if (args.cursor) {
+      const at = out.findIndex((r) => r.id === args.cursor.id);
+      out = at < 0 ? [] : out.slice(at + (args.skip ?? 0));
+    }
+    if (args.take !== undefined) out = out.slice(0, args.take);
+    return out;
+  };
+
+  const db: Rec = {
+    state,
+    lookupTable: {
+      findFirst: spy(async (a: Rec) => {
+        const t = state.tables.find((x) => matches(x, a.where));
+        return t ? pick(t, a.select) : null;
+      }),
+      findMany: spy(async (a: Rec = {}) => {
+        let out = state.tables.filter((x) => matches(x, a.where)).sort(sorter(a.orderBy));
+        if (a.take !== undefined) out = out.slice(0, a.take);
+        return out.map((t) => {
+          const base: Rec = pick(t, a.select);
+          if (a.include?._count) base._count = { rows: state.rows.filter((r) => r.tableId === t.id).length };
+          if (a.include?.rows) base.rows = rowQuery({ where: { ...a.include.rows.where, tableId: t.id }, orderBy: a.include.rows.orderBy });
+          return base;
+        });
+      }),
+      create: spy(async ({ data }: Rec) => {
+        const t = { id: id('tbl'), revision: 1, active: true, description: null, createdAt: new Date(), ...data };
+        state.tables.push(t);
+        return { ...t };
+      }),
+      updateMany: spy(async ({ where, data }: Rec) => {
+        const hit = state.tables.filter((x) => matches(x, where));
+        for (const t of hit) {
+          for (const [k, v] of Object.entries(data)) {
+            if (v && typeof v === 'object' && 'increment' in (v as Rec)) t[k] += (v as Rec).increment;
+            else t[k] = v;
+          }
+        }
+        return { count: hit.length };
+      }),
+      deleteMany: spy(async ({ where }: Rec) => {
+        const hit = state.tables.filter((x) => matches(x, where));
+        for (const t of hit) {
+          state.tables.splice(state.tables.indexOf(t), 1);
+          state.rows = state.rows.filter((r) => r.tableId !== t.id); // ON DELETE CASCADE
+        }
+        return { count: hit.length };
+      }),
+    },
+    lookupRow: {
+      findFirst: spy(async (a: Rec) => {
+        const r = state.rows.find((x) => matches(x, a.where));
+        return r ? pick(r, a.select) : null;
+      }),
+      findMany: spy(async (a: Rec = {}) => rowQuery(a).map((r) => pick(r, a.select))),
+      count: spy(async ({ where }: Rec = {}) => state.rows.filter((r) => matches(r, where)).length),
+      aggregate: spy(async ({ where }: Rec) => {
+        const ps = state.rows.filter((r) => matches(r, where)).map((r) => r.position);
+        return { _max: { position: ps.length ? Math.max(...ps) : null } };
+      }),
+      create: spy(async ({ data }: Rec) => {
+        const r = { id: id('row'), active: true, position: 0, createdAt: new Date(), ...data };
+        state.rows.push(r);
+        return { ...r };
+      }),
+      createMany: spy(async ({ data }: Rec) => {
+        for (const d of data as Rec[]) state.rows.push({ id: id('row'), active: true, position: 0, ...d });
+        return { count: (data as Rec[]).length };
+      }),
+      updateMany: spy(async ({ where, data }: Rec) => {
+        const hit = state.rows.filter((x) => matches(x, where));
+        for (const r of hit) Object.assign(r, data);
+        return { count: hit.length };
+      }),
+      deleteMany: spy(async ({ where }: Rec) => {
+        const hit = state.rows.filter((x) => matches(x, where));
+        state.rows = state.rows.filter((r) => !hit.includes(r));
+        return { count: hit.length };
+      }),
+    },
+    documentTemplate: { findMany: spy(async ({ where }: Rec) => state.templates.filter((t) => matches(t, where))) },
+    processDefinition: { findMany: spy(async ({ where }: Rec) => state.definitions.filter((t) => matches(t, where))) },
+    $transaction: spy(async (cb: (tx: Rec) => unknown) => cb(db)),
+    /** Las dos sentencias crudas del servicio: reordenar (position) y quitar claves de columnas (values - text[]). */
+    $executeRaw: spy(async (strings: TemplateStringsArray, ...v: any[]) => {
+      const sql = strings.join('?');
+      if (sql.includes('"position"')) {
+        const [order, positions, tableId, tenantId] = v as [string[], number[], string, string];
+        order.forEach((rowId, i) => {
+          const r = state.rows.find((x) => x.id === rowId && x.tableId === tableId && x.tenantId === tenantId);
+          if (r) r.position = positions[i];
+        });
+        return order.length;
+      }
+      if (sql.includes('"values" -')) {
+        const [removed, tableId, tenantId] = v as [string[], string, string];
+        for (const r of state.rows.filter((x) => x.tableId === tableId && x.tenantId === tenantId)) {
+          r.values = Object.fromEntries(Object.entries(r.values).filter(([k]) => !removed.includes(k)));
+        }
+        return 1;
+      }
+      throw new Error(`SQL crudo no soportado por el fake: ${sql}`);
+    }),
+  };
+  return db;
+}
+
+export const columnsFixture = [
+  { key: 'etapa', label: 'Etapa', type: 'select', options: ['area', 'tipoGasto'] },
+  { key: 'area', label: 'Área', type: 'text' },
+  { key: 'montoMin', label: 'Monto desde', type: 'number' },
+  { key: 'vigencia', label: 'Vigencia', type: 'date' },
+  { key: 'signerId', label: 'Responsable', type: 'text' },
+  { key: 'nombre', label: 'Nombre', type: 'text' },
+  { key: 'correo', label: 'Correo', type: 'text' },
+];

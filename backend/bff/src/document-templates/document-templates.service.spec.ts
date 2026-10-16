@@ -8,6 +8,8 @@ import { DocumentTemplatesController } from './document-templates.controller';
 import { fillPdf } from './pdf-fill';
 import { parseTemplateMeta } from './template-meta';
 import { ROLES_KEY } from '../auth/roles.decorator';
+import { FlowResolverService } from '../lookup-tables/flow-resolver.service';
+import { DEFAULT_SIGNATURE_POLICY } from '../signing/signature-policy';
 import type { Flow } from '../flow/flow.types';
 import type { TemplateActor, TemplateField } from './template.types';
 
@@ -113,7 +115,8 @@ async function setup(over: { published?: boolean; tenantId?: string; objectKey?:
   };
   const fieldsService = { createMany: vi.fn(async (_d: string, f: any[]) => f) };
   const folders = { assertOwned: vi.fn(async () => undefined) };
-  const svc = new DocumentTemplatesService(prisma as any, storage as any, documents as any, requests as any, fieldsService as any, folders as any, { candidates: vi.fn(async () => []) } as any);
+  const signaturePolicy = { resolve: vi.fn(async () => ({ ...DEFAULT_SIGNATURE_POLICY })) };
+  const svc =new DocumentTemplatesService(prisma as any, storage as any, documents as any, requests as any, fieldsService as any, folders as any, new FlowResolverService(prisma as any, { append: vi.fn() } as any), undefined as any, signaturePolicy as any);
   return { svc, prisma, storage, documents, requests, fieldsService, folders, pdf };
 }
 

@@ -118,6 +118,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
+    // Errores del propio cliente que genera body-parser (http-errors): cuerpo demasiado grande, JSON mal formado, etc.
+    // Llevan su código 4xx; sin esto terminaban como un 500 «Error interno» y ensuciaban el log.
+    const clientError = this.clientHttpError(exception);
+    if (clientError) return clientError;
     if (exception instanceof Prisma.PrismaClientValidationError) {
       return { status: HttpStatus.BAD_REQUEST, error: 'Bad Request', message: 'Consulta inválida' };
     }
@@ -127,5 +131,25 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error: 'Internal Server Error',
       message: 'Error interno',
     };
+  }
+
+  private clientHttpError(exception: unknown): { status: number; error: string; message: string } | undefined {
+    if (typeof exception !== 'object' || exception === null) return undefined;
+    const e = exception as { status?: unknown; statusCode?: unknown; expose?: unknown; type?: unknown };
+    const status = typeof e.status === 'number' ? e.status : typeof e.statusCode === 'number' ? e.statusCode : undefined;
+    if (!status || status < 400 || status > 499 || e.expose !== true) return undefined;
+    const byType: Record<string, string> = {
+      'entity.too.large': 'El cuerpo de la petición es demasiado grande',
+      'entity.parse.failed': 'El cuerpo de la petición no es un JSON válido',
+      'entity.verify.failed': 'El cuerpo de la petición no se pudo verificar',
+      'encoding.unsupported': 'La codificación de la petición no es compatible',
+      'charset.unsupported': 'El juego de caracteres de la petición no es compatible',
+      'request.aborted': 'La petición se cortó antes de terminar',
+      'request.size.invalid': 'El tamaño de la petición no coincide con su contenido',
+      'stream.encoding.set': 'La petición no se pudo leer',
+    };
+    const message = byType[typeof e.type === 'string' ? e.type : ''] ?? 'Petición inválida';
+    const error = status === 413 ? 'Payload Too Large' : status === 415 ? 'Unsupported Media Type' : 'Bad Request';
+    return { status, error, message };
   }
 }

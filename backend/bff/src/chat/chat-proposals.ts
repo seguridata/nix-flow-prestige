@@ -1,4 +1,4 @@
-import { validateFlow } from '../flow/flow';
+import { cleanDerived, cleanLookupPerson, cleanLookupQuery, validateFlow } from '../flow/flow';
 import type { Flow } from '../flow/flow.types';
 import { parseTemplateMeta } from '../document-templates/template-meta';
 import { extractJson } from '../ai/llm-json';
@@ -67,15 +67,17 @@ export function sanitizeFlow(input: unknown): { flow?: Flow; errors: string[] } 
       id: s.id,
       label: s.label,
       role: s.role,
-      // `fixed` ya se rechazó arriba; `matrix` ya pasó validateFlow y se reconstruye con lista blanca.
+      // `fixed` ya se rechazó arriba; `lookup` ya pasó validateFlow y se reconstruye con lista blanca
+      // (sus «person» son claves de columna, no personas concretas).
       who:
         s.who.type === 'ask'
           ? { type: 'ask' as const, prompt: s.who.prompt }
-          : s.who.type === 'matrix'
-            ? { type: 'matrix' as const, stage: s.who.stage, prompt: s.who.prompt }
+          : s.who.type === 'lookup'
+            ? { type: 'lookup' as const, query: cleanLookupQuery(s.who.query), person: cleanLookupPerson(s.who.person), prompt: s.who.prompt }
             : { type: 'initiator' as const },
       ...(s.when?.length ? { when: s.when.map((c) => ({ variable: c.variable, op: c.op, value: c.value })) } : {}),
     })),
+    ...(f.derived?.length ? { derived: f.derived.map(cleanDerived) } : {}),
   };
   return { flow, errors: [] };
 }

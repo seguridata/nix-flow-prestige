@@ -34,11 +34,13 @@ const MANIFEST = {
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
-function makeService(events: Record<string, unknown>[]) {
+function makeService(events: Record<string, unknown>[], attachments: Record<string, unknown>[] = []) {
   const prisma = {
     evidenceManifest: { findUnique: async () => MANIFEST },
     document: {
+      findMany: async () => attachments,
       findUnique: async () => ({
+        caseId: 'c1',
         objectKey: 'documents/seguridata/c1/2026-10-01/uuid-contrato.pdf',
         enc: {},
         hash: MANIFEST.originalHash,
@@ -110,6 +112,25 @@ describe('EvidenceService.buildDossier', () => {
     }
   });
 
+  it('ADR-008: con anexos en el expediente, anexos.json trae nombre, tamaño y hash de cada uno (y entra en pack.sha256)', async () => {
+    const svc = makeService([], [
+      { id: 'a1', attachmentKey: 'cotizaciones', filename: 'cot-1.pdf', sizeBytes: 1234, mimeType: 'application/pdf', hash: 'h'.repeat(64) },
+    ]);
+    const { files } = await svc.buildDossier('man-1', 'seguridata');
+    const anexos = files.find((f) => f.path === 'anexos.json');
+    expect(anexos).toBeDefined();
+    expect(JSON.parse(anexos!.content as string).anexos).toEqual([
+      { documentId: 'a1', attachmentKey: 'cotizaciones', nombre: 'cot-1.pdf', tamanoBytes: 1234, mimeType: 'application/pdf', sha256: 'h'.repeat(64) },
+    ]);
+    const pack = files.find((f) => f.path === 'pack.sha256')!.content as string;
+    expect(pack).toContain('  anexos.json');
+  });
+
+  it('sin anexos no se agrega anexos.json (los expedientes de siempre no cambian)', async () => {
+    const { files } = await makeService([]).buildDossier('man-1', 'seguridata');
+    expect(files.some((f) => f.path === 'anexos.json')).toBe(false);
+  });
+
   it('document.sha256 coincide con el hash del documento congelado', async () => {
     const svc = makeService([]);
     const { files } = await svc.buildDossier('man-1', 'seguridata');
@@ -167,7 +188,9 @@ describe('EvidenceService: el tenant es obligatorio y siempre filtra', () => {
     const prisma = {
       evidenceManifest: { findUnique: async () => MANIFEST },
       document: {
+        findMany: async () => [],
         findUnique: async () => ({
+          caseId: 'c1',
           objectKey: docKey,
           enc: {},
           hash: MANIFEST.originalHash,
