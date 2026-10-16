@@ -152,7 +152,14 @@ services:
         test "$${S3_ACCESS_KEY}" != "$$u"
         mc admin user add local "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
         mc admin policy create local prestige-app /policies/prestige-app.json
-        mc admin policy attach local prestige-app --user "$${S3_ACCESS_KEY}"
+        # mc reports an error when an existing association has no net effect.
+        # Accept only that idempotent result; all other failures stop provisioning.
+        if ! mc admin policy attach local prestige-app --user "$${S3_ACCESS_KEY}" > /tmp/policy-attach.log 2>&1; then
+          case "$$(cat /tmp/policy-attach.log)" in
+            *"no net effect"*) ;;
+            *) cat /tmp/policy-attach.log >&2; exit 1 ;;
+          esac
+        fi
         mc version info local/prestige-docs
         mc retention info --default local/prestige-docs
     volumes:

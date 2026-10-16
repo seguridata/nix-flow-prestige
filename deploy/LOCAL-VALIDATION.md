@@ -12,3 +12,12 @@ No se aplicó ningún recurso a un clúster. No hay credenciales en este documen
 Temporal Cloud requiere endpoint, namespace y credenciales reales para verificar una conexión. `TEMPORAL_TASK_QUEUE` permite colas por despliegue; el enrutamiento automático según tier de tenant queda pendiente. Hosts, CIDR, storage class, Secrets y despliegue del clúster continúan pendientes.
 
 Builds Docker BFF y web interrumpidos por agotamiento de disco del host (~432 MB libres), con errores EIO de WSL. BFF alcanzó compilación Nest correcta y web compilación Next correcta; no se obtuvo imagen final de estos dos servicios. No repetir builds hasta recuperar espacio.
+
+## Revalidación tras recuperar WSL
+
+- MinIO: corregida la idempotencia de `mc admin policy attach`; una asociación existente devuelve error «no net effect». Se acepta únicamente ese caso y otros errores siguen deteniendo el init. Recreación + `compose wait minio-init` termina en código 0. Acceso al bucket permitido y administración denegada revalidados después del reinicio.
+- OTLP real: `backend/bff/scripts/verify-tenant-otlp.ts` ejecutó el interceptor real con contexto autenticado sintético y exportó a un collector oficial aislado. Se comprobaron en el receptor el span `tenant-observability-smoke`, contador `prestige.http.requests`, histograma `prestige.http.duration`, `tenant.id=otel-smoke-tenant` y ruta de plantilla `/smoke/:id`. No es una prueba de autenticación del BFF completo. El collector temporal (puerto 14318, límite 128 MB) fue eliminado al terminar.
+- `backend/infra/otel-collector.yaml` ahora incluye pipeline de métricas además de trazas. El smoke usa recursos explícitos y `forceFlush` antes de cerrar; no depende del intervalo de exportación ni de detección asíncrona de recursos.
+- El BFF local compiló con 0 errores y quedó respondiendo en puerto 3000 tras aliviar E/S. La prueba real OIDC/tenant/health/listados pasó. El build de imagen se canceló porque saturaba E/S del runtime; no se afirma imagen BFF final.
+- E2E de navegador contra el stack real aprobado: borrador sintético, conversión por revisión humana, formato FORM y flujo de carga/eliminación de un PDF en MinIO con hash comprobado. Los datos de prueba del formato fueron limpiados.
+- La campana del frontend devolvía 400 al incluir `userId` ajeno al DTO de paginación. Corregida para que el BFF determine el actor autenticado; GET protegido `/me/notifications` devuelve HTTP 200 y E2E navegador repetido aprobó.
