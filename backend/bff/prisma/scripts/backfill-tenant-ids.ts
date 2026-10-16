@@ -106,29 +106,10 @@ async function apply(items: { id: string; d: Derivation }[], update: Updater, dr
   for (const [tenantId, ids] of byTenant) await update(tenantId, ids);
 }
 
-async function runNotifications(dryRun: boolean) {
-  const summary = newSummary();
-  let cursor: string | undefined;
-  for (;;) {
-    const rows = await prisma.userNotification.findMany({
-      where: { tenantId: null },
-      select: { id: true, userId: true, href: true },
-      orderBy: { id: 'asc' },
-      take: BATCH_SIZE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-    if (rows.length === 0) break;
-    const lk = await buildLookups(collectNotificationKeys(rows));
-    const items = rows.map((r) => ({ id: r.id, d: deriveNotificationTenant(r, lk) }));
-    for (const it of items) record(summary, it.d);
-    await apply(
-      items,
-      (tenantId, ids) => prisma.userNotification.updateMany({ where: { id: { in: ids }, tenantId: null }, data: { tenantId } }),
-      dryRun,
-    );
-    cursor = rows[rows.length - 1].id;
-  }
-  return summary;
+// `UserNotification.tenantId` es NOT NULL desde la migración 20261018120000 (las huérfanas se borraron por decisión del
+// dueño del producto): ya no hay filas que rellenar. Se conserva la función para no romper quien invoque la tarea.
+async function runNotifications(_dryRun: boolean) {
+  return newSummary();
 }
 
 async function main() {
