@@ -2,6 +2,12 @@
 
 Instrucciones para humanos y agentes de código que toquen `seguridata/nix-flow-prestige`.
 
+## Relevo entre sesiones (2026-10-16)
+
+**Antes de tocar nada lee [`ESTADO-Y-PENDIENTES.md`](ESTADO-Y-PENDIENTES.md)**: estado actual de `develop`, decisiones del dueño, pendientes y trampas conocidas (CRLF, el BFF que no recompila solo desde Windows, el puerto 4000 que es de otro sistema, Prisma en WSL).
+Reglas de flujo de trabajo vigentes: commits temáticos **directos a `develop`, sin PRs**; agentes con archivos disjuntos; el esquema y las migraciones los hace quien orquesta antes de lanzarlos; verificar con `tsc`, `vitest` y HTTP real; y **actualizar `ESTADO-Y-PENDIENTES.md` (y Notion) al cerrar cada tanda**.
+Regla nueva de datos: las **consultas a tablas** (`lookup`) son configuración de un admin (ADR-008); el usuario normal nunca ve las tablas. Tampoco se escriben secretos ni contraseñas en el repo.
+
 ## Nota de estado (2026-10-06)
 
 `develop` ya trae el PR #5: propuesta de UI, vista Drive (`Folder`), formatos (`DocumentTemplate`) y flujos publicables (`ProcessDefinition.flow`). Léase la sección «UI y producto» de `PROGRESO.md` antes de tocar `backend/bff/src/folders`, `document-templates` o `flow`, o `frontend/web/app/{documentos,formatos,flujos}`. Ahí están los límites que quedan (los flujos publicados no los ejecuta Temporal por sí solos).

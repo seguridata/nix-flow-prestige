@@ -4,8 +4,11 @@
 
 `REPORTE.md` es la auditoría del commit `d80a296`. No describe el repo de hoy.
 
+**Retomando el trabajo (sesión nueva): empieza por `ESTADO-Y-PENDIENTES.md`.** Es el relevo vivo: qué hay en `develop`, qué se decidió, qué falta y cómo seguir. El estado de P1 de abajo es del 2026-10-06; lo posterior (IA, multitenant, tablas de consulta, formatos digitales y anexos) vive en ese archivo y en `ADR-008-TABLAS-DE-CONSULTA-Y-ADJUNTOS.md`.
+
 Usar en este orden:
 
+0. `ESTADO-Y-PENDIENTES.md` — **relevo entre sesiones** (estado actual, decisiones, pendientes, trampas)
 1. `PROGRESO.md` — qué hay hoy, sprint por sprint y hardening
 2. `00-FASES.md` — en qué fase estamos
 3. `REPORTE.md` — auditoría histórica y decisiones de entonces

@@ -1,5 +1,6 @@
 # PROGRESO — Homologación P1 y lo que vino después
 
+> **Lo posterior al 2026-10-07 (IA con Grok, aislamiento multitenant, tablas de consulta, formatos digitales y anexos, guarda de tenant) está en [`ESTADO-Y-PENDIENTES.md`](ESTADO-Y-PENDIENTES.md) y en `ADR-008-TABLAS-DE-CONSULTA-Y-ADJUNTOS.md`. Este archivo es la foto de P1 y no se reescribe.**
 > Documento vivo. La foto de los sprints P1 (abajo) no se reescribe: es el cierre del 2026-09-26.
 > **Última revisión: 2026-10-06**, contra `develop` tras fusionar los PR #4 (PKCS#11) y #5 (UI, vista Drive, formatos y flujos).
 > El seguimiento del hardening está en `663d5f5`. La UI de plantillas está en `4981fd2`.
