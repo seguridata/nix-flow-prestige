@@ -47,7 +47,7 @@ Los builds Docker BFF/web agotaron C: (~430 MB libres) y WSL devolvió EIO y lue
 
 Los pasos siguientes se mantienen abiertos hasta registrar sus resultados reales.
 
-1. Verificar build BFF de contenedor con disco estable. Build iniciado por script de agente fue cancelado por saturación de E/S mientras bloqueaba el runtime; no hay imagen resultante.
+1. Construir imagen web y ejecutar Trivy cuando se pueda reservar disco sin afectar el sandbox. BFF Docker ya construida y comprobada a nivel Node/Prisma.
 2. Consolidar commit de MinIO/collector tras validación YAML/Compose. No hay despliegue a clúster.
 
 ## Pendientes que siguen abiertos
