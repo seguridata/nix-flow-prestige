@@ -113,7 +113,10 @@ export function encryptObject(plaintext: Buffer, opts: EncryptOptions = {}): { c
   return { ciphertext, enc };
 }
 
-export function decryptObject(ciphertext: Buffer, enc: EncMeta, opts: { tenantId?: string } = {}): Buffer {
+export function decryptObject(ciphertext: Buffer, enc: EncMeta, opts: { tenantId?: string; requireTenantAad?: boolean } = {}): Buffer {
+  if (opts.requireTenantAad && (!opts.tenantId || enc?.aad !== 'tenant')) {
+    throw new Error('El modo estricto exige cifrado con AAD de tenant; ejecutar el backfill antes de activarlo');
+  }
   if (enc?.alg !== 'AES-256-GCM') {
     throw new Error(`Algoritmo de cifrado no soportado: ${enc?.alg}`);
   }

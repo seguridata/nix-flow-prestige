@@ -51,7 +51,7 @@ export function assertTenantKey(tenantId: string, objectKey: string): void {
   // Sin segmentos vacíos ni '.'/'..' (nada de recorridos de ruta).
   const wellFormed = segments.length >= 3 && segments.every((s) => s !== '' && s !== '.' && s !== '..');
   if (wellFormed && tenantId.length > 0 && TENANT_KEY_PREFIXES.has(segments[0]) && segments[1] === tenantId) return;
-  if (wellFormed && LEGACY_KEY_PATTERNS.some((re) => re.test(objectKey))) {
+  if (wellFormed && tenantId.length > 0 && process.env.STORAGE_REQUIRE_TENANT_AAD !== 'true' && LEGACY_KEY_PATTERNS.some((re) => re.test(objectKey))) {
     keyLog.warn(`Clave de storage antigua sin tenant (se permite): ${objectKey} (tenant ${tenantId})`);
     return;
   }
@@ -151,6 +151,10 @@ export class StorageService {
     tenantId?: string;
   }): Promise<StoredObject> {
     const client = this.require();
+    if (process.env.STORAGE_REQUIRE_TENANT_AAD === 'true' && !opts.tenantId) {
+      throw new Error('El modo estricto exige tenantId para almacenar objetos');
+    }
+    if (opts.tenantId) assertTenantKey(opts.tenantId, `${opts.prefix}/pending`);
     if (!opts.tenantId) {
       this.log.warn(`putObject sin tenantId: "${opts.prefix}" se cifra sin AAD de tenant`);
     }
@@ -190,7 +194,7 @@ export class StorageService {
     );
     if (!res.Body) throw new ServiceUnavailableException(`Objeto ${objectKey} sin cuerpo`);
     const ciphertext = Buffer.from(await res.Body.transformToByteArray());
-    return decryptObject(ciphertext, enc, { tenantId });
+    return decryptObject(ciphertext, enc, { tenantId, requireTenantAad: process.env.STORAGE_REQUIRE_TENANT_AAD === 'true' });
   }
 
   /** Borra el objeto tras validar que la clave es del tenant (`assertTenantKey`). */

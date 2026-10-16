@@ -10,12 +10,14 @@ import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { Resource } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 
 const endpoint =
-  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
 let sdk: NodeSDK | null = null;
 
@@ -31,6 +33,7 @@ function startTracing(): void {
       [ATTR_SERVICE_VERSION]: process.env.npm_package_version ?? '0.1.0',
     }),
     traceExporter: new OTLPTraceExporter(),
+    metricReader: new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() }),
     instrumentations: [
       getNodeAutoInstrumentations({
         // El logging de fs es puro ruido; el resto (http, express, pg, dns…) sí.

@@ -35,6 +35,7 @@ import { WebauthnModule } from './webauthn/webauthn.module';
 import { AiModule } from './ai/ai.module';
 import { ChatModule } from './chat/chat.module';
 import { LookupTablesModule } from './lookup-tables/lookup-tables.module';
+import { TenantObservabilityInterceptor } from './common/tenant-observability.interceptor';
 
 /** Misma instancia dinámica para AppModule y ThrottleGuardModule (comparten opciones y storage). */
 const THROTTLER = ThrottlerModule.forRoot({
@@ -102,6 +103,7 @@ class ThrottleGuardModule {}
     ThrottleGuardModule,
   ],
   providers: [
+    { provide: APP_INTERCEPTOR, useClass: TenantObservabilityInterceptor },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],

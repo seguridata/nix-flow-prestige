@@ -63,6 +63,17 @@ describe('encryptObject / decryptObject', () => {
 });
 
 describe('kid y AAD de tenant', () => {
+  it('modo estricto rechaza objetos antiguos y la eliminación del marcador AAD', () => {
+    const legacy = encryptObject(Buffer.from('legado'));
+    expect(() => decryptObject(legacy.ciphertext, legacy.enc, { tenantId: 'acme', requireTenantAad: true })).toThrow(/modo estricto/);
+    const current = encryptObject(Buffer.from('actual'), { tenantId: 'acme' });
+    expect(decryptObject(current.ciphertext, current.enc, { tenantId: 'acme', requireTenantAad: true }).toString()).toBe('actual');
+    const altered = { ...current.enc };
+    delete altered.aad;
+    expect(() => decryptObject(current.ciphertext, altered, { tenantId: 'acme', requireTenantAad: true })).toThrow(/modo estricto/);
+    // Incluso sin modo estricto, quitar el marcador no elude la autenticación GCM.
+    expect(() => decryptObject(current.ciphertext, altered, { tenantId: 'acme' })).toThrow();
+  });
   it('cifra con kid v1 por defecto y sin aad', () => {
     const { enc } = encryptObject(Buffer.from('x'));
     expect(enc.dek.kid).toBe('v1');
