@@ -1,5 +1,7 @@
 # ESTADO Y PENDIENTES — retoma aquí
 
+> **Continuación del 16 de octubre:** leer primero [CONTINUIDAD-2026-10-16.md](CONTINUIDAD-2026-10-16.md). Contiene los cambios posteriores a `bea0a8e`, pruebas reales y el incidente WSL/disco. Las casillas históricas siguientes no sustituyen esa actualización.
+
 > **Léelo primero.** Es el documento de relevo entre sesiones: qué hay hoy, qué se decidió, qué falta y cómo seguir sin perder tiempo.
 > Se actualiza con cada tanda de trabajo. **Última actualización: 2026-10-16**, contra `develop` en `d83c4a0` (más lo marcado «en curso»).
 > La lista viva de pendientes también está en Notion (página «Prestige: pendientes tras multitenant, deploy y chatbot»); este archivo es la copia versionada.
@@ -49,7 +51,7 @@
 Convención: `[x]` hecho · `[ ]` pendiente · **(en curso)** lo está haciendo alguien ahora · **(dueño)** necesita un dato o decisión del dueño.
 
 ### En curso (tanda del 2026-10-16)
-- [ ] **(en curso)** `UserNotification.tenantId` a `NOT NULL` (migración que borra las 11 huérfanas).
+- [x] `UserNotification.tenantId` a `NOT NULL` (migración que borra las 11 huérfanas, commit `bea0a8e`).
 - [ ] **(en curso)** Cargar a Alejandro Jiménez como responsable de Marketing, CRM y «Aliados» y el ruteo de reembolsos de jefes de área (requiere la variable integrada `solicitante` en las consultas).
 - [ ] **(en curso)** Provisionar usuarios reales en Keycloak y borrar los ficticios (script repetible; la contraseña llega por variable de entorno, nunca en un archivo).
 - [ ] **(en curso)** MinIO sin root, soporte de Temporal Cloud, probar la imagen de Keycloak de producción y el compose de producción en local.
