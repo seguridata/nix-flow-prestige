@@ -58,14 +58,17 @@ describe('tenant-guard', () => {
     expect(tenantViolation('AuditAnchor', 'findMany', {})).toBeNull();
   });
 
-  it('las excepciones de sistema y runAsSystem no se rechazan', async () => {
+  it('solo runAsSystem permite consultas globales y no deja escapar su contexto', async () => {
     expect(() =>
       checkTenantScope('NotificationOutbox', 'findMany', { where: { status: 'PENDIENTE' } }, enforce),
-    ).not.toThrow();
+    ).toThrow(TenantGuardError);
+    expect(() => checkTenantScope('WorkflowRun', 'findMany', {}, enforce)).toThrow(TenantGuardError);
+    expect(() => checkTenantScope('NotificationOutbox', 'updateMany', {}, enforce)).toThrow(TenantGuardError);
     expect(() => checkTenantScope('HumanTask', 'findMany', {}, enforce)).toThrow();
     await runAsSystem('prueba', async () => {
       expect(() => checkTenantScope('HumanTask', 'findMany', {}, enforce)).not.toThrow();
     });
+    expect(() => checkTenantScope('HumanTask', 'findMany', {}, enforce)).toThrow(TenantGuardError);
     expect(() => runAsSystem(' ', async () => undefined)).toThrow();
   });
 

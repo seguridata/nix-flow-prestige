@@ -1,3 +1,5 @@
+import { runAsSystem } from '../prisma/tenant-guard';
+import { temporalConnectionConfig } from '../temporal/connection-config';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client';
@@ -34,10 +36,9 @@ export class WorkflowReconcilerService {
   protected client(): Promise<Client> {
     if (!this.clientPromise) {
       const p = (async () => {
-        const connection = await Connection.connect({
-          address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233',
-        });
-        return new Client({ connection, namespace: process.env.TEMPORAL_NAMESPACE ?? 'default' });
+        const config = temporalConnectionConfig();
+        const connection = await Connection.connect(config.connection);
+        return new Client({ connection, namespace: config.namespace });
       })();
       // Si la conexión falla, no cachear el rechazo: reintentar en el próximo tick.
       p.catch(() => {
@@ -63,11 +64,11 @@ export class WorkflowReconcilerService {
 
   async reconcile(now = new Date()) {
     const result = { checked: 0, failed: 0, restarted: 0 };
-    const runs = await this.prisma.workflowRun.findMany({
+    const runs = await runAsSystem('Reconciliador: seleccionar corridas pendientes de todos los tenants', () => this.prisma.workflowRun.findMany({
       where: { status: 'ACTIVO', updatedAt: { lt: new Date(now.getTime() - RECONCILE_MIN_AGE_MS) } },
       orderBy: { updatedAt: 'asc' },
       take: 200,
-    });
+    }));
     if (runs.length === 0) return result;
 
     let client: Client;

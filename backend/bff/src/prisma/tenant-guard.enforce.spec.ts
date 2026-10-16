@@ -1,3 +1,4 @@
+import { WorkflowReconcilerService } from '../workflow/workflow-reconciler.service';
 /**
  * ADR-004: los métodos de servicio corregidos para `TENANT_GUARD=enforce` se ejecutan
  * contra el cliente Prisma REAL extendido con la guarda (`tenantGuardExtension`) y un
@@ -90,6 +91,16 @@ describe('TENANT_GUARD=enforce: el cliente extendido rechaza lo que no fija tena
 });
 
 describe('runAsSystem con consultas perezosas de Prisma', () => {
+  it('el reconciliador puede seleccionar corridas globales sin eximir otros llamadores', async () => {
+    const { prisma, calls } = makeClient();
+    const svc = new WorkflowReconcilerService(prisma, {} as WorkflowService);
+    await expect(svc.reconcile()).resolves.toMatchObject({ checked: 0 });
+    expect(calls.some(c => c.model === 'WorkflowRun' && c.operation === 'findMany')).toBe(true);
+    await expect(prisma.workflowRun.findMany({ where: { status: 'ACTIVO' } })).rejects.toBeInstanceOf(TenantGuardError);
+    await expect(prisma.notificationOutbox.findMany({ where: { status: 'PENDIENTE' } })).rejects.toBeInstanceOf(TenantGuardError);
+    await expect(prisma.notificationOutbox.updateMany({ where: { status: 'PENDIENTE' }, data: { status: 'FALLIDO' } })).rejects.toBeInstanceOf(TenantGuardError);
+  });
+
   it('una consulta devuelta SIN await dentro del bloque sigue exenta (se espera dentro del contexto)', async () => {
     const { prisma } = makeClient();
     await expect(

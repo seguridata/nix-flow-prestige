@@ -1,6 +1,6 @@
 # Despliegue en Kubernetes
 
-Estado: los manifiestos **no se han aplicado a ningún clúster**. Solo se comprobó que los YAML parseen (ver al final).
+Estado: los manifiestos **no se han aplicado a ningún clúster**. YAML validado; imagen y Compose de Keycloak probados localmente con PostgreSQL y discovery OIDC HTTP 200 (2026-10-16).
 No hay material criptográfico ni credenciales reales en esta carpeta: todo es `CHANGE_ME`/`example.com`.
 
 ## Estructura
@@ -62,11 +62,15 @@ kubectl -n prestige create configmap keycloak-realm --from-file=prestige-realm.j
 
 ## Pendientes documentados (no implementados: requieren decisión)
 
-- **Temporal con autenticación.** Hoy el frontend de Temporal (7233) no autentica ni cifra. Cambio concreto: mTLS en el frontend (`tls.frontend.*` en la config del servidor, o Temporal Cloud con API key/mTLS) y en el cliente del BFF y del worker pasar `tls` a `Connection.connect`/`NativeConnection.connect`; añadir `authorizer`/`claimMapper` si se expone la UI. Decidir: Temporal autoalojado o Cloud, y la CA para mTLS.
-- **MinIO sin root.** El compose de desarrollo usa `user: "0:0"` con credenciales root. Cambio concreto: crear un usuario de servicio con política limitada al bucket `prestige-docs` (`mc admin user add` + `mc admin policy`), usar ese par como `S3_ACCESS_KEY`/`S3_SECRET_KEY`, y correr el contenedor como usuario no root con el volumen en el mismo UID (hoy el volumen existente quedó como root; migrar con `chown`). En producción usar S3 gestionado con una IAM de mínimo privilegio. Decidir el proveedor de almacenamiento.
+- **Temporal Cloud implementado; conexión real pendiente.** API, reconciliador y worker comparten `temporal/connection-config.ts`. Configurar `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TLS=true` y `TEMPORAL_API_KEY` en Secret. Alternativa mTLS: `TEMPORAL_TLS_CERT_PATH` y `TEMPORAL_TLS_KEY_PATH` apuntan a archivos montados desde Secret; `TEMPORAL_TLS_CA_PATH` es opcional. No combinar API key y mTLS. `TEMPORAL_TASK_QUEUE` debe coincidir entre BFF y workers; no cambiar de cola workflows activos sin mantener sus workers. Desarrollo conserva localhost:7233 y cola prestige. Hace falta cuenta/namespace/credencial real para verificar Cloud.
+- **MinIO sin root implementado en Compose.** El proceso usa UID 100/GID 101; un job inicial ajusta el volumen existente sin borrar objetos. `minio-init` crea una identidad de aplicación y adjunta `deploy/minio/prestige-app.json` limitada a prestige-docs, sin administración ni bypass de retención. Suministrar `S3_ACCESS_KEY`/`S3_SECRET_KEY` distintos de root al Compose y al BFF del host mediante gestor de secretos/entorno. Aplicar con `docker compose up -d minio-init`; verificar permisos antes de reiniciar el BFF con las nuevas credenciales. Producción gestionada requiere IAM equivalente del proveedor.
 - **Egress**: `egress-backends` en `base/platform.yaml` sigue abierto a 0.0.0.0/0 en 5432/6379/7233/443/587; sustituir por los CIDR reales.
 - **Keycloak HA y Postgres gestionado**, y `storageClassName` RWX: dependen del clúster elegido.
 
 ## Validación
 
 `deploy/` se valida parseando todos los YAML (y `kubectl apply --dry-run=client` si hay `kubectl`). Ver el reporte de la entrega: no se aplicó a un clúster.
+
+## CI de imágenes
+
+El job `images` construye BFF, web y Keycloak y ejecuta Trivy. Falla por vulnerabilidades HIGH/CRITICAL con arreglo disponible; no publica imágenes. `.dockerignore` excluye secretos y PKI del contexto. Publicación por digest y despliegue requieren registro y clúster reales.

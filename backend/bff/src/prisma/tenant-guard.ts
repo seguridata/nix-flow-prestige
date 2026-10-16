@@ -16,10 +16,8 @@
  * esa segunda llamada duplicaría el filtro sin ganar aislamiento. Si el `id` viene del
  * cliente sin cargarlo antes con tenant, el hueco está en esa carga, que sí se valida.
  *
- * Excepciones: lista explícita `SYSTEM_EXCEPTIONS` (tareas de sistema que recorren
- * todos los tenants) y `runAsSystem(razon, fn)` para un bloque puntual. Ambas exigen
- * una razón escrita. Preferir `runAsSystem` junto a la consulta (queda a la vista de quien
- * la lee); la lista gruesa no debe crecer.
+ * Excepciones: solo `runAsSystem(razon, fn)` junto a una consulta de sistema.
+ * No hay exenciones globales por modelo/operación: otro llamador debe fijar tenant.
  *
  * Modo (`TENANT_GUARD`): `enforce` lanza `TenantGuardError`; `log` registra una vez por
  * (modelo, operación) y deja pasar; `off` desactiva. Por defecto: `enforce` en tests y en
@@ -75,16 +73,6 @@ const WHERE_OPS = new Set([
 ]);
 const CREATE_OPS = new Set(['create', 'createMany', 'createManyAndReturn', 'upsert']);
 
-/**
- * Tareas de sistema que recorren todos los tenants a propósito. Es una lista gruesa
- * (por modelo y operación, no por llamador); lo ideal es migrarlas a `runAsSystem`.
- */
-export const SYSTEM_EXCEPTIONS: Readonly<Record<string, string>> = {
-  'workflowRun.findMany': 'reconciliador de Temporal: recorre corridas de todos los tenants',
-  'notificationOutbox.findMany': 'tick de la bandeja de salida: toma pendientes de todos los tenants',
-  'notificationOutbox.updateMany': 'tick de la bandeja de salida: reclamo de filas pendientes',
-};
-
 const systemContext = new AsyncLocalStorage<string>();
 
 /**
@@ -109,8 +97,6 @@ export function tenantModels(): ReadonlySet<string> {
   );
   return tenantModelsCache;
 }
-
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -167,7 +153,6 @@ const log = new Logger('TenantGuard');
 export function checkTenantScope(model: string, operation: string, args: unknown, opts: TenantGuardOptions = {}) {
   const mode = (opts.mode ?? resolveGuardMode)();
   if (mode === 'off' || systemContext.getStore()) return;
-  if (SYSTEM_EXCEPTIONS[`${lowerFirst(model)}.${operation}`]) return;
   const detail = tenantViolation(model, operation, args);
   if (!detail) return;
   opts.onViolation?.({ model, operation, detail });

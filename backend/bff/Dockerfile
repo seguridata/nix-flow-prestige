@@ -22,6 +22,7 @@ RUN bun install --frozen-lockfile
 
 # ---------- build ----------
 FROM deps AS build
+ARG PRISMA_VERSION
 WORKDIR /app/backend/bff
 COPY backend/bff/ ./
 RUN bunx prisma@${PRISMA_VERSION} generate --schema prisma/schema.prisma \

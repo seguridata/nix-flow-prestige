@@ -60,7 +60,7 @@ services:
       VISIBILITY_DBNAME: temporal_visibility
       SKIP_DB_CREATE: "false"
     ports:
-      - "7233:7233"
+      - "127.0.0.1:7233:7233"
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,9 +72,17 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:3001
     ports:
-      - "8088:8080"
+      - "127.0.0.1:8088:8080"
     depends_on:
       - temporal
+
+  minio-permissions:
+    image: alpine:3.21
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["chown", "-R", "100:101", "/data"]
+    volumes:
+      - miniodata:/data
 
   minio:
     # minio/minio ya no se publica en Docker Hub (minio/minio#21647).
@@ -82,17 +90,18 @@ services:
     # >= RELEASE.2025-05-20 para activar Object Lock en un bucket que ya
     # existe; el pin anterior (2025-04-22) solo lo aceptaba al crearlo.
     image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
-    # La imagen anterior corría como root y así quedó el volumen. Esta
-    # corre como `minio` y no puede renombrar `.minio.sys` si no es root.
-    user: "0:0"
+    user: "100:101"
+    depends_on:
+      minio-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prestige}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prestige-minio}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - miniodata:/data
 
@@ -139,11 +148,20 @@ services:
           echo 'ERROR: prestige-docs existe sin Object Lock; recréalo con mc mb --with-lock' >&2
           exit 1
         fi
+        # Application identity has no admin, retention-write or bypass permissions.
+        test "$${S3_ACCESS_KEY}" != "$$u"
+        mc admin user add local "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
+        mc admin policy create local prestige-app /policies/prestige-app.json
+        mc admin policy attach local prestige-app --user "$${S3_ACCESS_KEY}"
         mc version info local/prestige-docs
         mc retention info --default local/prestige-docs
+    volumes:
+      - ../deploy/minio/prestige-app.json:/policies/prestige-app.json:ro
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-prestige}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-prestige-minio}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?define the non-root application S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?define the application S3_SECRET_KEY}
 
   redis:
     image: redis:7-alpine
@@ -203,6 +221,8 @@ services:
       REDIS_URL: redis://redis:6379
       TEMPORAL_ADDRESS: temporal:7233
       S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?define S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?define S3_SECRET_KEY}
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       RUN_MIGRATIONS: "true"
@@ -217,6 +237,8 @@ services:
         condition: service_healthy
       temporal:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
 
   # Opcional (profile `app`): worker de Temporal (misma imagen, sin migrar).
   worker:
@@ -234,6 +256,8 @@ services:
       REDIS_URL: redis://redis:6379
       TEMPORAL_ADDRESS: temporal:7233
       S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?define S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?define S3_SECRET_KEY}
       BFF_INTERNAL_URL: http://bff:3000
       RUN_MIGRATIONS: "false"
     volumes:

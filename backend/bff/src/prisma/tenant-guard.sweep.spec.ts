@@ -2,8 +2,7 @@
  * ADR-004: barrido estático. Recorre backend/bff/src (sin specs) y falla si alguna
  * lectura/escritura MASIVA sobre un modelo con `tenantId` no fija `tenantId` en el
  * `where` (o un alta con objeto literal no lo trae en `data`), salvo que:
- *  - la consulta esté dentro de `runAsSystem(razón, …)`, o
- *  - su `modelo.operación` figure en `SYSTEM_EXCEPTIONS` del guard (con su justificación).
+ *  - la consulta esté dentro de `runAsSystem(razón, …)`.
  * `where`/`data` que no son literales (variables, spreads de otro objeto) no se pueden
  * evaluar estáticamente: los cubre la prueba con el cliente real (tenant-guard.enforce.spec).
  */
@@ -11,7 +10,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { SYSTEM_EXCEPTIONS, tenantModels } from './tenant-guard';
+import { tenantModels } from './tenant-guard';
 
 const SRC = join(__dirname, '..');
 const MASS = new Set([
@@ -109,7 +108,7 @@ function violations(): string[] {
             const data = d && ts.isPropertyAssignment(d) ? d.initializer : undefined;
             bad = hasTenant(data) === 'no';
           }
-          if (bad && !insideRunAsSystem(n) && !SYSTEM_EXCEPTIONS[`${model}.${op}`]) {
+          if (bad && !insideRunAsSystem(n)) {
             const { line } = sf.getLineAndCharacterOfPosition(n.getStart());
             out.push(`${rel}:${line + 1} ${model}.${op}`);
           }

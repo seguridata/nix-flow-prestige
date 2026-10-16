@@ -81,7 +81,7 @@ metadata: { name: bff }
 spec: { minAvailable: 2, selector: { matchLabels: { app: bff } } }
 ---
 # Worker de Temporal: misma imagen, otro comando. Para dar aislamiento a un tier, duplica este Deployment
-# con otra cola (cuando exista TEMPORAL_TASK_QUEUE por tier) y otros recursos.
+# con otra cola (TEMPORAL_TASK_QUEUE por tier) y otros recursos.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: worker, labels: { app: worker } }

@@ -1,3 +1,4 @@
+import { runAsSystem } from '../prisma/tenant-guard';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -163,7 +164,9 @@ export class NotificationOutboxService {
   private async dispatchBatch(limit: number, tenantId: string | null) {
     if (!this.mailer.enabled) return { skipped: true as const, sent: 0, failed: 0, dead: 0 };
 
-    const due = await this.claim(limit, tenantId);
+    const due = tenantId === null
+      ? await runAsSystem('Dispatcher: reclamar mensajes vencidos de todos los tenants', () => this.claim(limit, null))
+      : await this.claim(limit, tenantId);
 
     let sent = 0;
     let failed = 0;

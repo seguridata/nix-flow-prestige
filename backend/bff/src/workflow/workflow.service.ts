@@ -1,3 +1,4 @@
+import { temporalConnectionConfig } from '../temporal/connection-config';
 import {
   BadRequestException,
   ForbiddenException,
@@ -19,7 +20,6 @@ import { SignerMailService } from '../notifications/signer-mail.service';
 import { AuditChainService } from '../collaboration/audit-chain.service';
 import {
   CONTRATO_DOS_PARTES,
-  PRESTIGE_TASK_QUEUE,
   type ContratoWorkflowInput,
   type ContratoWorkflowState,
   type NudgeCommand,
@@ -76,12 +76,11 @@ export class WorkflowService {
   private async client(): Promise<Client> {
     if (!this.clientPromise) {
       this.clientPromise = (async () => {
-        const connection = await Connection.connect({
-          address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233',
-        });
+        const config = temporalConnectionConfig();
+        const connection = await Connection.connect(config.connection);
         return new Client({
           connection,
-          namespace: process.env.TEMPORAL_NAMESPACE ?? 'default',
+          namespace: config.namespace,
         });
       })();
     }
@@ -169,7 +168,7 @@ export class WorkflowService {
     try {
       const client = await this.client();
       const handle = await client.workflow.start(CONTRATO_DOS_PARTES, {
-        taskQueue: PRESTIGE_TASK_QUEUE,
+        taskQueue: temporalConnectionConfig().taskQueue,
         workflowId,
         args: [input],
         // Memo (no search attribute: ese exige registrarse en el servidor Temporal).
@@ -182,7 +181,7 @@ export class WorkflowService {
           signatureRequestId,
           workflowId,
           runId: handle.firstExecutionRunId,
-          taskQueue: PRESTIGE_TASK_QUEUE,
+          taskQueue: temporalConnectionConfig().taskQueue,
           processKey: processDefinitionKey,
           status: 'ACTIVO',
         },
@@ -207,7 +206,7 @@ export class WorkflowService {
             tenantId: tenant,
             signatureRequestId,
             workflowId,
-            taskQueue: PRESTIGE_TASK_QUEUE,
+            taskQueue: temporalConnectionConfig().taskQueue,
             processKey: processDefinitionKey,
             status: 'ACTIVO',
           },
@@ -223,7 +222,7 @@ export class WorkflowService {
           tenantId: tenant,
           signatureRequestId,
           workflowId,
-          taskQueue: PRESTIGE_TASK_QUEUE,
+          taskQueue: temporalConnectionConfig().taskQueue,
           processKey: processDefinitionKey,
           status: 'LOCAL',
           lastError: message,

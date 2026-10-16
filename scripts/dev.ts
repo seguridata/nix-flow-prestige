@@ -9,8 +9,9 @@
  *   bun run down -- --volumes
  */
 
-import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 
 const ROOT = join(import.meta.dir, "..");
 const BFF_DIR = join(ROOT, "backend", "bff");
@@ -20,6 +21,8 @@ const COMPOSE = [
   "compose",
   "--env-file",
   "backend/.env",
+  "--env-file",
+  "backend/bff/.env",
   "-f",
   "backend/docker-compose.yml",
 ] as const;
@@ -238,6 +241,21 @@ async function up() {
 
   ensureEnv(join(ROOT, "backend", ".env.example"), join(ROOT, "backend", ".env"));
   ensureEnv(join(BFF_DIR, ".env.example"), join(BFF_DIR, ".env"));
+  // Existing local root credentials are replaced once with a bucket-scoped identity.
+  // Compose provisions it before the API starts; never print either credential.
+  const bffEnvPath = join(BFF_DIR, ".env");
+  let bffEnv = readFileSync(bffEnvPath, "utf8");
+  const storageKey = bffEnv.match(/^S3_ACCESS_KEY=(.*)$/m)?.[1]?.trim();
+  if (!storageKey || storageKey === "prestige") {
+    const values = { S3_ACCESS_KEY: "prestige-app", S3_SECRET_KEY: randomBytes(36).toString("base64url") };
+    for (const [key, value] of Object.entries(values)) {
+      const pattern = new RegExp(`^${key}=.*$`, "m");
+      bffEnv = pattern.test(bffEnv) ? bffEnv.replace(pattern, `${key}=${value}`) : `${bffEnv}\n${key}=${value}\n`;
+    }
+    writeFileSync(bffEnvPath, bffEnv, { mode: 0o600 });
+    log("Configurada identidad de storage limitada al bucket para desarrollo");
+  }
+
 
   if (reset) {
     log("Reset: down -v y vuelvo a subir");
@@ -252,6 +270,8 @@ async function up() {
 
   log("Levantando Postgres, Keycloak, Temporal, MinIO, Redis…");
   if ((await run([...COMPOSE, "up", "-d"])) !== 0) fail("docker compose up falló");
+
+  if ((await run([...COMPOSE, "wait", "minio-init"])) !== 0) fail("No se pudo provisionar la identidad de MinIO");
 
   await waitFor("Postgres", postgresReady, 90_000, true);
   await waitFor("Redis", redisReady, 30_000, true);
