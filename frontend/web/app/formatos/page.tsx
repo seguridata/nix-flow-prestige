@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FilePlus2, FileText, Pencil, Search } from "lucide-react";
 
+import { TemplateDrafts } from "@/components/chat/template-drafts";
 import { DocumentIcon } from "@/components/drive/drive-icons";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,8 @@ export default function FormatosPage() {
       <p className="mb-5 max-w-xl text-sm text-muted-foreground">
         Elige un formato, llena tus datos y se envía a quien corresponda. El documento se completa solo y el flujo de firmas ya viene definido.
       </p>
+
+      {isAdmin ? <TemplateDrafts /> : null}
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="relative">

@@ -52,7 +52,7 @@ const selectClass =
  * Alta y edición de un formato: PDF base (o formato digital, cuya hoja base genera el sistema), datos,
  * flujo, anexos, colocación de campos y reglas de firma.
  */
-export function FormatEditor({ initial, mode = "PDF" }: { initial?: FormatDetail; mode?: FormatKind }) {
+export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: FormatDetail; mode?: FormatKind; proposal?: { name: string; description: string | null; flow: Flow } }) {
   const kind: FormatKind = initial?.kind ?? mode;
   const isForm = kind === "FORM";
   const router = useRouter();
@@ -61,10 +61,10 @@ export function FormatEditor({ initial, mode = "PDF" }: { initial?: FormatDetail
 
   const [saved, setSaved] = useState<FormatDetail | undefined>(initial);
   const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState(initial?.name ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
+  const [name, setName] = useState(initial?.name ?? proposal?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? proposal?.description ?? "");
   const [category, setCategory] = useState(initial?.category ?? "");
-  const [flow, setFlow] = useState<Flow>(initial?.flow ?? { ...emptyFlow() });
+  const [flow, setFlow] = useState<Flow>(initial?.flow ?? proposal?.flow ?? { ...emptyFlow() });
   const [flowRef, setFlowRef] = useState<{ key: string; version: number } | null>(
     initial?.flowKey && initial.flowVersion ? { key: initial.flowKey, version: initial.flowVersion } : null,
   );

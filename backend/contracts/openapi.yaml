@@ -224,7 +224,1217 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SignatureRequest' }
 
+  /lookup-tables:
+    get:
+      summary: Listar tablas del tenant
+      operationId: getlookuptables
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LookupTable'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      x-required-roles:
+      - admin
+    post:
+      summary: Crear tabla
+      operationId: postlookuptables
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupTable'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLookupTable'
+  /lookup-tables/{id}:
+    get:
+      summary: Administrar tabla
+      operationId: getlookuptablesid
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupTable'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Administrar tabla
+      operationId: putlookuptablesid
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupTable'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLookupTable'
+    delete:
+      summary: Administrar tabla
+      operationId: deletelookuptablesid
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '204':
+          description: Operación completada
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /lookup-tables/{id}/rows:
+    get:
+      summary: Listar filas por cursor
+      operationId: getlookuptablesidrows
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupRowsPage'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          description: position:id
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      - name: q
+        in: query
+        schema:
+          type: string
+          maxLength: 100
+      - name: active
+        in: query
+        schema:
+          type: boolean
+    post:
+      summary: Agregar fila
+      operationId: postlookuptablesidrows
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupRow'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLookupRow'
+  /lookup-tables/{id}/rows/{rowId}:
+    put:
+      summary: Editar fila
+      operationId: putlookuptablesidrowsrowId
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupRow'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: rowId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLookupRow'
+    delete:
+      summary: Eliminar fila
+      operationId: deletelookuptablesidrowsrowId
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '204':
+          description: Operación completada
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: rowId
+        in: path
+        required: true
+        schema:
+          type: string
+  /lookup-tables/{id}/rows/{rowId}/move:
+    post:
+      summary: Mover una fila
+      operationId: postlookuptablesidrowsrowIdmove
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  moved:
+                    type: boolean
+                  index:
+                    type: integer
+                  position:
+                    type: integer
+                  total:
+                    type: integer
+                  revision:
+                    type: integer
+                  changed:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        position:
+                          type: integer
+                      additionalProperties: false
+                additionalProperties: false
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: rowId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveLookupRow'
+  /lookup-tables/{id}/rows/import:
+    post:
+      summary: Importar filas (JSON; CSV/Excel se transforma en cliente)
+      operationId: postlookuptablesidrowsimport
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: Solo administradores. Hasta 5000 filas y cuerpo de 12 MB; reemplazo transaccional.
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+                  deleted:
+                    type: integer
+                  revision:
+                    type: integer
+                additionalProperties: false
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportLookupRows'
+  /lookup-tables/{id}/rows/reorder:
+    post:
+      summary: Reordenar filas
+      operationId: postlookuptablesidrowsreorder
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reordered:
+                    type: integer
+                  revision:
+                    type: integer
+                additionalProperties: false
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderLookupRows'
+  /lookup-tables/{id}/test:
+    post:
+      summary: Probar consulta sin escribir
+      operationId: postlookuptablesidtest
+      tags:
+      - Consultas
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                  first:
+                    type:
+                    - object
+                    - 'null'
+                  explain:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestLookupQuery'
+  /document-templates:
+    get:
+      summary: Listar formatos visibles
+      operationId: getdocumenttemplates
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: all=true incluye borradores solo para admin.
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      parameters:
+      - name: all
+        in: query
+        schema:
+          type: string
+          enum:
+          - 'true'
+          - 'false'
+    post:
+      summary: Subir formato PDF
+      operationId: postdocumenttemplates
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTemplateDetail'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                meta:
+                  type: string
+                  description: JSON de UpdateDocumentTemplate
+              additionalProperties: false
+              required:
+              - file
+              - meta
+  /document-templates/form:
+    post:
+      summary: Crear o regenerar formato digital
+      operationId: postdocumenttemplatesform
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: Solo administradores. Nunca publica automáticamente; sin PDF. 409 si el formato ya está publicado.
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTemplateDetail'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DigitalFormRequest'
+  /document-templates/{id}:
+    get:
+      summary: Consultar o administrar formato
+      operationId: getdocumenttemplatesid
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: ''
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTemplateDetail'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Consultar o administrar formato
+      operationId: putdocumenttemplatesid
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTemplateDetail'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentTemplate'
+    delete:
+      summary: Consultar o administrar formato
+      operationId: deletedocumenttemplatesid
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '204':
+          description: Operación completada
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /document-templates/{id}/publish:
+    post:
+      summary: Cambiar publicación del formato
+      operationId: postdocumenttemplatesidpublish
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTemplateDetail'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /document-templates/{id}/unpublish:
+    post:
+      summary: Cambiar publicación del formato
+      operationId: postdocumenttemplatesidunpublish
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: 'Solo administradores. '
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTemplateDetail'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /document-templates/{id}/pdf:
+    get:
+      summary: Leer hoja base PDF
+      operationId: getdocumenttemplatesidpdf
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: ''
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /document-templates/{id}/bpmn:
+    get:
+      summary: Obtener BPMN del formato
+      operationId: getdocumenttemplatesidbpmn
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: ''
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /document-templates/{id}/preview-flow:
+    post:
+      summary: Resolver participantes sin enviar
+      operationId: postdocumenttemplatesidpreviewflow
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: No revela tablas ni consultas a usuarios no admin.
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                values:
+                  type: object
+                  additionalProperties:
+                    type:
+                    - string
+                    - number
+                    - 'null'
+              additionalProperties: false
+              required:
+              - values
+  /document-templates/{id}/instantiate:
+    post:
+      summary: Llenar formato publicado y crear solicitud
+      operationId: postdocumenttemplatesidinstantiate
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: Valida todos los anexos antes de crear documentos; staging debe pertenecer al actor y tenant.
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  caseId:
+                    type: string
+                    format: uuid
+                  documentId:
+                    type: string
+                    format: uuid
+                  signatureRequestId:
+                    type: string
+                    format: uuid
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                additionalProperties: false
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstantiateTemplate'
+  /document-templates/{id}/attachments:
+    post:
+      summary: Subir anexo previo
+      operationId: postdocumenttemplatesidattachments
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: Formato publicado; valida contenido real y límite 25 MB. Staging por usuario y tenant, caduca en 24 h. 503
+        sin Redis.
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedAttachment'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+        '413':
+          description: Archivo supera el límite
+        '503':
+          description: Redis no disponible
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: specKey
+        in: query
+        schema:
+          type: string
+          maxLength: 40
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              additionalProperties: false
+              required:
+              - file
+  /document-templates/attachments/staged/{stagedId}:
+    delete:
+      summary: Descartar carga previa propia
+      operationId: deletedocumenttemplatesattachmentsstagedstagedId
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: ''
+      responses:
+        '204':
+          description: Operación completada
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      parameters:
+      - name: stagedId
+        in: path
+        required: true
+        schema:
+          type: string
+  /cases/{id}/attachments:
+    get:
+      summary: Listar anexos del expediente
+      operationId: getcasesidattachments
+      tags:
+      - Formatos y anexos
+      security:
+      - BearerAuth: []
+      description: Solo dueño o participantes de solicitudes del expediente; un admin ajeno no tiene acceso. Descarga por endpoint
+        de documentos existente.
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CaseAttachment'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /chat/messages:
+    post:
+      summary: Proponer flujo o formato con IA
+      operationId: postchatmessages
+      tags:
+      - Chat
+      security:
+      - BearerAuth: []
+      description: Solo administradores. Solo propone. No guarda, publica, envía ni firma.
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatReply'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+  /chat/drafts:
+    post:
+      summary: Guardar propuesta como borrador
+      operationId: postchatdrafts
+      tags:
+      - Chat
+      security:
+      - BearerAuth: []
+      description: Solo administradores. Valida nuevamente el flujo. Borradores de formato caducan en 30 días.
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedChatDraft'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+        '409':
+          description: Conflicto de estado o recurso en uso
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatDraftRequest'
+  /chat/drafts/templates:
+    get:
+      summary: Listar borradores propios de formato
+      operationId: getchatdraftstemplates
+      tags:
+      - Chat
+      security:
+      - BearerAuth: []
+      description: Solo administradores. Máximo 50, por tenant y actor. Caducan a los 30 días. Revisar en Formatos y crear mediante
+        POST /document-templates/form.
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TemplateChatDraft'
+        '400':
+          description: Entrada inválida
+        '401':
+          description: Sin autenticación
+        '403':
+          description: Sin permiso o membresía de tenant
+        '404':
+          description: Recurso no encontrado en el ámbito del actor
+      x-required-roles:
+      - admin
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   parameters:
     CaseId:
       name: id
@@ -349,3 +1559,1044 @@ components:
               status: { type: string, enum: [PENDIENTE, FIRMADO, RECHAZADO] }
               signedAt: { type: string, format: date-time, nullable: true }
               usedMethod: { type: string, enum: [DIGITAL, AUTOGRAFA, BIOMETRICA] }
+
+    LookupColumn:
+      type: object
+      properties:
+        key:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_]{0,39}$
+        label:
+          type: string
+          maxLength: 120
+        type:
+          type: string
+          enum:
+          - text
+          - number
+          - date
+          - select
+        options:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+      required:
+      - key
+      - label
+      - type
+    LookupCondition:
+      type: object
+      properties:
+        column:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_]{0,39}$
+        op:
+          type: string
+          enum:
+          - eq
+          - neq
+          - gt
+          - gte
+          - lt
+          - lte
+          - contains
+          - notContains
+          - startsWith
+          - endsWith
+          - in
+          - notIn
+          - isEmpty
+          - isNotEmpty
+        source:
+          oneOf:
+          - type: object
+            properties:
+              var:
+                type: string
+            additionalProperties: false
+            required:
+            - var
+          - type: object
+            properties:
+              value:
+                type:
+                - string
+                - number
+            additionalProperties: false
+            required:
+            - value
+        emptyMatchesAny:
+          type: boolean
+          default: true
+      additionalProperties: false
+      required:
+      - column
+      - op
+    LookupQuery:
+      type: object
+      properties:
+        table:
+          type: string
+        match:
+          type: array
+          items:
+            $ref: '#/components/schemas/LookupCondition'
+      additionalProperties: false
+      required:
+      - table
+      - match
+    CreateLookupTable:
+      type: object
+      properties:
+        key:
+          type: string
+          maxLength: 60
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/LookupColumn'
+          maxItems: 30
+      additionalProperties: false
+      required:
+      - key
+      - name
+      - columns
+    UpdateLookupTable:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/LookupColumn'
+          maxItems: 30
+        active:
+          type: boolean
+      additionalProperties: false
+    LookupTable:
+      type: object
+      properties:
+        key:
+          type: string
+          maxLength: 60
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/LookupColumn'
+          maxItems: 30
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+        active:
+          type: boolean
+        rowCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+      required:
+      - id
+      - key
+      - name
+      - columns
+      - revision
+      - active
+      - rowCount
+    LookupRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        values:
+          type: object
+          additionalProperties:
+            type:
+            - string
+            - number
+            - 'null'
+        position:
+          type: integer
+        active:
+          type: boolean
+      additionalProperties: false
+      required:
+      - id
+      - values
+      - position
+      - active
+    CreateLookupRow:
+      type: object
+      properties:
+        values:
+          type: object
+          additionalProperties:
+            type:
+            - string
+            - number
+            - 'null'
+      additionalProperties: false
+      required:
+      - values
+    UpdateLookupRow:
+      type: object
+      properties:
+        values:
+          type: object
+          additionalProperties:
+            type:
+            - string
+            - number
+            - 'null'
+        active:
+          type: boolean
+      additionalProperties: false
+    MoveLookupRow:
+      oneOf:
+      - type: object
+        properties:
+          direction:
+            type: string
+            enum:
+            - up
+            - down
+        additionalProperties: false
+        required:
+        - direction
+      - type: object
+        properties:
+          toTop:
+            const: true
+        additionalProperties: false
+        required:
+        - toTop
+      - type: object
+        properties:
+          afterRowId:
+            type:
+            - string
+            - 'null'
+            maxLength: 64
+        additionalProperties: false
+        required:
+        - afterRowId
+    ImportLookupRows:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type:
+              - string
+              - number
+              - 'null'
+          maxItems: 5000
+        replace:
+          type: boolean
+      additionalProperties: false
+      required:
+      - rows
+    ReorderLookupRows:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            maxLength: 64
+          maxItems: 5000
+      additionalProperties: false
+      required:
+      - ids
+    TestLookupQuery:
+      type: object
+      properties:
+        query:
+          $ref: '#/components/schemas/LookupQuery'
+        inputs:
+          type: object
+          additionalProperties:
+            type:
+            - string
+            - number
+            - 'null'
+      additionalProperties: false
+      required:
+      - query
+    LookupRowsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LookupRow'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+        total:
+          type: integer
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      - total
+    FlowVariable:
+      type: object
+      properties:
+        key:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_]{0,39}$
+        label:
+          type: string
+        type:
+          type: string
+          enum:
+          - text
+          - number
+          - date
+          - select
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+      required:
+      - key
+      - label
+      - type
+      - required
+    FlowParticipant:
+      oneOf:
+      - type: object
+        properties:
+          type:
+            const: initiator
+        additionalProperties: false
+        required:
+        - type
+      - type: object
+        properties:
+          type:
+            const: fixed
+          signerId:
+            type: string
+          name:
+            type: string
+          email:
+            type: string
+        additionalProperties: false
+        required:
+        - type
+        - signerId
+      - type: object
+        properties:
+          type:
+            const: ask
+          prompt:
+            type: string
+        additionalProperties: false
+        required:
+        - type
+        - prompt
+      - type: object
+        properties:
+          type:
+            const: lookup
+          query:
+            $ref: '#/components/schemas/LookupQuery'
+          person:
+            type: object
+            properties:
+              signerId:
+                type: string
+              name:
+                type: string
+              email:
+                type: string
+            additionalProperties: false
+            required:
+            - signerId
+          prompt:
+            type: string
+        additionalProperties: false
+        required:
+        - type
+        - query
+        - person
+        - prompt
+    FlowCondition:
+      type: object
+      properties:
+        variable:
+          type: string
+        op:
+          type: string
+          enum:
+          - '>'
+          - '>='
+          - <
+          - <=
+          - ==
+          - '!='
+        value:
+          type:
+          - string
+          - number
+      additionalProperties: false
+      required:
+      - variable
+      - op
+      - value
+    FlowStep:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        who:
+          $ref: '#/components/schemas/FlowParticipant'
+        role:
+          type: string
+          enum:
+          - FIRMANTE
+          - REVISOR
+        when:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowCondition'
+      additionalProperties: false
+      required:
+      - id
+      - label
+      - who
+      - role
+    FlowDefinition:
+      type: object
+      properties:
+        variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowVariable'
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowStep'
+          maxItems: 20
+        order:
+          type: string
+          enum:
+          - SECUENCIAL
+          - PARALELO
+        slaHours:
+          type: number
+        derived:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                pattern: ^[A-Za-z][A-Za-z0-9_]{0,39}$
+              label:
+                type: string
+              type:
+                type: string
+                enum:
+                - text
+                - number
+                - date
+                - select
+              query:
+                $ref: '#/components/schemas/LookupQuery'
+              column:
+                type: string
+              onMiss:
+                type: string
+                enum:
+                - empty
+                - fail
+            additionalProperties: false
+            required:
+            - key
+            - label
+            - type
+            - query
+            - column
+      additionalProperties: false
+      required:
+      - variables
+      - steps
+      - order
+      - slaHours
+    AttachmentSpec:
+      type: object
+      properties:
+        key:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_]{0,39}$
+        label:
+          type: string
+        help:
+          type: string
+        required:
+          type: boolean
+        min:
+          type: integer
+          minimum: 0
+          maximum: 20
+        max:
+          type: integer
+          minimum: 1
+          maximum: 20
+        accept:
+          type: array
+          items:
+            type: string
+            enum:
+            - pdf
+            - image
+            - excel
+            - word
+            - any
+        maxSizeMB:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 25
+      additionalProperties: false
+      required:
+      - key
+      - label
+      - required
+      - min
+      - max
+      - accept
+      - maxSizeMB
+    DigitalFormRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        category:
+          type: string
+          maxLength: 60
+        flow:
+          $ref: '#/components/schemas/FlowDefinition'
+        flowKey:
+          type: string
+          maxLength: 120
+        flowVersion:
+          type: integer
+        methods:
+          type: array
+          items:
+            type: string
+            enum:
+            - ACCEPT
+            - AUTOGRAFA
+            - DIGITAL
+        kycPolicy:
+          type: string
+          enum:
+          - NONE
+          - ONCE
+          - EVERY_SIGN
+        requirePasskey:
+          type: boolean
+        attachmentSpecs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentSpec'
+          maxItems: 10
+      additionalProperties: false
+      description: Sin id crea un borrador; con id regenera un FORM no publicado. Nombre y flujo obligatorios al crear; la hoja,
+        campos y cajas de firma se generan en servidor.
+    TemplateField:
+      type: object
+      properties:
+        key:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9_]{0,39}$
+        label:
+          type: string
+        type:
+          type: string
+          enum:
+          - text
+          - number
+          - date
+          - select
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+        x:
+          type: number
+        y:
+          type: number
+        w:
+          type: number
+        h:
+          type: number
+        fontSize:
+          type: number
+        align:
+          type: string
+          enum:
+          - left
+          - center
+        prefill:
+          type: string
+          enum:
+          - user.name
+          - user.email
+          - today
+      additionalProperties: false
+      required:
+      - key
+      - label
+      - type
+      - required
+      - page
+      - x
+      - y
+      - w
+      - h
+    SignatureBox:
+      type: object
+      properties:
+        stepId:
+          type: string
+        page:
+          type: integer
+        x:
+          type: number
+        y:
+          type: number
+        w:
+          type: number
+        h:
+          type: number
+      additionalProperties: false
+      required:
+      - stepId
+      - page
+      - x
+      - y
+      - w
+      - h
+    UpdateDocumentTemplate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        category:
+          type: string
+          maxLength: 60
+        flow:
+          $ref: '#/components/schemas/FlowDefinition'
+        flowKey:
+          type: string
+          maxLength: 120
+        flowVersion:
+          type: integer
+        methods:
+          type: array
+          items:
+            type: string
+            enum:
+            - ACCEPT
+            - AUTOGRAFA
+            - DIGITAL
+        kycPolicy:
+          type: string
+          enum:
+          - NONE
+          - ONCE
+          - EVERY_SIGN
+        requirePasskey:
+          type: boolean
+        attachmentSpecs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentSpec'
+          maxItems: 10
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateField'
+        signatureBoxes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignatureBox'
+      additionalProperties: false
+    DocumentTemplateDetail:
+      type: object
+      description: Formato visible para el actor. A no administradores se omiten las consultas/columnas de lookup.
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        category:
+          type: string
+          maxLength: 60
+        flow:
+          $ref: '#/components/schemas/FlowDefinition'
+        flowKey:
+          type: string
+          maxLength: 120
+        flowVersion:
+          type: integer
+        methods:
+          type: array
+          items:
+            type: string
+            enum:
+            - ACCEPT
+            - AUTOGRAFA
+            - DIGITAL
+        kycPolicy:
+          type: string
+          enum:
+          - NONE
+          - ONCE
+          - EVERY_SIGN
+        requirePasskey:
+          type: boolean
+        attachmentSpecs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentSpec'
+          maxItems: 10
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - PDF
+          - FORM
+        published:
+          type: boolean
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateField'
+        signatureBoxes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignatureBox'
+        pageCount:
+          type: integer
+      required:
+      - id
+      - name
+      - kind
+      - published
+    InstantiateTemplate:
+      type: object
+      properties:
+        values:
+          type: object
+          additionalProperties:
+            type:
+            - string
+            - number
+            - 'null'
+        askedSigners:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              signerId:
+                type: string
+              name:
+                type: string
+              email:
+                type: string
+            additionalProperties: false
+            required:
+            - signerId
+        attachments:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        folderId:
+          type: string
+          format: uuid
+        caseId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 200
+      additionalProperties: false
+      required:
+      - values
+    StagedAttachment:
+      type: object
+      properties:
+        stagedId:
+          type: string
+        name:
+          type: string
+        size:
+          type: integer
+        mime:
+          type: string
+        sha256:
+          type: string
+      additionalProperties: false
+      required:
+      - stagedId
+      - name
+      - size
+      - mime
+      - sha256
+    CaseAttachment:
+      type: object
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        attachmentKey:
+          type: string
+        filename:
+          type: string
+        sizeBytes:
+          type: integer
+        mimeType:
+          type: string
+        hash:
+          type: string
+      additionalProperties: false
+      required:
+      - documentId
+      - attachmentKey
+      - filename
+      - sizeBytes
+      - mimeType
+      - hash
+    ChatTurn:
+      type: object
+      properties:
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+        content:
+          type: string
+          maxLength: 2000
+      additionalProperties: false
+      required:
+      - role
+      - content
+    ChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatTurn'
+          maxItems: 10
+        conversationId:
+          type: string
+          pattern: ^[A-Za-z0-9-]{1,64}$
+      additionalProperties: false
+      required:
+      - message
+    ChatDraftRequest:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+          - flow
+          - template
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        flow:
+          $ref: '#/components/schemas/FlowDefinition'
+        conversationId:
+          type: string
+          pattern: ^[A-Za-z0-9-]{1,64}$
+      additionalProperties: false
+      required:
+      - kind
+      - name
+      - flow
+    ChatProposal:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+          - flow
+          - template
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        flow:
+          $ref: '#/components/schemas/FlowDefinition'
+        status:
+          const: PROPUESTA
+      additionalProperties: false
+      required:
+      - kind
+      - name
+      - flow
+      - status
+    ChatReply:
+      type: object
+      properties:
+        reply:
+          type: string
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatProposal'
+        rejected:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        notice:
+          type: string
+        meta:
+          type: object
+          properties:
+            model:
+              type:
+              - string
+              - 'null'
+          additionalProperties: false
+      additionalProperties: false
+      required:
+      - reply
+      - proposals
+      - rejected
+      - warnings
+      - notice
+      - meta
+    SavedChatDraft:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+          - flow
+          - template
+        status:
+          const: BORRADOR
+        published:
+          const: false
+        key:
+          type: string
+        version:
+          type: integer
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      additionalProperties: false
+      required:
+      - kind
+      - status
+      - published
+      - name
+    TemplateChatDraft:
+      type: object
+      properties:
+        kind:
+          const: template
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        flow:
+          $ref: '#/components/schemas/FlowDefinition'
+        status:
+          const: BORRADOR
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        actorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - id
+      - name
+      - flow
+      - createdAt
+      - status

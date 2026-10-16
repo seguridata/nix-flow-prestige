@@ -2,15 +2,61 @@
   "info": {
     "name": "Prestige BFF — caso ancla + webhooks (M14)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Flujo de punta a punta: token OIDC -> caso -> documento -> solicitud de firma -> firma -> evidencia -> webhooks. El contrato completo está en /docs (Swagger) y /docs-json (OpenAPI). Variables: baseUrl, keycloakUrl, token."
+    "description": "Flujo de punta a punta: token OIDC -> caso -> documento -> solicitud de firma -> firma -> evidencia -> webhooks. El contrato completo está en /docs (Swagger) y /docs-json (OpenAPI). Variables: baseUrl, keycloakUrl, token. ADR-008: consultas solo admin, formatos digitales y anexos; chat solo borradores. Configura username/password localmente. No ejecutar carpetas completas en producción: contienen escrituras y borrados."
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
-    { "key": "keycloakUrl", "value": "http://localhost:8081/realms/prestige/protocol/openid-connect/token" },
-    { "key": "token", "value": "" },
-    { "key": "caseId", "value": "" },
-    { "key": "documentId", "value": "" },
-    { "key": "requestId", "value": "" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "keycloakUrl",
+      "value": "http://localhost:8081/realms/prestige/protocol/openid-connect/token"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "caseId",
+      "value": ""
+    },
+    {
+      "key": "documentId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "tenantId",
+      "value": ""
+    },
+    {
+      "key": "tableId",
+      "value": ""
+    },
+    {
+      "key": "rowId",
+      "value": ""
+    },
+    {
+      "key": "templateId",
+      "value": ""
+    },
+    {
+      "key": "stagedId",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -21,17 +67,33 @@
         "body": {
           "mode": "urlencoded",
           "urlencoded": [
-            { "key": "grant_type", "value": "password" },
-            { "key": "client_id", "value": "prestige-web" },
-            { "key": "username", "value": "roberto" },
-            { "key": "password", "value": "roberto123" }
+            {
+              "key": "grant_type",
+              "value": "password"
+            },
+            {
+              "key": "client_id",
+              "value": "prestige-web"
+            },
+            {
+              "key": "username",
+              "value": "{{username}}"
+            },
+            {
+              "key": "password",
+              "value": "{{password}}"
+            }
           ]
         }
       },
       "event": [
         {
           "listen": "test",
-          "script": { "exec": ["pm.collectionVariables.set('token', pm.response.json().access_token);"] }
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set('token', pm.response.json().access_token);"
+            ]
+          }
         }
       ]
     },
@@ -39,57 +101,121 @@
       "name": "1 · Crear caso",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/cases",
-        "body": { "mode": "raw", "options": { "raw": { "language": "json" } }, "raw": "{\n  \"title\": \"Contrato demo\"\n}" }
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"title\": \"Contrato demo\"\n}"
+        }
       },
       "event": [
-        { "listen": "test", "script": { "exec": ["pm.collectionVariables.set('caseId', pm.response.json().id);"] } }
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set('caseId', pm.response.json().id);"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "2 · Subir documento (multipart)",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/documents",
         "body": {
           "mode": "formdata",
           "formdata": [
-            { "key": "caseId", "value": "{{caseId}}" },
-            { "key": "file", "type": "file", "src": "contrato.pdf" }
+            {
+              "key": "caseId",
+              "value": "{{caseId}}"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "contrato.pdf"
+            }
           ]
         }
       },
       "event": [
-        { "listen": "test", "script": { "exec": ["pm.collectionVariables.set('documentId', pm.response.json().id);"] } }
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set('documentId', pm.response.json().id);"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "3 · Crear solicitud de firma",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/signature-requests",
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"documentId\": \"{{documentId}}\",\n  \"methods\": [\"DIGITAL\"],\n  \"order\": \"SECUENCIAL\",\n  \"slaHours\": 72,\n  \"signers\": [\n    { \"signerId\": \"maria\", \"name\": \"María\", \"email\": \"maria@demo.mx\" }\n  ]\n}"
         }
       },
       "event": [
-        { "listen": "test", "script": { "exec": ["pm.collectionVariables.set('requestId', pm.response.json().id);"] } }
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set('requestId', pm.response.json().id);"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "4 · Firmar (JSON; consentimiento incluido)",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/signature-requests/{{requestId}}/actions/sign",
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"method\": \"DIGITAL\",\n  \"consentAccepted\": true\n}"
         }
       }
@@ -98,7 +224,12 @@
       "name": "5 · Estado de la solicitud",
       "request": {
         "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/signature-requests/{{requestId}}/status"
       }
     },
@@ -113,11 +244,20 @@
       "name": "7 · Webhooks — alta de suscripción (admin)",
       "request": {
         "method": "POST",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/webhooks/subscriptions",
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"url\": \"https://tu-endpoint/webhooks/prestige\",\n  \"events\": [\"mx.seguridata.prestige.request.completed\", \"mx.seguridata.prestige.evidence.sealed\"],\n  \"description\": \"integración X\"\n}"
         }
       }
@@ -126,9 +266,1135 @@
       "name": "8 · Webhooks — entregas y DLQ (admin)",
       "request": {
         "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
         "url": "{{baseUrl}}/webhooks/deliveries?status=DLQ"
       }
+    },
+    {
+      "name": "Consultas",
+      "item": [
+        {
+          "name": "GET /lookup-tables · Listar tablas del tenant",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /lookup-tables · Crear tabla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"key\": \"responsables-demo\",\n  \"name\": \"Responsables demo\",\n  \"columns\": [\n    {\n      \"key\": \"area\",\n      \"label\": \"Área\",\n      \"type\": \"text\"\n    },\n    {\n      \"key\": \"signerId\",\n      \"label\": \"Responsable\",\n      \"type\": \"text\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /lookup-tables/{id} · Administrar tabla",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /lookup-tables/{id} · Administrar tabla",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Responsables revisados\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /lookup-tables/{id} · Administrar tabla",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /lookup-tables/{id}/rows · Listar filas por cursor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /lookup-tables/{id}/rows · Agregar fila",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"values\": {\n    \"area\": \"Marketing\",\n    \"signerId\": \"draygoza\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /lookup-tables/{id}/rows/{rowId} · Editar fila",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows/{{rowId}}",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"active\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /lookup-tables/{id}/rows/{rowId} · Eliminar fila",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows/{{rowId}}",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /lookup-tables/{id}/rows/{rowId}/move · Mover una fila",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows/{{rowId}}/move",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"direction\": \"up\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /lookup-tables/{id}/rows/import · Importar filas (JSON; CSV/Excel se transforma en cliente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows/import",
+            "description": "Solo administradores. Hasta 5000 filas y cuerpo de 12 MB; reemplazo transaccional.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"rows\": [\n    {\n      \"area\": \"Marketing\",\n      \"signerId\": \"draygoza\"\n    }\n  ],\n  \"replace\": false\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /lookup-tables/{id}/rows/reorder · Reordenar filas",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/rows/reorder",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"ids\": [\n    \"{{rowId}}\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /lookup-tables/{id}/test · Probar consulta sin escribir",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/lookup-tables/{{tableId}}/test",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"query\": {\n    \"table\": \"responsables-demo\",\n    \"match\": [\n      {\n        \"column\": \"area\",\n        \"op\": \"eq\",\n        \"source\": {\n          \"var\": \"area\"\n        }\n      }\n    ]\n  },\n  \"inputs\": {\n    \"area\": \"Marketing\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Formatos y anexos",
+      "item": [
+        {
+          "name": "GET /document-templates · Listar formatos visibles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates",
+            "description": "all=true incluye borradores solo para admin."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates · Subir formato PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "{\"name\": \"Formato PDF demo\", \"flow\": {\"variables\": [{\"key\": \"fecha\", \"label\": \"Fecha\", \"type\": \"date\", \"required\": true}], \"steps\": [{\"id\": \"solicitante\", \"label\": \"Solicitante\", \"role\": \"FIRMANTE\", \"who\": {\"type\": \"initiator\"}}], \"order\": \"SECUENCIAL\", \"slaHours\": 48}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates/form · Crear o regenerar formato digital",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/form",
+            "description": "Solo administradores. Nunca publica automáticamente; sin PDF. 409 si el formato ya está publicado.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Formato digital demo\",\n  \"flow\": {\n    \"variables\": [\n      {\n        \"key\": \"fecha\",\n        \"label\": \"Fecha\",\n        \"type\": \"date\",\n        \"required\": true\n      }\n    ],\n    \"steps\": [\n      {\n        \"id\": \"solicitante\",\n        \"label\": \"Solicitante\",\n        \"role\": \"FIRMANTE\",\n        \"who\": {\n          \"type\": \"initiator\"\n        }\n      }\n    ],\n    \"order\": \"SECUENCIAL\",\n    \"slaHours\": 48\n  },\n  \"methods\": [\n    \"AUTOGRAFA\"\n  ],\n  \"attachmentSpecs\": [\n    {\n      \"key\": \"soporte\",\n      \"label\": \"Soporte\",\n      \"required\": true,\n      \"min\": 1,\n      \"max\": 3,\n      \"accept\": [\n        \"pdf\"\n      ],\n      \"maxSizeMB\": 5\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /document-templates/{id} · Consultar o administrar formato",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /document-templates/{id} · Consultar o administrar formato",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}",
+            "description": "Solo administradores. ",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"description\": \"Revisado por administrador\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /document-templates/{id} · Consultar o administrar formato",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates/{id}/publish · Cambiar publicación del formato",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/publish",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates/{id}/unpublish · Cambiar publicación del formato",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/unpublish",
+            "description": "Solo administradores. "
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /document-templates/{id}/pdf · Leer hoja base PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/pdf",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /document-templates/{id}/bpmn · Obtener BPMN del formato",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/bpmn",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates/{id}/preview-flow · Resolver participantes sin enviar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/preview-flow",
+            "description": "No revela tablas ni consultas a usuarios no admin.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"values\": {\n    \"fecha\": \"2026-10-16\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates/{id}/instantiate · Llenar formato publicado y crear solicitud",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/instantiate",
+            "description": "Valida todos los anexos antes de crear documentos; staging debe pertenecer al actor y tenant.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"values\": {\n    \"fecha\": \"2026-10-16\"\n  },\n  \"attachments\": {\n    \"soporte\": [\n      \"{{stagedId}}\"\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /document-templates/{id}/attachments · Subir anexo previo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/{{templateId}}/attachments?specKey=soporte",
+            "description": "Formato publicado; valida contenido real y límite 25 MB. Staging por usuario y tenant, caduca en 24 h. 503 sin Redis.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /document-templates/attachments/staged/{stagedId} · Descartar carga previa propia",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/document-templates/attachments/staged/{{stagedId}}",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /cases/{id}/attachments · Listar anexos del expediente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/cases/{{caseId}}/attachments",
+            "description": "Solo dueño o participantes de solicitudes del expediente; un admin ajeno no tiene acceso. Descarga por endpoint de documentos existente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "POST /chat/messages · Proponer flujo o formato con IA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/chat/messages",
+            "description": "Solo administradores. Solo propone. No guarda, publica, envía ni firma.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"message\": \"Propón un formato de vacaciones con firma del solicitante y revisión de RH.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /chat/drafts · Guardar propuesta como borrador",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/chat/drafts",
+            "description": "Solo administradores. Valida nuevamente el flujo. Borradores de formato caducan en 30 días.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"kind\": \"template\",\n  \"name\": \"Vacaciones\",\n  \"flow\": {\n    \"variables\": [\n      {\n        \"key\": \"fecha\",\n        \"label\": \"Fecha\",\n        \"type\": \"date\",\n        \"required\": true\n      }\n    ],\n    \"steps\": [\n      {\n        \"id\": \"solicitante\",\n        \"label\": \"Solicitante\",\n        \"role\": \"FIRMANTE\",\n        \"who\": {\n          \"type\": \"initiator\"\n        }\n      }\n    ],\n    \"order\": \"SECUENCIAL\",\n    \"slaHours\": 48\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /chat/drafts/templates · Listar borradores propios de formato",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantId}}",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/chat/drafts/templates",
+            "description": "Solo administradores. Máximo 50, por tenant y actor. Caducan a los 30 días. Revisar en Formatos y crear mediante POST /document-templates/form."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Estado esperado', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

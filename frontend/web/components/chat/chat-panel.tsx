@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, MessageSquareText, Send, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { describeWhen, describeWho } from "@/libs/flow";
 import { saveChatDraft, sendChatMessage, type ChatProposal, type ChatTurn, type SavedDraft } from "@/services/chat-service";
+
+import { TemplateDrafts } from "@/components/chat/template-drafts";
 
 export const AI_NOTICE = "Borrador generado por IA; requiere revisión humana";
 
@@ -31,11 +33,13 @@ export function AiDraftLabel() {
 }
 
 function ProposalCard({ p, conversationId }: { p: ChatProposal; conversationId: string }) {
+  const queryClient = useQueryClient();
   const [saved, setSaved] = useState<SavedDraft | null>(null);
   const save = useMutation({
     mutationFn: () => saveChatDraft(p, conversationId),
     onSuccess: (d) => {
       setSaved(d);
+      void queryClient.invalidateQueries({ queryKey: ["chat-template-drafts"] });
       toast.success("Guardado como borrador. Revísalo antes de publicar.");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -64,7 +68,7 @@ function ProposalCard({ p, conversationId }: { p: ChatProposal; conversationId: 
         ))}
       </ol>
       {p.kind === "template" ? (
-        <p className="text-xs text-muted-foreground">El PDF base y la posición de los campos se agregan después, en Formatos.</p>
+        <p className="text-xs text-muted-foreground">Revisa el borrador en Formatos y guárdalo como formato digital; el sistema generará la hoja base.</p>
       ) : null}
       {saved ? (
         <p role="status" className="flex items-center gap-1.5 text-sm font-medium">
@@ -141,6 +145,7 @@ export function ChatPanel() {
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite" aria-busy={send.isPending}>
+          <TemplateDrafts compact />
           {entries.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Ej.: «Arma un flujo de solicitud de gasto: firma quien la pide y, si pasa de 50 mil pesos, también finanzas.»
