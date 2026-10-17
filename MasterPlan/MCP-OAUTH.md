@@ -39,6 +39,10 @@ El script usa `admin-cli` únicamente para administración transitoria de Keyclo
 
 URL: `http://localhost:3000/mcp`, transporte Streamable HTTP, OAuth client ID `prestige-mcp-client`, scope `openid prestige:read`. El cliente descubre Keycloak desde el desafío 401 `WWW-Authenticate` y los metadatos RFC9728. Solicita `resource` igual a la URL MCP en autorización y canje de código, con PKCE S256. El usuario inicia sesión y consiente en Keycloak. Ningún token se introduce en el frontend de Prestige.
 
+### Límite de la prueba local
+
+La metadata HTTP del recurso devuelve 200 y el endpoint MCP devuelve 401 sin bearer token. La suite de integración prueba las rutas autorizadas con tokens/JWKS controlados. El recorrido interactivo Authorization Code + PKCE con Keycloak debe verificarse por separado. En el sandbox WSL de Dave, los puertos Docker se publican en el loopback de WSL y Windows no alcanza `localhost:8081`; `netsh interface portproxy` devolvió “requiere elevación”. Por ello, el consentimiento y las llamadas OAuth desde el navegador quedan pendientes de ejecutar con un puente local temporal desde una consola elevada. No se debe dejar una regla de `portproxy` activa después de la prueba.
+
 GET `/mcp/info` requiere el token web normal y rol admin/platform_admin; entrega configuración pública para la pantalla Conexiones, sin secretos.
 
 ## Herramientas
