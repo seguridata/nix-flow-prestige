@@ -69,7 +69,7 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: bodyLimit });
   app.useBodyParser('urlencoded', { limit: bodyLimit, extended: true });
 
-  const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
+  const origins = `${process.env.CORS_ORIGINS ?? 'http://localhost:3001'},${process.env.MCP_ALLOWED_ORIGINS ?? ''}`
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
@@ -83,7 +83,10 @@ async function bootstrap() {
       'Idempotency-Key',
       'X-Prestige-Worker-Token',
       'X-Tenant-Id',
+      'MCP-Protocol-Version',
+      'Mcp-Session-Id',
     ],
+    exposedHeaders: ['WWW-Authenticate', 'Mcp-Session-Id'],
   });
 
   app.useGlobalPipes(

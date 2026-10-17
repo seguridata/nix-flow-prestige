@@ -36,6 +36,7 @@ import { AiModule } from './ai/ai.module';
 import { ChatModule } from './chat/chat.module';
 import { LookupTablesModule } from './lookup-tables/lookup-tables.module';
 import { TenantObservabilityInterceptor } from './common/tenant-observability.interceptor';
+import { McpModule } from './mcp/mcp.module';
 
 /** Misma instancia dinámica para AppModule y ThrottleGuardModule (comparten opciones y storage). */
 const THROTTLER = ThrottlerModule.forRoot({
@@ -98,6 +99,7 @@ class ThrottleGuardModule {}
     AiModule,
     ChatModule,
     LookupTablesModule,
+    McpModule,
     // SIEMPRE después de AuthModule: sus APP_GUARD corren en orden de registro y el
     // tracker necesita `req.user` (ya autenticado) para limitar por `tenantId:actorId`.
     ThrottleGuardModule,
