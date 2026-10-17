@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CasesService } from '../cases/cases.service';
 import { DocumentsService } from '../documents/documents.service';
 import { SignatureRequestsService } from '../signature-requests/signature-requests.service';
+import { pageArgs, type Page, type PageQueryDto } from '../common/pagination';
 
 export interface InboxItem {
   signatureRequestId: string;
@@ -46,8 +47,28 @@ export class InboxService {
     return { docs, kases };
   }
 
-  async forSigner(signerId: string, tenantId: string): Promise<InboxItem[]> {
-    const requests = await this.signatureRequests.listAll(signerId, undefined, undefined, undefined, tenantId);
+  private async validateCursor(page: PageQueryDto | undefined, actorId: string, tenantId: string, sent: boolean) {
+    if (!page?.cursor) return;
+    try {
+      const request = await this.signatureRequests.getOrThrow(page.cursor, tenantId);
+      const visible = sent ? request.requestedBy === actorId
+        : request.signers.some(s => s.signerId === actorId || s.delegatedTo === actorId);
+      if (visible) return;
+    } catch (error) {
+      // Hide resource existence, but preserve unexpected infrastructure failures as server errors.
+      if (!(error instanceof NotFoundException)) throw error;
+    }
+    throw new BadRequestException('Cursor no disponible para esta bandeja. Actualiza el listado.');
+  }
+
+  forSigner(signerId: string, tenantId: string): Promise<InboxItem[]>;
+  forSigner(signerId: string, tenantId: string, page: PageQueryDto): Promise<InboxItem[] | Page<InboxItem>>;
+  async forSigner(signerId: string, tenantId: string, page?: PageQueryDto): Promise<InboxItem[] | Page<InboxItem>> {
+    await this.validateCursor(page, signerId, tenantId, false);
+    const result = pageArgs(page).paged
+      ? await this.signatureRequests.list(signerId, undefined, undefined, undefined, tenantId, page)
+      : await this.signatureRequests.listAll(signerId, undefined, undefined, undefined, tenantId);
+    const requests = Array.isArray(result) ? result : result.items;
     const { docs, kases } = await this.lookups(requests.map((r) => r.documentId), tenantId);
 
     const items = await Promise.all(
@@ -90,17 +111,18 @@ export class InboxService {
       }),
     );
 
-    return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    // Preserve the database's stable createdAt desc / id desc order and opaque cursor.
+    return Array.isArray(result) ? items : { items, nextCursor: result.nextCursor };
   }
 
-  async forRequester(requestedBy: string, tenantId: string): Promise<InboxItem[]> {
-    const requests = await this.signatureRequests.listAll(
-      undefined,
-      undefined,
-      undefined,
-      requestedBy,
-      tenantId,
-    );
+  forRequester(requestedBy: string, tenantId: string): Promise<InboxItem[]>;
+  forRequester(requestedBy: string, tenantId: string, page: PageQueryDto): Promise<InboxItem[] | Page<InboxItem>>;
+  async forRequester(requestedBy: string, tenantId: string, page?: PageQueryDto): Promise<InboxItem[] | Page<InboxItem>> {
+    await this.validateCursor(page, requestedBy, tenantId, true);
+    const result = pageArgs(page).paged
+      ? await this.signatureRequests.list(undefined, undefined, undefined, requestedBy, tenantId, page)
+      : await this.signatureRequests.listAll(undefined, undefined, undefined, requestedBy, tenantId);
+    const requests = Array.isArray(result) ? result : result.items;
     const { docs, kases } = await this.lookups(requests.map((r) => r.documentId), tenantId);
     const items = await Promise.all(
       requests.map(async (request) => {
@@ -127,6 +149,6 @@ export class InboxService {
         };
       }),
     );
-    return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return Array.isArray(result) ? items : { items, nextCursor: result.nextCursor };
   }
 }

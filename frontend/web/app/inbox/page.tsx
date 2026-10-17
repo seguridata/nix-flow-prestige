@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { EvidencePanel } from "@/components/inbox/evidence-panel";
 import { SignerRail } from "@/components/inbox/signer-rail";
+import { usePagedInbox } from "@/components/inbox/use-paged-inbox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { groupEnvelopes, statusSentence, type EnvelopeRow } from "@/libs/envelope-status";
 import { cn } from "@/libs/utils";
-import { fetchInbox, fetchSent } from "@/services/inbox-service";
+import { filterInboxItems, mergeInboxPages } from "@/services/inbox-service";
 import { useSession } from "@/store/session-store";
 
 function EnvelopeItem({
@@ -78,12 +78,18 @@ function CompactItem({ row, selected, onSelect }: { row: EnvelopeRow; selected: 
 }
 
 export default function InboxPage() {
-  const { signerId, name } = useSession();
-  const inbox = useQuery({ queryKey: ["inbox", signerId], queryFn: () => fetchInbox(signerId) });
-  const sent = useQuery({ queryKey: ["sent", signerId], queryFn: () => fetchSent(signerId) });
-  const [pickedId, setPickedId] = useState<string | null>(null);
+  const { signerId, name, tenantId } = useSession();
+  const [criterion, setCriterion] = useState("");
+  const inbox = usePagedInbox("inbox", tenantId, signerId, criterion);
+  const sent = usePagedInbox("sent", tenantId, signerId, criterion);
+  const scope = `${tenantId}:${signerId}:${criterion}`;
+  const [picked, setPicked] = useState<{ scope: string; id: string } | null>(null);
+  const pickedId = picked?.scope === scope ? picked.id : null;
 
-  const groups = useMemo(() => groupEnvelopes(inbox.data, sent.data), [inbox.data, sent.data]);
+  const groups = useMemo(() => groupEnvelopes(
+    filterInboxItems(mergeInboxPages(inbox.data?.pages), criterion),
+    filterInboxItems(mergeInboxPages(sent.data?.pages), criterion),
+  ), [inbox.data, sent.data, criterion]);
   const all = useMemo(
     () => [...groups.action, ...groups.inProgress, ...groups.closed],
     [groups],
@@ -93,7 +99,7 @@ export default function InboxPage() {
   const isLoading = inbox.isLoading || sent.isLoading;
   const firstName = name.split(" ")[0];
 
-  const select = (r: EnvelopeRow) => () => setPickedId(r.signatureRequestId);
+  const select = (r: EnvelopeRow) => () => setPicked({ scope, id: r.signatureRequestId });
 
   return (
     <AppShell
@@ -112,6 +118,13 @@ export default function InboxPage() {
             ? `${firstName}, ${groups.action.length === 1 ? "tienes 1 sobre que requiere" : `tienes ${groups.action.length} sobres que requieren`} tu acción`
             : `${firstName}, no hay nada que requiera tu acción`}
         </h1>
+        <div className="mt-5 max-w-xl">
+          <label htmlFor="inbox-search" className="text-sm font-medium">Buscar en los sobres cargados</label>
+          <input id="inbox-search" type="search" value={criterion} onChange={event => setCriterion(event.target.value)}
+            placeholder="Documento, expediente, persona o estado"
+            className="mt-2 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          <p className="mt-2 text-xs text-muted-foreground">Los resultados se amplían al cargar más sobres.</p>
+        </div>
 
         {isLoading ? (
           <div className="mt-8 grid gap-4" aria-busy="true">
@@ -119,7 +132,7 @@ export default function InboxPage() {
               <div key={i} className="h-28 animate-pulse rounded-lg border border-border bg-muted/60" />
             ))}
           </div>
-        ) : inbox.isError || sent.isError ? (
+        ) : (inbox.isError && !inbox.data) || (sent.isError && !sent.data) ? (
           <Card className="mt-8 p-6">
             <p className="font-medium">No pudimos cargar tus sobres.</p>
             <p className="mt-1 text-sm text-muted-foreground">Revisa tu conexión e inténtalo de nuevo.</p>
@@ -139,9 +152,9 @@ export default function InboxPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/empty-inbox.jpg" alt="" className="h-48 w-full object-cover" />
             <div className="px-6 py-8 text-center">
-              <p className="text-base font-medium">Todavía no hay sobres</p>
+              <p className="text-base font-medium">{criterion ? "Sin coincidencias en los sobres cargados" : "Todavía no hay sobres"}</p>
               <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-                Envía un documento a firma o espera a que alguien te envíe uno; aparecerá aquí con su estado y su evidencia.
+                {criterion ? "Prueba otra búsqueda o carga más sobres para revisar registros anteriores." : "Envía un documento a firma o espera a que alguien te envíe uno; aparecerá aquí con su estado y su evidencia."}
               </p>
               <Button asChild className="mt-4">
                 <Link href="/new">Enviar un documento a firma</Link>
@@ -213,6 +226,15 @@ export default function InboxPage() {
             ) : null}
           </div>
         )}
+        {!isLoading && (inbox.hasNextPage || sent.hasNextPage) ? (
+          <div className="mt-8 flex flex-col items-center gap-3" aria-live="polite">
+            {inbox.isFetchNextPageError || sent.isFetchNextPageError ? <p role="alert" className="text-sm text-destructive">No se pudieron cargar más sobres. Los anteriores siguen disponibles.</p> : null}
+            <Button variant="outline" disabled={inbox.isFetching || sent.isFetching} onClick={() => {
+              if (inbox.hasNextPage) void inbox.fetchNextPage();
+              if (sent.hasNextPage) void sent.fetchNextPage();
+            }}>{inbox.isFetchingNextPage || sent.isFetchingNextPage ? "Cargando…" : "Cargar más sobres"}</Button>
+          </div>
+        ) : null}
       </div>
     </AppShell>
   );

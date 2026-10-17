@@ -42,11 +42,11 @@ interface OverviewData {
 const OPERATOR_ROLES = ["sender", "rh", "admin"];
 
 export default function OverviewPage() {
-  const { signerId, roles } = useSession();
+  const { signerId, roles, tenantId } = useSession();
   const isOperator = roles.some((r) => OPERATOR_ROLES.includes(r));
 
-  const inbox = useQuery({ queryKey: ["inbox", signerId], queryFn: () => fetchInbox(signerId) });
-  const sent = useQuery({ queryKey: ["sent", signerId], queryFn: () => fetchSent(signerId) });
+  const inbox = useQuery({ queryKey: ["inbox", signerId, tenantId], queryFn: () => fetchInbox(signerId) });
+  const sent = useQuery({ queryKey: ["sent", signerId, tenantId], queryFn: () => fetchSent(signerId) });
   const board = useQuery({
     queryKey: ["ops-overview"],
     queryFn: () => apiClient.get<OverviewData>("/operations/overview"),

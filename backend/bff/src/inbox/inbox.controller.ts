@@ -2,7 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { PageQueryDto, finishPage, pageArgs, prismaPage } from '../common/pagination';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
-import { InboxService, type InboxItem } from './inbox.service';
+import { InboxService } from './inbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantIdResolver } from '../prisma/tenant-id-resolver';
 
@@ -19,13 +19,13 @@ export class InboxController {
   ) {}
 
   @Get('inbox')
-  inboxFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
-    return this.inbox.forSigner(user.actorId, user.tenantId);
+  inboxFor(@CurrentUser() user: AuthenticatedUser, @Query() page: PageQueryDto) {
+    return this.inbox.forSigner(user.actorId, user.tenantId, page);
   }
 
   @Get('sent')
-  sentFor(@CurrentUser() user: AuthenticatedUser): Promise<InboxItem[]> {
-    return this.inbox.forRequester(user.actorId, user.tenantId);
+  sentFor(@CurrentUser() user: AuthenticatedUser, @Query() page: PageQueryDto) {
+    return this.inbox.forRequester(user.actorId, user.tenantId, page);
   }
 
   /**
