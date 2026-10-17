@@ -41,7 +41,7 @@ URL: `http://localhost:3000/mcp`, transporte Streamable HTTP, OAuth client ID `p
 
 ### Límite de la prueba local
 
-La metadata HTTP del recurso devuelve 200 y el endpoint MCP devuelve 401 sin bearer token. La suite de integración prueba las rutas autorizadas con tokens/JWKS controlados. El recorrido interactivo Authorization Code + PKCE con Keycloak debe verificarse por separado. En el sandbox WSL de Dave, los puertos Docker se publican en el loopback de WSL y Windows no alcanza `localhost:8081`; `netsh interface portproxy` devolvió “requiere elevación”. Por ello, el consentimiento y las llamadas OAuth desde el navegador quedan pendientes de ejecutar con un puente local temporal desde una consola elevada. No se debe dejar una regla de `portproxy` activa después de la prueba.
+La metadata HTTP del recurso devuelve 200 y el endpoint MCP devuelve 401 sin bearer token. La suite de integración prueba las rutas autorizadas con tokens/JWKS controlados. El recorrido interactivo Authorization Code + PKCE con Keycloak debe verificarse por separado. En el sandbox WSL de Dave, los puertos Docker se publican en el loopback de WSL y Windows no alcanza Keycloak. Se probaron un `portproxy` elevado y una regla Hyper-V limitada al puerto temporal 18081; el tráfico siguió agotando el tiempo de espera. Ambas reglas se retiraron y Keycloak volvió a su puerto 8081. No se relajó la política general del firewall. Por ello, el consentimiento y las llamadas OAuth desde el navegador siguen pendientes de resolver el puente de red WSL↔Windows.
 
 GET `/mcp/info` requiere el token web normal y rol admin/platform_admin; entrega configuración pública para la pantalla Conexiones, sin secretos.
 
