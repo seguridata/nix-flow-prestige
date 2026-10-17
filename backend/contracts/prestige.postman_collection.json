@@ -56,6 +56,26 @@
     {
       "key": "stagedId",
       "value": ""
+    },
+    {
+      "key": "processKey",
+      "value": "adquisiciones-gastos"
+    },
+    {
+      "key": "processVersion",
+      "value": "1"
+    },
+    {
+      "key": "mcpToken",
+      "value": ""
+    },
+    {
+      "key": "processPackage",
+      "value": ""
+    },
+    {
+      "key": "bpmnXml",
+      "value": ""
     }
   ],
   "item": [
@@ -1393,6 +1413,897 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Process Studio",
+      "description": "Solicitudes manuales. Studio contiene escrituras y archivo reversible; revisar cada petición. No ejecutar en bloque en producción. OAuth requiere token específico del recurso MCP.",
+      "item": [
+        {
+          "name": "Catálogo agrupado por clave [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-catalog",
+            "description": "Una entrada por clave. Las copias propias tienen prioridad sobre plataforma; excluye claves archivadas para este tenant. Historial separado.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listar definiciones o flujos publicados [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions",
+            "description": "Admin: versiones legadas o página por cursor. published=true devuelve una versión publicada por clave. Noadmin: fuerza publicaciones, ignora cursor y devuelve DTO público sin XML, DMN, decisionRules ni consultas; copia propia tapa plataforma incluso si es borrador.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear proceso borrador [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-definitions",
+            "description": "Crear proceso borrador",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Proceso propio\",\n  \"flow\": {\n    \"variables\": [],\n    \"steps\": [\n      {\n        \"id\": \"revision\",\n        \"label\": \"Revisión\",\n        \"role\": \"REVISOR\",\n        \"who\": {\n          \"type\": \"initiator\"\n        }\n      }\n    ],\n    \"order\": \"SECUENCIAL\",\n    \"slaHours\": 24\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Última versión del dueño efectivo [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}",
+            "description": "Última versión del dueño efectivo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Guardar diagrama como nuevo borrador [PUT]",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}",
+            "description": "No publica; el flujo debe convertirse y guardarse antes de publicar.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bpmnXml\": \"{{bpmnXml}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Archivar proceso para el tenant [DELETE]",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}",
+            "description": "Reversible: oculta catálogo y despublica versiones propias. Preserva definiciones, solicitudes, firmas, auditorías y configuraciones ya asociadas a formatos.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mostrar proceso archivado [POST]",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/unarchive",
+            "description": "Mostrar proceso archivado",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Guardar etapas como nueva versión borrador [PUT]",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/flow",
+            "description": "Guardar etapas como nueva versión borrador",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flow\": {\n    \"variables\": [],\n    \"steps\": [\n      {\n        \"id\": \"revision\",\n        \"label\": \"Revisión\",\n        \"role\": \"REVISOR\",\n        \"who\": {\n          \"type\": \"initiator\"\n        }\n      }\n    ],\n    \"order\": \"SECUENCIAL\",\n    \"slaHours\": 24\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Historial del dueño efectivo [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/versions",
+            "description": "Historial del dueño efectivo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Leer una versión exacta [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/versions/{{processVersion}}",
+            "description": "Leer una versión exacta",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Restaurar como nuevo borrador y desarchivar [POST]",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/versions/{{processVersion}}/restore",
+            "description": "Crea versión nueva borrador desde la versión elegida y quita preferencia de archivo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publicar con preflight obligatorio [POST]",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/versions/{{processVersion}}/publish",
+            "description": "Restaurar nunca sobrescribe una versión. Publicar y despublicar solo modifican definiciones propias; plataforma responde 403.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Retirar publicación propia [POST]",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/versions/{{processVersion}}/unpublish",
+            "description": "Restaurar nunca sobrescribe una versión. Publicar y despublicar solo modifican definiciones propias; plataforma responde 403.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Comprobar estructura y dependencias reales [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/preflight",
+            "description": "{} revisa última versión; version elige una guardada; flow revisa edición. Los problemas de preparación se devuelven en errors con HTTP 201; no se guardan cambios.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Resolver recorrido sin crear solicitud [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/preview-flow",
+            "description": "Usa FlowResolverService y tablas activas reales. solicitante procede del JWT. No crea solicitudes, envía correos ni firma documentos.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"values\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Exportar paquete de configuración verificable [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/export",
+            "description": "SHA-256 sobre JSON estable con claves ordenadas; detecta cambios, no firma autoría. Incluye configuración de participantes; excluye documentos, filas de tablas y sesiones.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.format === \"prestige-process\" && typeof data.sha256 === \"string\") {",
+                  "    pm.collectionVariables.set(\"processPackage\", JSON.stringify(data));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar paquete íntegro como borrador nuevo [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-packages/import",
+            "description": "Valida formato, hash y flujo; regenera BPMN y crea clave propia nueva. No importa tablas ni publica.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{processPackage}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Impacto por estado y formatos por versión [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/impact",
+            "description": "Cuenta clave exacta registrada. Las ejecuciones no guardan versión ni se atribuyen aliases históricos por suposición.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Leer XML BPMN [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/bpmn",
+            "description": "Leer XML BPMN",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Leer XML DMN [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/dmn",
+            "description": "Leer XML DMN",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Validar flujo sin guardarlo [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/flows/validate",
+            "description": "Validar flujo sin guardarlo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flow\": {\n    \"variables\": [],\n    \"steps\": [\n      {\n        \"id\": \"revision\",\n        \"label\": \"Revisión\",\n        \"role\": \"REVISOR\",\n        \"who\": {\n          \"type\": \"initiator\"\n        }\n      }\n    ],\n    \"order\": \"SECUENCIAL\",\n    \"slaHours\": 24\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Convertir BPMN al subconjunto ejecutable [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/flows/from-bpmn",
+            "description": "Convertir BPMN al subconjunto ejecutable",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"xml\": \"{{bpmnXml}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Evaluar decisión del proceso [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/process-definitions/{{processKey}}/decide",
+            "description": "Evaluar decisión del proceso",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Leer auditoría del tenant [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-audit",
+            "description": "Si se filtra un recurso, primero se comprueba pertenencia al tenant. Verificación acotada y con tope de eventos.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verificar cadena del tenant [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/process-audit/verify",
+            "description": "Si se filtra un recurso, primero se comprueba pertenencia al tenant. Verificación acotada y con tope de eventos.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "MCP OAuth (solo lectura)",
+      "description": "Transporte sin sesiones y cinco herramientas de solo lectura. Las variables de token están vacías intencionalmente.",
+      "item": [
+        {
+          "name": "Estado de configuración MCP [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/mcp/info",
+            "description": "Estado de configuración MCP",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Metadata pública del recurso OAuth [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/.well-known/oauth-protected-resource",
+            "description": "Metadata pública del recurso OAuth",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Metadata pública del recurso OAuth [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/.well-known/oauth-protected-resource/mcp",
+            "description": "Metadata pública del recurso OAuth",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Transporte MCP Streamable HTTP OAuth [POST]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": "{{baseUrl}}/mcp",
+            "description": "Transporte sin sesiones persistentes. Requiere audience del recurso MCP (no basta azp), issuer válido, scope prestige:read, rol admin/sender/signer/platform_admin y membresía activa. Origin, si llega, debe estar permitido. Herramientas de solo lectura limitadas al tenant y actor. El SDK controla negociación, JSON-RPC y métodos; PUT/PATCH/HEAD no son métodos del protocolo. No usa el bearer de la aplicación web. Primero inicializar: initialize con protocolVersion y capabilities, después notifications/initialized. Cliente OAuth obtiene mcpToken mediante authorization_code + PKCE S256; no introducir contraseñas en esta colección.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Transporte MCP Streamable HTTP OAuth [GET]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/mcp",
+            "description": "Transporte sin sesiones persistentes. Requiere audience del recurso MCP (no basta azp), issuer válido, scope prestige:read, rol admin/sender/signer/platform_admin y membresía activa. Origin, si llega, debe estar permitido. Herramientas de solo lectura limitadas al tenant y actor. El SDK controla negociación, JSON-RPC y métodos; PUT/PATCH/HEAD no son métodos del protocolo. No usa el bearer de la aplicación web.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Transporte MCP Streamable HTTP OAuth [DELETE]",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/mcp",
+            "description": "Transporte sin sesiones persistentes. Requiere audience del recurso MCP (no basta azp), issuer válido, scope prestige:read, rol admin/sender/signer/platform_admin y membresía activa. Origin, si llega, debe estar permitido. Herramientas de solo lectura limitadas al tenant y actor. El SDK controla negociación, JSON-RPC y métodos; PUT/PATCH/HEAD no son métodos del protocolo. No usa el bearer de la aplicación web.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Inicializar MCP",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/mcp",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2025-11-25\",\n    \"capabilities\": {},\n    \"clientInfo\": {\n      \"name\": \"postman-prestige\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Notificar cliente inicializado",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/mcp",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"notifications/initialized\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consultar herramientas",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/mcp",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/list\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consultar mis solicitudes",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/mcp",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mcpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"prestige_my_requests\",\n    \"arguments\": {\n      \"limit\": 20\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
         }
       ]
     }

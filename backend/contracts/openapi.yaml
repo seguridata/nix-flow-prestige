@@ -1429,8 +1429,1232 @@ paths:
       x-required-roles:
       - admin
 
+  /process-catalog:
+    get:
+      operationId: studioCatalog
+      summary: Catálogo agrupado por clave
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudioCatalogEntry'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      x-required-roles:
+      - admin
+      description: Una entrada por clave. Las copias propias tienen prioridad sobre plataforma; excluye claves archivadas
+        para este tenant. Historial separado.
+  /process-definitions:
+    get:
+      operationId: studioListDefinitions
+      summary: Listar definiciones o flujos publicados
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/StudioProcess'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/StudioPublicProcess'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/StudioProcess'
+                    nextCursor: &id002
+                      type:
+                      - string
+                      - 'null'
+                  required:
+                  - items
+                  - nextCursor
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      description: 'Admin: versiones legadas o página por cursor. published=true devuelve una versión publicada por
+        clave. Noadmin: fuerza publicaciones, ignora cursor y devuelve DTO público sin XML, DMN, decisionRules ni
+        consultas; copia propia tapa plataforma incluso si es borrador.'
+      parameters:
+      - name: published
+        in: query
+        schema:
+          type: string
+          enum:
+          - 'true'
+          - 'false'
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+      - name: cursor
+        in: query
+        schema: &id001
+          type: string
+    post:
+      operationId: studioCreate
+      summary: Crear proceso borrador
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioCreate'
+  /process-definitions/{key}:
+    get:
+      operationId: studioGet
+      summary: Última versión del dueño efectivo
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+    put:
+      operationId: studioSaveXml
+      summary: Guardar diagrama como nuevo borrador
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: No publica; el flujo debe convertirse y guardarse antes de publicar.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioSaveXml'
+    delete:
+      operationId: studioArchive
+      summary: Archivar proceso para el tenant
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioArchiveResult'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: 'Reversible: oculta catálogo y despublica versiones propias. Preserva definiciones, solicitudes,
+        firmas, auditorías y configuraciones ya asociadas a formatos.'
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /process-definitions/{key}/unarchive:
+    post:
+      operationId: studioUnarchive
+      summary: Mostrar proceso archivado
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioArchiveResult'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /process-definitions/{key}/flow:
+    put:
+      operationId: studioSaveFlow
+      summary: Guardar etapas como nueva versión borrador
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioSaveFlow'
+  /process-definitions/{key}/versions:
+    get:
+      operationId: studioVersions
+      summary: Historial del dueño efectivo
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudioProcess'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /process-definitions/{key}/versions/{version}:
+    get:
+      operationId: studioVersion
+      summary: Leer una versión exacta
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+  /process-definitions/{key}/versions/{version}/restore:
+    post:
+      operationId: studioRestore
+      summary: Restaurar como nuevo borrador y desarchivar
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: Crea versión nueva borrador desde la versión elegida y quita preferencia de archivo.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+  /process-definitions/{key}/versions/{version}/publish:
+    post:
+      operationId: studioPublish
+      summary: Publicar con preflight obligatorio
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: Restaurar nunca sobrescribe una versión. Publicar y despublicar solo modifican definiciones propias;
+        plataforma responde 403.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+  /process-definitions/{key}/versions/{version}/unpublish:
+    post:
+      operationId: studioUnpublish
+      summary: Retirar publicación propia
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: Restaurar nunca sobrescribe una versión. Publicar y despublicar solo modifican definiciones propias;
+        plataforma responde 403.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+  /process-definitions/{key}/preflight:
+    post:
+      operationId: studioPreflight
+      summary: Comprobar estructura y dependencias reales
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioPreflight'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: '{} revisa última versión; version elige una guardada; flow revisa edición. Los problemas de preparación
+        se devuelven en errors con HTTP 201; no se guardan cambios.'
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioPreflightInput'
+  /process-definitions/{key}/preview-flow:
+    post:
+      operationId: studioPreview
+      summary: Resolver recorrido sin crear solicitud
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioPreview'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: Usa FlowResolverService y tablas activas reales. solicitante procede del JWT. No crea solicitudes,
+        envía correos ni firma documentos.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioPreviewInput'
+  /process-definitions/{key}/export:
+    get:
+      operationId: studioExport
+      summary: Exportar paquete de configuración verificable
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioPackage'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: SHA-256 sobre JSON estable con claves ordenadas; detecta cambios, no firma autoría. Incluye configuración
+        de participantes; excluye documentos, filas de tablas y sesiones.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /process-packages/import:
+    post:
+      operationId: studioImport
+      summary: Importar paquete íntegro como borrador nuevo
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioProcess'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      x-required-roles:
+      - admin
+      description: Valida formato, hash y flujo; regenera BPMN y crea clave propia nueva. No importa tablas ni publica.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioPackage'
+  /process-definitions/{key}/impact:
+    get:
+      operationId: studioImpact
+      summary: Impacto por estado y formatos por versión
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioImpact'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: Cuenta clave exacta registrada. Las ejecuciones no guardan versión ni se atribuyen aliases históricos
+        por suposición.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /process-definitions/{key}/bpmn:
+    get:
+      operationId: studioBpmn
+      summary: Leer XML BPMN
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  xml: *id002
+                  key: *id001
+                  version: &id003
+                    type: integer
+                  name: *id001
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /process-definitions/{key}/dmn:
+    get:
+      operationId: studioDmn
+      summary: Leer XML DMN
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  xml: *id002
+                  key: *id001
+                  version: *id003
+                  name: *id001
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+  /flows/validate:
+    post:
+      operationId: studioValidateFlow
+      summary: Validar flujo sin guardarlo
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  errors:
+                    type: array
+                    items: *id001
+                required:
+                - valid
+                - errors
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                flow: &id004
+                  $ref: '#/components/schemas/FlowDefinition'
+              required:
+              - flow
+  /flows/from-bpmn:
+    post:
+      operationId: studioFromBpmn
+      summary: Convertir BPMN al subconjunto ejecutable
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flow:
+                    anyOf:
+                    - *id004
+                    - type: 'null'
+                  errors:
+                    type: array
+                    items: *id001
+                  warnings:
+                    type: array
+                    items: *id001
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      x-required-roles:
+      - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                xml:
+                  type: string
+                  minLength: 10
+                  maxLength: 2000000
+                variables:
+                  type: array
+                  items:
+                    type: object
+              required:
+              - xml
+  /process-definitions/{key}/decide:
+    post:
+      operationId: studioDecide
+      summary: Evaluar decisión del proceso
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '201':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudioDecision'
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudioDecideInput'
+  /process-audit:
+    get:
+      operationId: studioAudit
+      summary: Leer auditoría del tenant
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      description: Si se filtra un recurso, primero se comprueba pertenencia al tenant. Verificación acotada y con
+        tope de eventos.
+      parameters:
+      - name: signatureRequestId
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: documentId
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: onboardingId
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+  /process-audit/verify:
+    get:
+      operationId: studioAuditVerify
+      summary: Verificar cadena del tenant
+      tags:
+      - Process Studio
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: DTO inválido, flujo no válido o comprobación previa rechazada.
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+        '404':
+          description: Clave, versión o recurso no encontrado en el ámbito del tenant.
+      x-required-roles:
+      - admin
+      description: Si se filtra un recurso, primero se comprueba pertenencia al tenant. Verificación acotada y con
+        tope de eventos.
+      parameters:
+      - name: signatureRequestId
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: documentId
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: onboardingId
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+  /mcp/info:
+    get:
+      operationId: mcpInfo
+      summary: Estado de configuración MCP
+      tags:
+      - MCP
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpInfo'
+        '401':
+          description: Falta token válido.
+        '403':
+          description: Rol requerido o membresía de tenant insuficiente; las versiones de plataforma no pueden publicarse
+            directamente.
+      x-required-roles:
+      - admin
+      - platform_admin
+  /.well-known/oauth-protected-resource:
+    get:
+      operationId: mcpResourceMetadata
+      summary: Metadata pública del recurso OAuth
+      tags:
+      - MCP
+      security: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpResourceMetadata'
+          headers:
+            Cache-Control:
+              schema: *id001
+              description: public, max-age=300
+        '503':
+          description: MCP deshabilitado en este entorno.
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      operationId: mcpResourceMetadataScoped
+      summary: Metadata pública del recurso OAuth
+      tags:
+      - MCP
+      security: []
+      responses:
+        '200':
+          description: Operación completada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpResourceMetadata'
+          headers:
+            Cache-Control:
+              schema: *id001
+              description: public, max-age=300
+        '503':
+          description: MCP deshabilitado en este entorno.
+  /mcp:
+    post:
+      operationId: mcpTransportPost
+      summary: Transporte MCP Streamable HTTP OAuth
+      tags:
+      - MCP
+      security:
+      - McpOAuth:
+        - prestige:read
+      responses:
+        '401':
+          description: Bearer OAuth ausente, expirado, issuer/audience inválidos.
+          headers:
+            WWW-Authenticate:
+              schema: &mcpTransport001
+                type: string
+        '403':
+          description: Scope, rol, membresía u Origin insuficientes.
+          headers:
+            WWW-Authenticate:
+              schema: *mcpTransport001
+        '503':
+          description: MCP deshabilitado.
+        '405':
+          description: Método no soportado por el transporte o sesiones deshabilitadas.
+        '200':
+          description: Respuesta JSON-RPC. Errores de herramienta se expresan dentro de JSON-RPC/result.isError y
+            no como 404 HTTP.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpJsonRpcResponse'
+        '202':
+          description: Notificación JSON-RPC aceptada, sin cuerpo.
+        '400':
+          description: Petición o versión de protocolo inválida.
+        '406':
+          description: Accept debe permitir application/json y text/event-stream.
+        '415':
+          description: Content-Type debe ser application/json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpJsonRpcRequest'
+      x-nest-route-all: true
+      description: Transporte sin sesiones persistentes. Requiere audience del recurso MCP (no basta azp), issuer
+        válido, scope prestige:read, rol admin/sender/signer/platform_admin y membresía activa. Origin, si llega,
+        debe estar permitido. Herramientas de solo lectura limitadas al tenant y actor. El SDK controla negociación,
+        JSON-RPC y métodos; PUT/PATCH/HEAD no son métodos del protocolo. No usa el bearer de la aplicación web.
+      parameters:
+      - name: MCP-Protocol-Version
+        in: header
+        schema: *mcpTransport001
+      - name: X-Tenant-Id
+        in: header
+        schema: *mcpTransport001
+        description: Solo permite seleccionar una membresía activa del actor autenticado.
+      - name: Accept
+        in: header
+        required: true
+        schema: *mcpTransport001
+        example: application/json, text/event-stream
+      x-mcp-tools:
+      - name: prestige_list_processes
+        inputSchema:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 50
+              default: 20
+          required: []
+          additionalProperties: false
+        annotations:
+          readOnlyHint: true
+          destructiveHint: false
+          idempotentHint: true
+          openWorldHint: false
+        description: Actor/tenant scoped. Structured result uses {data}; call errors may use isError in tool result.
+      - name: prestige_list_formats
+        inputSchema:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 50
+              default: 20
+          required: []
+          additionalProperties: false
+        annotations:
+          readOnlyHint: true
+          destructiveHint: false
+          idempotentHint: true
+          openWorldHint: false
+        description: Actor/tenant scoped. Structured result uses {data}; call errors may use isError in tool result.
+      - name: prestige_my_requests
+        inputSchema:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 50
+              default: 20
+          required: []
+          additionalProperties: false
+        annotations:
+          readOnlyHint: true
+          destructiveHint: false
+          idempotentHint: true
+          openWorldHint: false
+        description: Actor/tenant scoped. Structured result uses {data}; call errors may use isError in tool result.
+      - name: prestige_my_tasks
+        inputSchema:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 50
+              default: 20
+          required: []
+          additionalProperties: false
+        annotations:
+          readOnlyHint: true
+          destructiveHint: false
+          idempotentHint: true
+          openWorldHint: false
+        description: Actor/tenant scoped. Structured result uses {data}; call errors may use isError in tool result.
+      - name: prestige_request_status
+        inputSchema:
+          type: object
+          properties:
+            requestId:
+              type: string
+              minLength: 1
+              maxLength: 100
+          required:
+          - requestId
+          additionalProperties: false
+        annotations:
+          readOnlyHint: true
+          destructiveHint: false
+          idempotentHint: true
+          openWorldHint: false
+        description: Actor/tenant scoped. Structured result uses {data}; call errors may use isError in tool result.
+    get:
+      operationId: mcpTransportGet
+      summary: Transporte MCP Streamable HTTP OAuth
+      tags:
+      - MCP
+      security:
+      - McpOAuth:
+        - prestige:read
+      responses:
+        '401':
+          description: Bearer OAuth ausente, expirado, issuer/audience inválidos.
+          headers:
+            WWW-Authenticate:
+              schema: *mcpTransport001
+        '403':
+          description: Scope, rol, membresía u Origin insuficientes.
+          headers:
+            WWW-Authenticate:
+              schema: *mcpTransport001
+        '503':
+          description: MCP deshabilitado.
+        '200':
+          description: SSE de notificaciones (text/event-stream); cliente debe aceptar text/event-stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '406':
+          description: Accept debe permitir text/event-stream.
+        '400':
+          description: Versión de protocolo no soportada.
+      x-nest-route-all: true
+      description: Transporte sin sesiones persistentes. Requiere audience del recurso MCP (no basta azp), issuer
+        válido, scope prestige:read, rol admin/sender/signer/platform_admin y membresía activa. Origin, si llega,
+        debe estar permitido. Herramientas de solo lectura limitadas al tenant y actor. El SDK controla negociación,
+        JSON-RPC y métodos; PUT/PATCH/HEAD no son métodos del protocolo. No usa el bearer de la aplicación web.
+      parameters:
+      - name: MCP-Protocol-Version
+        in: header
+        schema: *mcpTransport001
+      - name: X-Tenant-Id
+        in: header
+        schema: *mcpTransport001
+        description: Solo permite seleccionar una membresía activa del actor autenticado.
+    delete:
+      operationId: mcpTransportDelete
+      summary: Transporte MCP Streamable HTTP OAuth
+      tags:
+      - MCP
+      security:
+      - McpOAuth:
+        - prestige:read
+      responses:
+        '401':
+          description: Bearer OAuth ausente, expirado, issuer/audience inválidos.
+          headers:
+            WWW-Authenticate:
+              schema: *mcpTransport001
+        '403':
+          description: Scope, rol, membresía u Origin insuficientes.
+          headers:
+            WWW-Authenticate:
+              schema: *mcpTransport001
+        '503':
+          description: MCP deshabilitado.
+        '200':
+          description: Cierre de este transporte por petición; respuesta vacía, sin sesión persistente compartida.
+        '400':
+          description: Versión de protocolo no soportada.
+      x-nest-route-all: true
+      description: Transporte sin sesiones persistentes. Requiere audience del recurso MCP (no basta azp), issuer
+        válido, scope prestige:read, rol admin/sender/signer/platform_admin y membresía activa. Origin, si llega,
+        debe estar permitido. Herramientas de solo lectura limitadas al tenant y actor. El SDK controla negociación,
+        JSON-RPC y métodos; PUT/PATCH/HEAD no son métodos del protocolo. No usa el bearer de la aplicación web.
+      parameters:
+      - name: MCP-Protocol-Version
+        in: header
+        schema: *mcpTransport001
+      - name: X-Tenant-Id
+        in: header
+        schema: *mcpTransport001
+        description: Solo permite seleccionar una membresía activa del actor autenticado.
+
 components:
   securitySchemes:
+    McpOAuth:
+      type: oauth2
+      description: Keycloak local defaults; deploy uses configured KEYCLOAK_ISSUER. Authorization code with PKCE S256
+        and consent; resource audience required. No OAuth token endpoint is hosted by the BFF.
+      flows:
+        authorizationCode:
+          authorizationUrl: http://localhost:8081/realms/prestige/protocol/openid-connect/auth
+          tokenUrl: http://localhost:8081/realms/prestige/protocol/openid-connect/token
+          scopes:
+            prestige:read: Read only actor/tenant-scoped Prestige tools
     BearerAuth:
       type: http
       scheme: bearer
@@ -2600,3 +3824,488 @@ components:
       - flow
       - createdAt
       - status
+    StudioProcess:
+      type: object
+      properties:
+        id: &studioSchema001
+          type: string
+        tenantId: *studioSchema001
+        key: *studioSchema001
+        name: *studioSchema001
+        description: &studioSchema002
+          type:
+          - string
+          - 'null'
+        version: &studioSchema003
+          type: integer
+        bpmnXml: *studioSchema001
+        dmnXml: *studioSchema002
+        decisionRules: {}
+        flow:
+          anyOf:
+          - &studioSchema005
+            $ref: '#/components/schemas/FlowDefinition'
+          - type: 'null'
+        published: &studioSchema004
+          type: boolean
+        publishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+      - id
+      - key
+      - name
+      - version
+      - published
+      - flow
+    StudioPublicProcess:
+      type: object
+      properties:
+        id: *studioSchema001
+        key: *studioSchema001
+        name: *studioSchema001
+        description: *studioSchema002
+        version: *studioSchema003
+        published: *studioSchema004
+        publishedAt: *studioSchema002
+        updatedAt: *studioSchema001
+        flow:
+          type:
+          - object
+          - 'null'
+          description: 'publicFlow: lookup participants expose only type and fallback prompt; derived variables expose
+            only key,label,type. No table keys, columns or queries.'
+      required:
+      - id
+      - key
+      - name
+      - version
+      - published
+      - flow
+    StudioCatalogEntry:
+      allOf:
+      - $ref: '#/components/schemas/StudioProcess'
+      - type: object
+        properties:
+          versionCount: *studioSchema003
+          publishedVersion:
+            type:
+            - integer
+            - 'null'
+          source:
+            type: string
+            enum:
+            - tenant
+            - platform
+        required:
+        - versionCount
+        - publishedVersion
+        - source
+    StudioCreate:
+      type: object
+      properties: &studioSchema006
+        name:
+          type: string
+          minLength: 3
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        flow: *studioSchema005
+      required:
+      - name
+      - flow
+    StudioSaveFlow:
+      type: object
+      properties: *studioSchema006
+      required:
+      - flow
+    StudioSaveXml:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        bpmnXml:
+          type: string
+          maxLength: 2000000
+        dmnXml:
+          type: string
+          maxLength: 2000000
+    StudioPreflightInput:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        flow: *studioSchema005
+    StudioPreviewInput:
+      allOf:
+      - $ref: '#/components/schemas/StudioPreflightInput'
+      - type: object
+        properties:
+          values:
+            type: object
+            additionalProperties:
+              type:
+              - string
+              - number
+              - 'null'
+            maxProperties: 50
+    StudioPreflight:
+      type: object
+      properties:
+        valid: *studioSchema004
+        ready: *studioSchema004
+        errors:
+          type: array
+          items: *studioSchema001
+        warnings:
+          type: array
+          items: *studioSchema001
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              key: *studioSchema001
+              label: *studioSchema001
+              status:
+                type: string
+                enum:
+                - pass
+                - warn
+                - fail
+              detail: *studioSchema001
+            required:
+            - key
+            - label
+            - status
+            - detail
+        summary:
+          type: object
+          properties:
+            steps: *studioSchema003
+            variables: *studioSchema003
+            lookups: *studioSchema003
+          required:
+          - steps
+          - variables
+          - lookups
+        definition:
+          type: object
+          properties:
+            key: *studioSchema001
+            version: *studioSchema003
+            name: *studioSchema001
+          required:
+          - key
+          - version
+          - name
+      required:
+      - valid
+      - ready
+      - errors
+      - warnings
+      - checks
+      - summary
+      - definition
+    StudioPreview:
+      type: object
+      properties:
+        values:
+          type: object
+        order:
+          type: string
+          enum:
+          - SECUENCIAL
+          - PARALELO
+        slaHours:
+          type: number
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              id: *studioSchema001
+              label: *studioSchema001
+              role:
+                type: string
+                enum:
+                - FIRMANTE
+                - REVISOR
+              active: *studioSchema004
+              participant:
+                anyOf:
+                - type: object
+                  properties:
+                    signerId: *studioSchema001
+                    name: *studioSchema002
+                    email: *studioSchema002
+                  required:
+                  - signerId
+                - type: 'null'
+              awaiting:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key: *studioSchema001
+                    label: *studioSchema001
+                  required:
+                  - key
+                  - label
+              needsSelection: *studioSchema004
+            required:
+            - id
+            - label
+            - role
+            - active
+            - participant
+            - awaiting
+            - needsSelection
+        lookups:
+          type: array
+          items:
+            type: object
+            properties:
+              stepId: *studioSchema001
+              table: *studioSchema001
+              revision:
+                type:
+                - integer
+                - 'null'
+              rowId: *studioSchema002
+        derived:
+          type: array
+          items:
+            type: object
+      required:
+      - values
+      - order
+      - slaHours
+      - steps
+      - lookups
+      - derived
+    StudioPackage:
+      type: object
+      properties:
+        format:
+          type: string
+          const: prestige-process
+        version:
+          type: integer
+          const: 1
+        payload:
+          type: object
+          properties:
+            name:
+              type: string
+              minLength: 3
+              maxLength: 120
+            description:
+              type:
+              - string
+              - 'null'
+              maxLength: 500
+            flow: *studioSchema005
+          required:
+          - name
+          - flow
+          additionalProperties: false
+        sha256:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+      required:
+      - format
+      - version
+      - payload
+      - sha256
+    StudioImpact:
+      type: object
+      properties:
+        key: *studioSchema001
+        workflows:
+          type: object
+          properties:
+            total: *studioSchema003
+            active: *studioSchema003
+            byStatus:
+              type: array
+              items:
+                type: object
+                properties:
+                  status: *studioSchema001
+                  count: *studioSchema003
+        templates:
+          type: object
+          properties:
+            total: *studioSchema003
+            byVersion:
+              type: array
+              items:
+                type: object
+                properties:
+                  version:
+                    type:
+                    - integer
+                    - 'null'
+                  count: *studioSchema003
+        versionAttribution:
+          type: string
+          const: not-recorded
+      required:
+      - key
+      - workflows
+      - templates
+      - versionAttribution
+    StudioArchiveResult:
+      type: object
+      properties:
+        key: *studioSchema001
+        archived: *studioSchema004
+      required:
+      - key
+      - archived
+    StudioDecideInput:
+      type: object
+      properties:
+        tipo:
+          type: string
+          maxLength: 80
+        processKey:
+          type: string
+          maxLength: 120
+        context:
+          type: object
+    StudioDecision:
+      type: object
+      properties:
+        tipo: *studioSchema001
+        slaHours:
+          type: number
+        order: *studioSchema001
+        method: *studioSchema001
+        hitPolicy: *studioSchema001
+        source:
+          type: string
+          enum:
+          - dmn
+          - rules
+          - default
+        matchedRules:
+          type: array
+          items:
+            type:
+            - string
+            - number
+    McpInfo:
+      oneOf:
+      - type: object
+        properties:
+          enabled:
+            const: false
+          reason: *studioSchema001
+        required:
+        - enabled
+        - reason
+      - type: object
+        properties:
+          enabled:
+            const: true
+          resource: *studioSchema001
+          metadata: *studioSchema001
+          issuer: *studioSchema001
+          scope:
+            const: prestige:read
+          clientId:
+            const: prestige-mcp-client
+          transport:
+            const: streamable-http
+          authorization:
+            const: authorization_code_pkce_s256
+          readOnly:
+            const: true
+          tools:
+            type: array
+            items: *studioSchema001
+        required:
+        - enabled
+        - resource
+        - metadata
+        - issuer
+        - scope
+        - clientId
+        - transport
+        - authorization
+        - readOnly
+        - tools
+    McpResourceMetadata:
+      type: object
+      properties:
+        resource: *studioSchema001
+        resource_name:
+          const: Prestige
+        authorization_servers:
+          type: array
+          items: *studioSchema001
+        scopes_supported:
+          type: array
+          items: *studioSchema001
+        bearer_methods_supported:
+          type: array
+          items:
+            const: header
+      required:
+      - resource
+      - resource_name
+      - authorization_servers
+      - scopes_supported
+      - bearer_methods_supported
+    McpJsonRpcRequest:
+      type: object
+      properties:
+        jsonrpc:
+          const: '2.0'
+        id:
+          type:
+          - string
+          - number
+        method: *studioSchema001
+        params:
+          type: object
+      required:
+      - jsonrpc
+      - method
+    McpJsonRpcResponse:
+      type: object
+      properties:
+        jsonrpc:
+          const: '2.0'
+        id:
+          type:
+          - string
+          - number
+          - 'null'
+        result:
+          type: object
+        error:
+          type: object
+          properties:
+            code: *studioSchema003
+            message: *studioSchema001
+            data: {}
+          required:
+          - code
+          - message
+      required:
+      - jsonrpc
+      - id
