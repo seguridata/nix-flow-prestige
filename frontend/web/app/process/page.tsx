@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
-import { BpmnStudio } from "@/components/bpm/bpmn-studio";
+import { BpmnStudio } from "@/components/process-studio/bpmn-studio";
 import { DmnStudio } from "@/components/bpm/dmn-studio";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -399,9 +399,13 @@ function ProcessDetail({
   const [draft, setDraft] = useState<Flow | null>(d.flow ?? null);
   const [name, setName] = useState(d.name);
   const [saveXml, setSaveXml] = useState<(() => Promise<string>) | null>(null);
+  const [xmlDirty, setXmlDirty] = useState(false);
+  const [bpmnOpened, setBpmnOpened] = useState(false);
   const [preflight, setPreflight] = useState<Preflight | null>(null);
-  const dirty =
+  const flowDirty =
     JSON.stringify(draft) !== JSON.stringify(d.flow ?? null) || name !== d.name;
+  const dirty = flowDirty || xmlDirty;
+  useEffect(() => { if (tab === "diagrama") setBpmnOpened(true); }, [tab]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("tab");
     if (
@@ -418,7 +422,7 @@ function ProcessDetail({
   }, [d.id, d.flow, d.name]);
   useEffect(() => {
     if (!dirty) return;
-    const prevent = (e: BeforeUnloadEvent) => e.preventDefault();
+    const prevent = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", prevent);
     return () => window.removeEventListener("beforeunload", prevent);
   }, [dirty]);
@@ -430,7 +434,7 @@ function ProcessDetail({
   const save = useMutation({
     mutationFn: () =>
       saveFlowDefinition(d.key, { name: name.trim(), flow: draft! }),
-    onSuccess: () => saved("Borrador guardado como nueva versión."),
+    onSuccess: () => { setXmlDirty(false); saved("Borrador guardado como nueva versión."); },
     onError: failure,
   });
   const validate = useMutation({
@@ -466,7 +470,7 @@ function ProcessDetail({
       if (!saveXml) throw new Error("El diagrama todavía está cargando.");
       return apiClient.put(path(d.key), { bpmnXml: await saveXml() });
     },
-    onSuccess: () => saved("Diagrama guardado en una nueva versión."),
+    onSuccess: () => { setXmlDirty(false); saved("Diagrama guardado en una nueva versión."); },
     onError: failure,
   });
   const convert = useMutation({
@@ -672,11 +676,14 @@ function ProcessDetail({
                         variant="outline"
                         disabled={
                           save.isPending ||
-                          !dirty ||
+                          !flowDirty ||
                           name.trim().length < 3 ||
                           flowProblems(draft).length > 0
                         }
-                        onClick={() => save.mutate()}
+                        onClick={() => {
+                          if (xmlDirty && !window.confirm("Guardar las etapas regenerará el diagrama y reemplazará sus cambios visuales sin guardar. ¿Continuar?")) return;
+                          save.mutate();
+                        }}
                       >
                         {save.isPending ? "Guardando…" : "Guardar borrador"}
                       </Button>
@@ -773,20 +780,24 @@ function ProcessDetail({
               Primero convierte el diagrama en etapas editables.
             </p>
           ))}
-        {tab === "diagrama" && (
-          <>
+        {(tab === "diagrama" || bpmnOpened) && (
+          <div hidden={tab !== "diagrama"} aria-hidden={tab !== "diagrama"}>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <p className="max-w-xl text-sm text-muted-foreground">
                 El diagrama muestra el proceso de negocio. Extraer etapas
                 prepara un borrador editable; publicar el flujo habilita su uso
                 en solicitudes.
               </p>
+              {xmlDirty && <p role="status" className="text-sm font-medium">Diagrama con cambios sin guardar. Se conserva al cambiar de pestaña.</p>}
               {admin && (
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     disabled={!saveXml || bpmn.isPending}
-                    onClick={() => bpmn.mutate()}
+                    onClick={() => {
+                      if (flowDirty && !window.confirm("Guardar el diagrama creará una versión sin flujo ejecutable. Las etapas sin guardar se reemplazarán. ¿Continuar?")) return;
+                      bpmn.mutate();
+                    }}
                   >
                     Guardar diagrama
                   </Button>
@@ -805,10 +816,12 @@ function ProcessDetail({
               <BpmnStudio
                 key={`${d.id}-${d.version}`}
                 xml={d.bpmnXml}
-                onReady={(fn) => setSaveXml(() => fn)}
+                visible={tab === "diagrama"}
+                onReady={(fn) => setSaveXml(fn ? () => fn : null)}
+                onDirtyChange={setXmlDirty}
               />
             </div>
-          </>
+          </div>
         )}
         {tab === "seguimiento" && <RunMonitor definition={d} />}
         {tab === "decisiones" && d.dmnXml && (
