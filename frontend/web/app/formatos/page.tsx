@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { FilePlus2, FileText, Pencil, Search } from "lucide-react";
 
 import { TemplateDrafts } from "@/components/chat/template-drafts";
@@ -16,29 +16,43 @@ import { plural } from "@/libs/drive";
 import { kindIconLabel, kindLabel } from "@/libs/format-steps";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
-import { fetchFormats, type FormatSummary } from "@/services/formats-service";
+import { fetchFormatsPage, type FormatSummary } from "@/services/formats-service";
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 function FormatosContent() {
-  const { roles } = useSession();
+  const { tenantId, signerId } = useSession();
+  return <FormatosCatalog key={`${tenantId}:${signerId}`} />;
+}
+
+function FormatosCatalog() {
+  const { roles, tenantId, signerId } = useSession();
   const isAdmin = roles.includes("admin");
   const flowKey = useSearchParams().get("flow");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
-  const formats = useQuery({ queryKey: ["formats", isAdmin], queryFn: () => fetchFormats(isAdmin) });
+  const formats = useInfiniteQuery({
+    queryKey: ["formats", tenantId, signerId, isAdmin, query, category, flowKey],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => fetchFormatsPage(isAdmin, pageParam),
+    getNextPageParam: (last, _pages, previous) => last.nextCursor && last.nextCursor !== previous ? last.nextCursor : undefined,
+    // Cambiar filtros comienza de nuevo; no se recupera una cadena antigua de
+    // páginas al volver a un filtro ya utilizado.
+    gcTime: 0,
+  });
+  const loaded = useMemo(() => [...new Map((formats.data?.pages.flatMap((page) => page.items) ?? []).map((item) => [item.id, item])).values()], [formats.data]);
 
   const categories = useMemo(
-    () => [...new Set((formats.data ?? []).map((f) => f.category).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "es-MX")),
-    [formats.data],
+    () => [...new Set([...loaded.map((f) => f.category), category].filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "es-MX")),
+    [loaded, category],
   );
   const shown = useMemo(
     () =>
-      (formats.data ?? []).filter(
+      loaded.filter(
         (f) => (!flowKey || f.flowKey === flowKey) && (!category || f.category === category) && (!query.trim() || norm(`${f.name} ${f.description ?? ""}`).includes(norm(query.trim()))),
       ),
-    [formats.data, category, query, flowKey],
+    [loaded, category, query, flowKey],
   );
 
   return (
@@ -92,7 +106,7 @@ function FormatosContent() {
             <Skeleton key={i} className="h-32 rounded-lg" />
           ))}
         </div>
-      ) : formats.isError ? (
+      ) : formats.isError && loaded.length === 0 ? (
         <div role="alert" className="rounded-lg border border-border p-5 text-sm">
           No se pudieron cargar los formatos.{" "}
           <Button variant="link" onClick={() => formats.refetch()}>
@@ -102,8 +116,8 @@ function FormatosContent() {
       ) : shown.length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center">
           <DocumentIcon className="size-16" />
-          <p className="mt-4 text-base font-medium">{formats.data?.length ? "Ningún formato coincide" : "Aún no hay formatos publicados"}</p>
-          {isAdmin && !formats.data?.length ? (
+          <p className="mt-4 text-base font-medium">{loaded.length ? (formats.hasNextPage ? "No hay coincidencias entre los formatos cargados" : "Ningún formato coincide") : "Aún no hay formatos publicados"}</p>
+          {isAdmin && !loaded.length ? (
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">Sube un PDF y marca dónde van los datos, o crea un formato digital sin PDF. Define el flujo y los anexos. Por ejemplo, un formato de vacaciones.</p>
           ) : null}
         </div>
@@ -114,6 +128,20 @@ function FormatosContent() {
           ))}
         </ul>
       )}
+      {!formats.isLoading && loaded.length > 0 ? (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+            {plural(shown.length, "formato visible", "formatos visibles")} entre {loaded.length} cargados.
+            {formats.hasNextPage ? " Hay más formatos por cargar; los filtros se aplican a los cargados." : " Has llegado al final del catálogo."}
+          </p>
+          {formats.hasNextPage ? (
+            <Button variant="outline" disabled={formats.isFetchingNextPage} onClick={() => formats.fetchNextPage()} aria-label="Cargar más formatos">
+              {formats.isFetchingNextPage ? "Cargando más…" : "Cargar más formatos"}
+            </Button>
+          ) : null}
+          {formats.isFetchNextPageError ? <p role="alert" className="w-full text-sm">No se pudo cargar la siguiente página. Conservamos los formatos cargados; vuelve a pulsar Cargar más formatos para reintentar.</p> : null}
+        </div>
+      ) : null}
     </AppShell>
   );
 }

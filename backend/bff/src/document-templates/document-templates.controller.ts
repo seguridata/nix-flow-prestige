@@ -24,12 +24,13 @@ import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
 import { DocumentTemplatesService } from './document-templates.service';
 import type { TemplateActor } from './template.types';
 import { UPLOAD_THROTTLE } from '../common/throttle-tracker';
+import { PageQueryDto } from '../common/pagination';
 
 const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
 /** Tope duro de un anexo (ADR-008): cada especificación fija su propio máximo, nunca mayor. */
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-class ListQueryDto {
+class ListQueryDto extends PageQueryDto {
   /** `true` → el admin ve también los borradores. */
   @IsOptional() @IsIn(['true', 'false'])
   all?: string;
@@ -108,7 +109,7 @@ export class DocumentTemplatesController {
 
   @Get()
   list(@Query() q: ListQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.templates.list(actorOf(user), q.all === 'true');
+    return this.templates.list(actorOf(user), q.all === 'true', q);
   }
 
   /**

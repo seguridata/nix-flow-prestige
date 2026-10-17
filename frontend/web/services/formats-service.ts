@@ -123,6 +123,19 @@ export const formatPdfUrl = (id: string) => `/api/bff/document-templates/${id}/p
 export const fetchFormats = (all = false) =>
   apiClient.get<FormatSummary[]>(`/document-templates${all ? "?all=true" : ""}`);
 
+export interface FormatsPage {
+  items: FormatSummary[];
+  nextCursor: string | null;
+}
+
+/** Página acotada; fetchFormats conserva el array legado para otros consumidores. */
+export const fetchFormatsPage = (all = false, cursor?: string | null, limit = 50) => {
+  const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(200, Math.trunc(limit) || 50))) });
+  if (all) params.set("all", "true");
+  if (cursor) params.set("cursor", cursor);
+  return apiClient.get<FormatsPage>(`/document-templates?${params.toString()}`);
+};
+
 export const fetchFormat = (id: string) => apiClient.get<FormatDetail>(`/document-templates/${id}`);
 
 export const fetchFormatBpmn = async (id: string) => {

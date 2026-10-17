@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { saveFormDocument, type FormatDraft } from "@/services/formats-service";
+import { fetchFormats, fetchFormatsPage, saveFormDocument, type FormatDraft } from "@/services/formats-service";
 
-const { post } = vi.hoisted(() => ({ post: vi.fn(async () => ({ id: "form-1" })) }));
-vi.mock("@/services/api-client", () => ({ apiClient: { post } }));
+const { post, get } = vi.hoisted(() => ({ post: vi.fn(async () => ({ id: "form-1" })), get: vi.fn() }));
+vi.mock("@/services/api-client", () => ({ apiClient: { post, get } }));
+
+describe("Format list pagination contract", () => {
+  it("preserves legacy calls and encodes bounded pages/cursors", async () => {
+    await fetchFormats(true);
+    expect(get).toHaveBeenLastCalledWith("/document-templates?all=true");
+    await fetchFormatsPage(true, "cursor con/espacio", 5000);
+    expect(get).toHaveBeenLastCalledWith("/document-templates?limit=200&all=true&cursor=cursor+con%2Fespacio");
+    await fetchFormatsPage(false);
+    expect(get).toHaveBeenLastCalledWith("/document-templates?limit=50");
+  });
+});
 
 describe("Digital form request contract", () => {
   it("omits PDF placement fields rejected by CreateFormDto while preserving reviewed metadata", async () => {

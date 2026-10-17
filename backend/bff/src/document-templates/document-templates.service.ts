@@ -19,6 +19,7 @@ import { parseTemplateMeta, type TemplateMeta } from './template-meta';
 import { SignaturePolicyService } from '../signing/signature-policy';
 import { defaultSignatureMethods, disallowedMethods, methodsNotAllowedError, staleMethodsError } from './signature-methods';
 import type { SignatureBox, TemplateActor, TemplateField } from './template.types';
+import { finishPage, pageArgs, prismaPage, type Page, type PageQueryDto } from '../common/pagination';
 
 const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
 const MAX_VALUES = 50;
@@ -47,6 +48,9 @@ function canon(v: unknown): string {
 }
 
 const MAX_FORM_VARIABLES = 100;
+type TemplateSummary = Pick<DocumentTemplate, 'id' | 'name' | 'description' | 'category' | 'published' | 'createdAt' | 'kind' | 'flowKey' | 'flowVersion'> & {
+  attachmentCount: number; fieldCount: number; stepCount: number;
+};
 
 @Injectable()
 export class DocumentTemplatesService {
@@ -73,18 +77,32 @@ export class DocumentTemplatesService {
     return found;
   }
 
-  async list(actor: TemplateActor, all: boolean) {
+  list(actor: TemplateActor, all: boolean): Promise<TemplateSummary[]>;
+  list(actor: TemplateActor, all: boolean, page: PageQueryDto): Promise<TemplateSummary[] | Page<TemplateSummary>>;
+  async list(actor: TemplateActor, all: boolean, page?: PageQueryDto): Promise<TemplateSummary[] | Page<TemplateSummary>> {
+    const args = pageArgs(page);
+    const where = { tenantId: actor.tenantId, ...(actor.isAdmin && all ? {} : { published: true }) };
+    // El cursor debe pertenecer al mismo conjunto visible. Un id ajeno nunca
+    // puede servir de ancla de orden para un listado de otro tenant.
+    if (args.cursor) {
+      const anchor = await this.prisma.documentTemplate.findFirst({ where: { ...where, id: args.cursor }, select: { id: true } });
+      if (!anchor) throw new BadRequestException('El cursor ya no está disponible; actualiza el listado.');
+    }
     const rows = await this.prisma.documentTemplate.findMany({
-      where: { tenantId: actor.tenantId, ...(actor.isAdmin && all ? {} : { published: true }) },
-      orderBy: [{ name: 'asc' }],
+      where,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      // Compatibilidad: llamadas antiguas sin parámetros mantienen el array
+      // completo. La UI usa páginas explícitas de hasta 200 elementos.
+      ...(args.paged ? prismaPage(args) : {}),
       select: { id: true, name: true, description: true, category: true, published: true, createdAt: true, fields: true, flow: true, kind: true, attachmentSpecs: true, flowKey: true, flowVersion: true },
     });
-    return rows.map(({ fields, flow, attachmentSpecs, ...r }) => ({
+    const summaries = rows.map(({ fields, flow, attachmentSpecs, ...r }) => ({
       ...r,
       attachmentCount: Array.isArray(attachmentSpecs) ? attachmentSpecs.length : 0,
       fieldCount: Array.isArray(fields) ? fields.length : 0,
       stepCount: (flow as unknown as Flow | null)?.steps?.length ?? 0,
     }));
+    return args.paged ? finishPage(summaries, args) : summaries;
   }
 
   /** Detalle sin `objectKey` ni `enc` (nunca salen del servidor). */
