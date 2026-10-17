@@ -61,6 +61,13 @@ def validate(contract, collection, root=ROOT):
                 references(child)
 
     references(contract)
+    formats = contract['paths']['/document-templates']['get']
+    formats_params = {parameter['name']: parameter['schema'] for parameter in formats['parameters']}
+    assert formats_params['limit']['maximum'] == 200
+    assert formats_params['cursor']['maxLength'] == 200
+    format_shapes = formats['responses']['200']['content']['application/json']['schema']['oneOf']
+    assert any(shape.get('type') == 'array' for shape in format_shapes), 'Legacy formats array missing'
+    assert any({'items', 'nextCursor'}.issubset(shape.get('required', [])) for shape in format_shapes), 'Formats page missing'
     postman = list(requests(collection["item"]))
     checked = 0
     modules = [("chat", "chat"), ("lookup-tables", "lookup-tables"),

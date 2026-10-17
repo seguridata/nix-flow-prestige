@@ -13,6 +13,60 @@ servers:
     description: BFF local (docker compose)
 
 paths:
+  /me/inbox:
+    get:
+      operationId: listMyInbox
+      summary: Bandeja del firmante autenticado, incluidas sus delegaciones
+      description: La identidad y el tenant salen de la sesión. Sin parámetros devuelve un array legado limitado a 200. Con limit o cursor devuelve una página ordenada por createdAt desc e id desc antes de componer los títulos y turnos.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: nextCursor de la página anterior de esta misma bandeja y tenant.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Array legado o página de sobres recibidos
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { type: array, items: { $ref: '#/components/schemas/InboxEnvelope' } }
+                  - { $ref: '#/components/schemas/InboxEnvelopePage' }
+        '400': { description: Cursor ajeno al actor o tenant, o parámetros inválidos }
+        '401': { description: Sesión requerida }
+        '403': { description: Sin membresía activa de tenant }
+  /me/sent:
+    get:
+      operationId: listMySent
+      summary: Envíos del solicitante autenticado
+      description: Misma paginación y orden estable que /me/inbox. El solicitante siempre sale del JWT; no se permite elegir a otro actor mediante parámetros.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: nextCursor de la página anterior de los envíos del actor y tenant actuales.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Array legado o página de sobres enviados
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { type: array, items: { $ref: '#/components/schemas/InboxEnvelope' } }
+                  - { $ref: '#/components/schemas/InboxEnvelopePage' }
+        '400': { description: Cursor ajeno al actor o tenant, o parámetros inválidos }
+        '401': { description: Sesión requerida }
+        '403': { description: Sin membresía activa de tenant }
   /cases:
     get:
       summary: Listar casos
@@ -782,16 +836,30 @@ paths:
       - Formatos y anexos
       security:
       - BearerAuth: []
-      description: all=true incluye borradores solo para admin.
+      description: >
+        all=true incluye borradores solo para admin. Sin limit/cursor conserva el array completo legado.
+        Con limit o cursor devuelve items y nextCursor; orden estable name asc, id asc.
+        El cursor debe ser visible en el mismo tenant y conjunto publicado; si fue eliminado o
+        dejó de ser visible devuelve 400 y el cliente debe reiniciar desde la primera página.
       responses:
         '200':
           description: Operación completada
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
+                oneOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/FormatListSummary'
+                - type: object
+                  required: [items, nextCursor]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/FormatListSummary'
+                    nextCursor:
+                      type: [string, 'null']
         '400':
           description: Entrada inválida
         '401':
@@ -808,6 +876,18 @@ paths:
           enum:
           - 'true'
           - 'false'
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          maxLength: 200
     post:
       summary: Subir formato PDF
       operationId: postdocumenttemplates
@@ -2672,6 +2752,39 @@ components:
       schema: { type: string }
 
   schemas:
+    InboxEnvelopePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/InboxEnvelope' } }
+        nextCursor: { type: [string, 'null'] }
+    InboxEnvelope:
+      type: object
+      required: [signatureRequestId, documentId, documentTitle, caseTitle, requestedByName, status, myStatus, methods, createdAt]
+      properties:
+        signatureRequestId: { type: string }
+        documentId: { type: string }
+        documentTitle: { type: string }
+        caseTitle: { type: string }
+        requestedByName: { type: string }
+        status: { type: string }
+        myStatus: { type: string }
+        methods: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        order: { type: string, enum: [SECUENCIAL, PARALELO] }
+        currentSignerId: { type: string }
+        myTurn: { type: boolean }
+        pendingSigners: { type: array, items: { type: string } }
+        signers:
+          type: array
+          items:
+            type: object
+            required: [signerId, status]
+            properties:
+              signerId: { type: string }
+              name: { type: [string, 'null'] }
+              status: { type: string }
     CreateCaseRequest:
       type: object
       required: [tenantId, title]
@@ -4309,3 +4422,55 @@ components:
       required:
       - jsonrpc
       - id
+    FormatListSummary:
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - category
+      - published
+      - createdAt
+      - kind
+      - flowKey
+      - flowVersion
+      - attachmentCount
+      - fieldCount
+      - stepCount
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        category:
+          type:
+          - string
+          - 'null'
+        published:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          enum:
+          - PDF
+          - FORM
+        flowKey:
+          type:
+          - string
+          - 'null'
+        flowVersion:
+          type:
+          - integer
+          - 'null'
+        attachmentCount:
+          type: integer
+        fieldCount:
+          type: integer
+        stepCount:
+          type: integer
