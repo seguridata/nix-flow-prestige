@@ -547,6 +547,17 @@ model EnvelopeTemplate {
 
 /// Dueño del flujo: un tenant o el literal 'platform' (semillas del sistema, visibles para todos y de solo
 /// lectura para los tenants; editar una crea una copia propia). Sin default a propósito: no hay tenant implícito.
+model ProcessCatalogPreference {
+  id         String   @id @default(uuid())
+  tenantId   String
+  key        String
+  archivedAt DateTime?
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId, archivedAt])
+}
+
 model ProcessDefinition {
   id          String   @id @default(uuid())
   tenantId    String

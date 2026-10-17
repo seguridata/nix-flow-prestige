@@ -1,11 +1,17 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { Prisma, type ProcessDefinition } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { finishPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { RedisService } from '../redis/redis.service';
 import { evaluateDmn } from './dmn-engine';
-import { flowToBpmn, validateFlow } from '../flow/flow';
+import { flowTableKeys, flowToBpmn, validateFlow } from '../flow/flow';
+import { bpmnToFlow } from '../flow/bpmn-to-flow';
+import { checkFlowAgainstTables } from '../lookup-tables/lookup-validation';
+import type { LookupColumn } from '../lookup-tables/lookup-engine';
 import type { Flow } from '../flow/flow.types';
+import { FlowResolverService } from '../lookup-tables/flow-resolver.service';
+import { parseInputs } from '../lookup-tables/lookup-validation';
 import {
   CONTRATO_BPMN,
   DEFAULT_DECISION_RULES,
@@ -99,6 +105,7 @@ export class ProcessService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly resolver: FlowResolverService,
   ) {}
 
   async onModuleInit() {
@@ -141,14 +148,21 @@ export class ProcessService implements OnModuleInit {
 
   /** Lo que un tenant puede leer: lo suyo y lo de la plataforma. */
   private readable(tenantId: string) {
-    return { tenantId: { in: [tenantId, PLATFORM_TENANT] } };
+    return { OR: [{ tenantId }, { tenantId: PLATFORM_TENANT }] };
+  }
+
+  private async visibleWhere(tenantId: string) {
+    const hidden = await this.prisma.processCatalogPreference.findMany({
+      where: { tenantId, archivedAt: { not: null } }, select: { key: true },
+    });
+    return { ...this.readable(tenantId), ...(hidden.length ? { key: { notIn: hidden.map((p) => p.key) } } : {}) };
   }
 
   async list(tenantId: string, page?: PageQueryDto) {
     const args = pageArgs(page);
     // Orden de dominio estable (key asc, version desc, id desc).
     const orderBy = [{ key: 'asc' as const }, { version: 'desc' as const }, { id: 'desc' as const }];
-    const where = this.readable(tenantId);
+    const where = await this.visibleWhere(tenantId);
     // Paginado: sin caché (la clave dependería del cursor). Sin limit/cursor: array con caché por tenant.
     if (args.paged) {
       const rows = await this.prisma.processDefinition.findMany({ where, orderBy, ...prismaPage(args) });
@@ -161,11 +175,211 @@ export class ProcessService implements OnModuleInit {
   }
 
   /** Solo las versiones publicadas (lo que ven los remitentes al crear un sobre). */
-  listPublished(tenantId: string) {
-    return this.prisma.processDefinition.findMany({
-      where: { ...this.readable(tenantId), published: true },
+  async listPublished(tenantId: string) {
+    const where = await this.visibleWhere(tenantId);
+    const rows = await this.prisma.processDefinition.findMany({
+      where: { ...where, published: true },
       orderBy: [{ key: 'asc' }, { version: 'desc' }],
     });
+    // Una copia propia tapa a la plataforma incluso si aún es un borrador.
+    const own = await this.prisma.processDefinition.findMany({ where: { tenantId }, select: { key: true } });
+    const ownKeys = new Set(own.map((row) => row.key));
+    const unique = new Map<string, ProcessDefinition>();
+    for (const row of rows) {
+      if (row.tenantId === PLATFORM_TENANT && ownKeys.has(row.key)) continue;
+      if (!unique.has(row.key)) unique.set(row.key, row);
+    }
+    return [...unique.values()];
+  }
+
+  async catalog(tenantId: string) {
+    const rows = await this.prisma.processDefinition.findMany({
+      where: await this.visibleWhere(tenantId), orderBy: [{ key: 'asc' }, { version: 'desc' }],
+    });
+    const groups = new Map<string, ProcessDefinition[]>();
+    for (const row of rows) groups.set(row.key, [...(groups.get(row.key) ?? []), row]);
+    return [...groups.values()].map((group) => {
+      const own = group.filter((row) => row.tenantId === tenantId);
+      const versions = (own.length ? own : group).sort((a, b) => b.version - a.version);
+      return {
+        ...versions[0], versionCount: versions.length,
+        publishedVersion: versions.find((row) => row.published)?.version ?? null,
+        source: own.length ? 'tenant' as const : 'platform' as const,
+      };
+    });
+  }
+
+  async versions(key: string, tenantId: string) {
+    const latest = await this.getLatest(key, tenantId);
+    return this.prisma.processDefinition.findMany({
+      where: { tenantId: latest.tenantId, key }, orderBy: { version: 'desc' },
+    });
+  }
+
+  async getVersion(key: string, version: number, tenantId: string) {
+    // El dueño efectivo se determina igual que en catálogo; nunca se cruzan versiones
+    // de plataforma con las de una copia del tenant que usa la misma clave.
+    const latest = await this.getLatest(key, tenantId);
+    const row = await this.prisma.processDefinition.findFirst({ where: { tenantId: latest.tenantId, key, version } });
+    if (!row) throw new NotFoundException(`Versión ${version} de ${key} no encontrada`);
+    return row;
+  }
+
+  async archive(key: string, tenantId: string) {
+    await this.getLatest(key, tenantId);
+    await this.prisma.$transaction([
+      this.prisma.processCatalogPreference.upsert({
+        where: { tenantId_key: { tenantId, key } }, create: { tenantId, key, archivedAt: new Date() },
+        update: { archivedAt: new Date() },
+      }),
+      this.prisma.processDefinition.updateMany({ where: { tenantId, key }, data: { published: false, publishedAt: null } }),
+    ]);
+    await this.invalidateProcessCache(tenantId, key);
+    return { key, archived: true as const };
+  }
+
+  async unarchive(key: string, tenantId: string) {
+    await this.getLatest(key, tenantId);
+    await this.prisma.processCatalogPreference.upsert({
+      where: { tenantId_key: { tenantId, key } }, create: { tenantId, key }, update: { archivedAt: null },
+    });
+    await this.invalidateProcessCache(tenantId, key);
+    return { key, archived: false as const };
+  }
+
+  async restore(key: string, version: number, tenantId: string) {
+    const source = await this.getVersion(key, version, tenantId);
+    const latest = await this.findLatest(key, tenantId);
+    const created = await this.prisma.processDefinition.create({
+      data: {
+        tenantId, key, version: latest?.tenantId === tenantId ? latest.version + 1 : 1,
+        name: source.name, description: source.description, bpmnXml: source.bpmnXml, dmnXml: source.dmnXml,
+        flow: source.flow === null ? Prisma.JsonNull : source.flow,
+        decisionRules: source.decisionRules === null ? Prisma.JsonNull : source.decisionRules,
+        published: false, publishedAt: null,
+      },
+    });
+    await this.unarchive(key, tenantId);
+    return created;
+  }
+
+  async preflight(key: string, tenantId: string, body: { version?: number; flow?: unknown } = {}) {
+    const definition = body.version !== undefined
+      ? await this.getVersion(key, body.version, tenantId) : await this.getLatest(key, tenantId);
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const checks: Array<{ key: string; label: string; status: 'pass' | 'warn' | 'fail'; detail: string }> = [];
+    let raw: unknown = body.flow ?? definition.flow;
+    if (!raw) {
+      const converted = bpmnToFlow(definition.bpmnXml);
+      raw = converted.flow;
+      errors.push(...converted.errors);
+      warnings.push(...converted.warnings);
+      if (raw) warnings.push('El diagrama puede convertirse: guarda el flujo ejecutable antes de publicar.');
+      else errors.push('El proceso todavía no tiene un flujo ejecutable.');
+    }
+    const validation = raw ? validateFlow(raw) : [];
+    errors.push(...validation);
+    checks.push({ key: 'flow', label: 'Estructura ejecutable', status: !raw || validation.length ? 'fail' : 'pass',
+      detail: !raw ? 'Convierte el diagrama o crea los pasos en el constructor.' : validation.length ? validation.join('; ') : 'Pasos, variables y condiciones válidos.' });
+    let flow: Flow | undefined;
+    let keys: string[] = [];
+    if (raw && !validation.length) {
+      flow = raw as Flow;
+      keys = flowTableKeys(flow);
+      const tables = keys.length ? await this.prisma.lookupTable.findMany({
+        where: { tenantId, key: { in: keys }, active: true },
+        select: { key: true, columns: true, _count: { select: { rows: { where: { tenantId, active: true } } } } },
+      }) : [];
+      const tableErrors = checkFlowAgainstTables(flow, new Map(tables.map((table) => [table.key, table.columns as unknown as LookupColumn[]])));
+      errors.push(...tableErrors);
+      for (const table of tables) if (table._count.rows === 0) {
+        const required = flow.derived?.some((variable) => variable.query.table === table.key && variable.onMiss === 'fail');
+        const message = `La tabla «${table.key}» no tiene filas activas${required ? ' y una variable derivada exige coincidencia.' : '; se usará la pregunta de respaldo.'}`;
+        (required ? errors : warnings).push(message);
+      }
+      checks.push({ key: 'lookups', label: 'Reglas y responsables', status: tableErrors.length ? 'fail' : 'pass',
+        detail: tableErrors.length ? tableErrors.join('; ') : keys.length ? `${keys.length} tablas activas con columnas compatibles.` : 'No requiere tablas de consulta.' });
+      const asks = flow.steps.filter((step) => step.who.type === 'ask').length;
+      if (asks) warnings.push(`${asks} pasos solicitan seleccionar a una persona al iniciar la solicitud.`);
+      const conditional = flow.steps.filter((step) => step.when?.length).length;
+      if (conditional === flow.steps.length) warnings.push('Todos los pasos tienen condiciones: comprueba que cada caso tenga al menos un participante.');
+      checks.push({ key: 'participants', label: 'Participantes', status: asks ? 'warn' : 'pass',
+        detail: `${flow.steps.length} pasos; ${asks} participantes por seleccionar al iniciar.` });
+    }
+    const archived = await this.prisma.processCatalogPreference.findFirst({ where: { tenantId, key, archivedAt: { not: null } } });
+    if (archived) errors.push('El proceso está archivado; restáuralo al catálogo antes de publicarlo.');
+    if (!definition.flow && !body.flow && raw) errors.push('Guarda el flujo convertido antes de publicarlo.');
+    checks.push({ key: 'catalog', label: 'Disponible en catálogo', status: archived ? 'fail' : 'pass', detail: archived ? 'Archivado para este espacio.' : 'Visible en este espacio.' });
+    return {
+      valid: errors.length === 0, ready: errors.length === 0, errors: [...new Set(errors)], warnings: [...new Set(warnings)], checks,
+      summary: { steps: flow?.steps.length ?? 0, variables: flow?.variables.length ?? 0, lookups: keys.length },
+      definition: { key: definition.key, version: definition.version, name: definition.name },
+    };
+  }
+
+  async previewFlow(key: string, tenantId: string, actorId: string, body: { version?: number; flow?: unknown; values?: unknown }) {
+    const definition = body.version !== undefined
+      ? await this.getVersion(key, body.version, tenantId) : await this.getLatest(key, tenantId);
+    const flow = this.assertFlow(body.flow ?? definition.flow);
+    const inputs = parseInputs(body.values);
+    if (inputs.errors.length) throw new BadRequestException({ message: 'Datos de recorrido inválidos', errors: inputs.errors });
+    const resolution = await this.resolver.resolve(flow, inputs.inputs ?? {}, tenantId, { solicitante: actorId });
+    return {
+      values: resolution.values, order: flow.order, slaHours: flow.slaHours,
+      steps: resolution.resolved.map(({ step, active }) => {
+        const who = step.who;
+        const participant = !active ? null : who.type === 'initiator' ? { signerId: actorId, name: null, email: null }
+          : who.type === 'fixed' ? { signerId: who.signerId, name: who.name ?? null, email: who.email ?? null }
+            : resolution.picks.get(step.id) ?? null;
+        const awaiting = resolution.awaiting.get(step.id) ?? [];
+        return { id: step.id, label: step.label, role: step.role, active, participant, awaiting,
+          needsSelection: active && !participant && awaiting.length === 0 };
+      }),
+      lookups: resolution.steps, derived: resolution.derived,
+    };
+  }
+
+  async exportPackage(key: string, tenantId: string) {
+    const definition = await this.getLatest(key, tenantId);
+    const flow = this.assertFlow(definition.flow);
+    // Portabilidad de la configuración; nunca incluye filas de directorio, tokens,
+    // documentos ni credenciales. Los participantes fijos son parte del flujo.
+    const payload = { name: definition.name, description: definition.description, flow };
+    return { format: 'prestige-process' as const, version: 1 as const, payload,
+      sha256: createHash('sha256').update(stableJson(payload)).digest('hex') };
+  }
+
+  async importPackage(tenantId: string, raw: { format: string; version: number; payload: Record<string, unknown>; sha256: string }) {
+    if (raw.format !== 'prestige-process' || raw.version !== 1) throw new BadRequestException('Formato de paquete no compatible.');
+    const { payload } = raw;
+    if (!payload || typeof payload.name !== 'string' || payload.name.trim().length < 3 || payload.name.length > 120 ||
+      (payload.description !== null && payload.description !== undefined && (typeof payload.description !== 'string' || payload.description.length > 500)) ||
+      Object.keys(payload).some((key) => !['name', 'description', 'flow'].includes(key))) {
+      throw new BadRequestException('El paquete debe contener nombre, descripción y flujo.');
+    }
+    const digest = createHash('sha256').update(stableJson(payload)).digest('hex');
+    if (!/^[a-f0-9]{64}$/i.test(raw.sha256) || !timingSafeEqual(Buffer.from(digest, 'hex'), Buffer.from(raw.sha256, 'hex'))) {
+      throw new BadRequestException('La integridad del paquete no coincide con su SHA-256.');
+    }
+    // createFromFlow aplica validación estructural y genera BPMN nuevo: no importa XML arbitrario.
+    return this.createFromFlow(tenantId, { name: payload.name, description: payload.description as string | undefined ?? undefined, flow: payload.flow });
+  }
+
+  async impact(key: string, tenantId: string) {
+    await this.getLatest(key, tenantId);
+    const [runs, templates] = await Promise.all([
+      this.prisma.workflowRun.groupBy({ by: ['status'], where: { tenantId, processKey: key }, _count: { _all: true } }),
+      this.prisma.documentTemplate.groupBy({ by: ['flowVersion'], where: { tenantId, flowKey: key }, _count: { _all: true } }),
+    ]);
+    const byStatus = runs.map((row) => ({ status: row.status, count: row._count._all }));
+    return {
+      key, workflows: { total: byStatus.reduce((sum, row) => sum + row.count, 0),
+        active: byStatus.filter((row) => ['ACTIVO', 'LOCAL', 'PENDIENTE', 'EN_PROCESO', 'RUNNING', 'CREATED', 'STARTING', 'STARTED'].includes(row.status.toUpperCase())).reduce((sum, row) => sum + row.count, 0), byStatus },
+      templates: { total: templates.reduce((sum, row) => sum + row._count._all, 0),
+        byVersion: templates.map((row) => ({ version: row.flowVersion, count: row._count._all })) },
+      versionAttribution: 'not-recorded' as const,
+    };
   }
 
   private static slugify(name: string): string {
@@ -259,9 +473,11 @@ export class ProcessService implements OnModuleInit {
   async publish(key: string, version: number, tenantId: string) {
     const target = await this.ownVersion(key, version, tenantId);
     if (target.flow) this.assertFlow(target.flow);
+    const preflight = await this.preflight(key, tenantId, { version });
+    if (!preflight.ready) throw new BadRequestException({ message: 'Resuelve los problemas antes de publicar', errors: preflight.errors });
     const [, published] = await this.prisma.$transaction([
       this.prisma.processDefinition.updateMany({ where: { tenantId, key, version: { not: version } }, data: { published: false } }),
-      this.prisma.processDefinition.update({ where: { id: target.id }, data: { published: true, publishedAt: new Date() } }),
+      this.prisma.processDefinition.update({ where: { id: target.id, tenantId }, data: { published: true, publishedAt: new Date() } }),
     ]);
     await this.invalidateProcessCache(tenantId, key);
     return published;
@@ -270,7 +486,7 @@ export class ProcessService implements OnModuleInit {
   async unpublish(key: string, version: number, tenantId: string) {
     const target = await this.ownVersion(key, version, tenantId);
     const updated = await this.prisma.processDefinition.update({
-      where: { id: target.id },
+      where: { id: target.id, tenantId },
       data: { published: false, publishedAt: null },
     });
     await this.invalidateProcessCache(tenantId, key);
@@ -298,7 +514,7 @@ export class ProcessService implements OnModuleInit {
         bpmnXml: body.bpmnXml ?? latest.bpmnXml,
         dmnXml: body.dmnXml ?? latest.dmnXml,
         decisionRules: latest.decisionRules === null ? undefined : latest.decisionRules,
-        published: true,
+        published: false,
       },
     });
     await this.invalidateProcessCache(tenantId, key);

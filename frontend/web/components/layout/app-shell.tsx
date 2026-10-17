@@ -15,6 +15,7 @@ import {
   ListChecks,
   LogOut,
   Menu,
+  Plug2,
   Search,
   Send,
   Server,
@@ -45,10 +46,11 @@ const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[
   { href: "/plantillas", label: "Plantillas", icon: Files, roles: ["sender", "admin"] },
   { href: "/onboarding", label: "Onboarding", icon: UserPlus, roles: ["rh", "admin"] },
   { href: "/tasks", label: "Tareas", icon: ListChecks },
-  { href: "/process", label: "Proceso", icon: GitBranch, roles: ["sender", "admin"] },
+  { href: "/process", label: "Procesos", icon: GitBranch, roles: ["sender", "admin"] },
   { href: "/flujos" as Route, label: "Flujos", icon: Workflow, roles: ["admin"] },
   { href: "/tablas-consulta" as Route, label: "Tablas de consulta", icon: Table2, roles: ["admin"] },
   { href: "/operations", label: "Operación", icon: Server, roles: ["sender", "rh", "admin"] },
+  { href: "/conexiones" as Route, label: "Conexiones", icon: Plug2, roles: ["admin"] },
 ];
 
 export function AppShell({

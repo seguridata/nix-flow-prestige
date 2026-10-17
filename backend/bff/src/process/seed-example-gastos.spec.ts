@@ -241,6 +241,28 @@ describe('runSeed con los servicios reales sobre datos en memoria', () => {
     expect(has(r, 'existe', /Formato.*sin cambios/)).toBe(true);
   });
 
+  it('asocia un formato existente al proceso sin regenerar el PDF ni alterar campos o anexos', async () => {
+    const w = world();
+    await w.run();
+    const form = w.stored()[0];
+    form.flowKey = null;
+    form.flowVersion = null;
+    const puts = w.storage.putObject.mock.calls.length;
+    const flow = JSON.stringify(form.flow);
+    const fields = JSON.stringify(form.fields);
+    const attachments = JSON.stringify(form.attachmentSpecs);
+
+    const result = await w.run();
+    const saved = w.stored()[0];
+
+    expect(has(result, 'creado', /asociado con adquisiciones-gastos v1/)).toBe(true);
+    expect(saved).toMatchObject({ flowKey: 'adquisiciones-gastos', flowVersion: 1, published: true });
+    expect(w.storage.putObject).toHaveBeenCalledTimes(puts);
+    expect(JSON.stringify(saved.flow)).toBe(flow);
+    expect(JSON.stringify(saved.fields)).toBe(fields);
+    expect(JSON.stringify(saved.attachmentSpecs)).toBe(attachments);
+  });
+
   it('con la matriz ya importada y todo en orden no hay pendientes: código 0', async () => {
     const w = world({ tables: [respTable()], rows: [respRow('resp-seguridata', 0, { etapa: 'area', area: 'QA', signerId: 'jefe-qa' })] });
     const r = await w.run();
@@ -417,6 +439,8 @@ describe('formDiff', () => {
     description: desired.description,
     category: desired.category,
     flow: JSON.parse(JSON.stringify(desired.flow)),
+    flowKey: desired.flowKey,
+    flowVersion: desired.flowVersion,
     methods: ['ACCEPT'],
     attachmentSpecs: JSON.parse(JSON.stringify(desired.attachmentSpecs)),
     ...over,
@@ -435,5 +459,6 @@ describe('formDiff', () => {
     expect(formDiff(current({ attachmentSpecs: [] }), desired)).toEqual(['anexos']);
     expect(formDiff(current({ description: null }), desired)).toEqual(['descripción']);
     expect(formDiff(current({ flow: { ...desired.flow, slaHours: 24 } }), desired)).toEqual(['flujo y variables']);
+    expect(formDiff(current({ flowKey: null, flowVersion: null }), desired)).toEqual(['flujo asociado']);
   });
 });

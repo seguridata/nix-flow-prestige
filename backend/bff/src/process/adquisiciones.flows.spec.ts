@@ -264,7 +264,7 @@ describe('ensureSeeds con flujo por defecto', () => {
   const mk = (existing: Record<string, any>) => {
     const create = vi.fn(async () => ({}));
     const findFirst = vi.fn(async ({ where }: any) => existing[where.key] ?? null);
-    return { create, svc: new ProcessService({ processDefinition: { findFirst, create } } as any, {} as any) };
+    return { create, svc: new ProcessService({ processDefinition: { findFirst, create } } as any, {} as any, {} as any) };
   };
   const created = (create: any, key: string) => create.mock.calls.map((c: any[]) => c[0].data).filter((d: any) => d.key === key);
 

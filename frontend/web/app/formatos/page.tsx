@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { FilePlus2, FileText, Pencil, Search } from "lucide-react";
 
@@ -19,9 +20,10 @@ import { fetchFormats, type FormatSummary } from "@/services/formats-service";
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-export default function FormatosPage() {
+function FormatosContent() {
   const { roles } = useSession();
   const isAdmin = roles.includes("admin");
+  const flowKey = useSearchParams().get("flow");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
@@ -34,9 +36,9 @@ export default function FormatosPage() {
   const shown = useMemo(
     () =>
       (formats.data ?? []).filter(
-        (f) => (!category || f.category === category) && (!query.trim() || norm(`${f.name} ${f.description ?? ""}`).includes(norm(query.trim()))),
+        (f) => (!flowKey || f.flowKey === flowKey) && (!category || f.category === category) && (!query.trim() || norm(`${f.name} ${f.description ?? ""}`).includes(norm(query.trim()))),
       ),
-    [formats.data, category, query],
+    [formats.data, category, query, flowKey],
   );
 
   return (
@@ -45,7 +47,7 @@ export default function FormatosPage() {
       actions={
         isAdmin ? (
           <Button asChild size="sm">
-            <Link href={"/formatos/nuevo" as never}>
+            <Link href={(flowKey ? `/formatos/nuevo?flow=${encodeURIComponent(flowKey)}` : "/formatos/nuevo") as never}>
               <FilePlus2 /> Nuevo formato
             </Link>
           </Button>
@@ -55,6 +57,7 @@ export default function FormatosPage() {
       <p className="mb-5 max-w-xl text-sm text-muted-foreground">
         Elige un formato, llena tus datos y se envía a quien corresponda. El documento se completa solo y el flujo de firmas ya viene definido.
       </p>
+      {flowKey ? <section className="mb-6 flex flex-wrap items-center justify-between gap-3 border-y border-border py-4" aria-label="Continuar con el flujo"><div><h2 className="font-semibold">Elige el formato que usará este flujo</h2><p className="mt-1 text-sm text-muted-foreground">Abre uno publicado para llenar los datos y enviar. Si aún no hay uno, crea su hoja digital.</p></div><div className="flex gap-2"><Button asChild variant="outline"><Link href={"/formatos" as never}>Todos los formatos</Link></Button>{isAdmin ? <Button asChild><Link href={`/formatos/nuevo?flow=${encodeURIComponent(flowKey)}` as never}>Crear formato con este flujo</Link></Button> : null}</div></section> : null}
 
       {isAdmin ? <TemplateDrafts /> : null}
 
@@ -114,6 +117,8 @@ export default function FormatosPage() {
     </AppShell>
   );
 }
+
+export default function FormatosPage() { return <Suspense fallback={<div className="p-8">Cargando formatos…</div>}><FormatosContent /></Suspense>; }
 
 function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: boolean }) {
   return (

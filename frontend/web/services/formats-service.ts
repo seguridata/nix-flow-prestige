@@ -44,6 +44,8 @@ export interface FormatSummary {
   fieldCount: number;
   stepCount: number;
   createdAt: string;
+  flowKey?: string | null;
+  flowVersion?: number | null;
   kind?: FormatKind;
   attachmentCount?: number;
 }
@@ -248,6 +250,7 @@ export const fetchCaseAttachments = (caseId: string) =>
 
 export interface FlowDefinition {
   id: string;
+  tenantId?: string;
   key: string;
   name: string;
   description: string | null;

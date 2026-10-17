@@ -1,5 +1,7 @@
 # ESTADO Y PENDIENTES — retoma aquí
 
+> **Actualización 17 oct 2026 — Prestige Studio/MCP OAuth:** ver [tanda detallada](CONTINUIDAD-2026-10-16.md#tanda-prestige-studio-y-mcp-oauth--16-de-octubre-de-2026), [guía de Procesos](PROCESS-STUDIO.md) y [guía MCP](MCP-OAUTH.md). Catálogo SeguriData reducido de forma reversible a Gastos/Adquisiciones y cinco claves relacionadas, preservando históricos. El formato existente de solicitud de gastos quedó asociado con Adquisiciones v1 sin alterar su contenido. Backend 1,218/1,218 y frontend 269/269; TypeScript y build aprobados. Health HTTP BFF validado con PostgreSQL, Redis y object storage. Provisionamiento Keycloak listo; falta la prueba OAuth E2E porque Windows no logra alcanzar el puerto publicado 8081 del contenedor. Rangos de aprobación, equivalencias Monday, destino de clúster y pendientes de producción siguen abiertos.
+
 > **Continuación del 16 de octubre:** leer primero [CONTINUIDAD-2026-10-16.md](CONTINUIDAD-2026-10-16.md). Contiene los cambios posteriores a `bea0a8e`, pruebas reales y el incidente WSL/disco. Las casillas históricas siguientes no sustituyen esa actualización.
 
 > **Léelo primero.** Es el documento de relevo entre sesiones: qué hay hoy, qué se decidió, qué falta y cómo seguir sin perder tiempo.

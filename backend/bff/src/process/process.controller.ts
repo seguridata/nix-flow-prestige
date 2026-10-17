@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { PageQueryDto } from '../common/pagination';
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 import { bpmnToFlow } from '../flow/bpmn-to-flow';
-import { validateFlow } from '../flow/flow';
+import { publicFlow, validateFlow } from '../flow/flow';
 import type { FlowVariable } from '../flow/flow.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
@@ -56,6 +56,33 @@ class ValidateFlowDto {
   flow!: Record<string, unknown>;
 }
 
+class PreflightDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  version?: number;
+
+  @IsOptional() @IsObject()
+  flow?: Record<string, unknown>;
+}
+
+class PreviewFlowDto extends PreflightDto {
+  @IsOptional() @IsObject()
+  values?: Record<string, unknown>;
+}
+
+class ImportProcessPackageDto {
+  @IsString() @IsIn(['prestige-process'])
+  format!: string;
+
+  @Type(() => Number) @IsInt() @IsIn([1])
+  version!: number;
+
+  @IsObject()
+  payload!: Record<string, unknown>;
+
+  @IsString() @MinLength(64) @MaxLength(64)
+  sha256!: string;
+}
+
 class FromBpmnDto {
   @IsString() @MinLength(10) @MaxLength(2_000_000)
   xml!: string;
@@ -90,11 +117,85 @@ export class ProcessController {
     private readonly auditChain: AuditChainService,
   ) {}
 
-  // Catálogo de plataforma (no por tenant): lectura abierta, escritura solo admin.
+  // Los remitentes solo reciben flujos publicados y su representación pública.
   @Get('process-definitions')
-  list(@Query() query: ListProcessQueryDto, @CurrentUser() user: AuthenticatedUser) {
+  async list(@Query() query: ListProcessQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    if (!user.roles?.includes('admin')) {
+      return (await this.process.listPublished(user.tenantId)).map((definition) => ({
+        id: definition.id, key: definition.key, name: definition.name, description: definition.description,
+        version: definition.version, published: definition.published, publishedAt: definition.publishedAt,
+        updatedAt: definition.updatedAt, flow: publicFlow(definition.flow),
+      }));
+    }
     if (query.published === 'true') return this.process.listPublished(user.tenantId);
     return this.process.list(user.tenantId, query);
+  }
+
+  /** Una tarjeta por proceso; el historial se carga solo cuando se necesita. */
+  @Roles('admin')
+  @Get('process-catalog')
+  catalog(@CurrentUser() user: AuthenticatedUser) {
+    return this.process.catalog(user.tenantId);
+  }
+
+  @Roles('admin')
+  @Post('process-packages/import')
+  importPackage(@Body() body: ImportProcessPackageDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.importPackage(user.tenantId, body);
+  }
+
+  @Roles('admin')
+  @Get('process-definitions/:key/export')
+  exportPackage(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.exportPackage(key, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Get('process-definitions/:key/impact')
+  impact(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.impact(key, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions/:key/preview-flow')
+  previewFlow(@Param('key') key: string, @Body() body: PreviewFlowDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.previewFlow(key, user.tenantId, user.actorId, body);
+  }
+
+  @Roles('admin')
+  @Get('process-definitions/:key/versions')
+  versions(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.versions(key, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Get('process-definitions/:key/versions/:version')
+  version(@Param('key') key: string, @Param('version', ParseIntPipe) version: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.getVersion(key, version, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions/:key/versions/:version/restore')
+  restore(@Param('key') key: string, @Param('version', ParseIntPipe) version: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.restore(key, version, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Delete('process-definitions/:key')
+  archive(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.archive(key, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions/:key/unarchive')
+  unarchive(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.unarchive(key, user.tenantId);
+  }
+
+  @Roles('admin')
+  @Post('process-definitions/:key/preflight')
+  preflight(@Param('key') key: string, @Body() body: PreflightDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.process.preflight(key, user.tenantId, body);
   }
 
   /** Valida un flujo sin guardarlo (mismos errores que al crearlo). */
@@ -141,17 +242,20 @@ export class ProcessController {
     return this.process.unpublish(key, version, user.tenantId);
   }
 
+  @Roles('admin')
   @Get('process-definitions/:key')
   get(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
     return this.process.getLatest(key, user.tenantId);
   }
 
+  @Roles('admin')
   @Get('process-definitions/:key/bpmn')
   async bpmn(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
     const def = await this.process.getLatest(key, user.tenantId);
     return { xml: def.bpmnXml, key: def.key, version: def.version, name: def.name };
   }
 
+  @Roles('admin')
   @Get('process-definitions/:key/dmn')
   async dmn(@Param('key') key: string, @CurrentUser() user: AuthenticatedUser) {
     const def = await this.process.getLatest(key, user.tenantId);

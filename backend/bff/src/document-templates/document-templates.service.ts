@@ -77,7 +77,7 @@ export class DocumentTemplatesService {
     const rows = await this.prisma.documentTemplate.findMany({
       where: { tenantId: actor.tenantId, ...(actor.isAdmin && all ? {} : { published: true }) },
       orderBy: [{ name: 'asc' }],
-      select: { id: true, name: true, description: true, category: true, published: true, createdAt: true, fields: true, flow: true, kind: true, attachmentSpecs: true },
+      select: { id: true, name: true, description: true, category: true, published: true, createdAt: true, fields: true, flow: true, kind: true, attachmentSpecs: true, flowKey: true, flowVersion: true },
     });
     return rows.map(({ fields, flow, attachmentSpecs, ...r }) => ({
       ...r,
@@ -234,7 +234,7 @@ export class DocumentTemplatesService {
     const stored = await this.storeFormPdf(meta.name, gen.pdf, actor);
     try {
       await this.prisma.documentTemplate.update({
-        where: { id: current.id },
+        where: { id: current.id, tenantId: actor.tenantId },
         data: {
           ...this.data(meta),
           objectKey: stored.objectKey,
@@ -301,7 +301,7 @@ export class DocumentTemplatesService {
     // Solo si el flujo viene en la edición: renombrar un formato no debe fallar porque una tabla se desactivó después.
     if ((rawMeta as { flow?: unknown } | null | undefined)?.flow !== undefined) await this.resolver.assertTables(meta.flow, actor.tenantId);
     if (meta.name.toLowerCase() !== current.name.toLowerCase()) await this.assertNameFree(actor.tenantId, meta.name);
-    await this.prisma.documentTemplate.update({ where: { id }, data: this.data(meta) });
+    await this.prisma.documentTemplate.update({ where: { id, tenantId: actor.tenantId }, data: this.data(meta) });
     return this.get(id, actor);
   }
 
@@ -313,14 +313,14 @@ export class DocumentTemplatesService {
       const bad = disallowedMethods(current.methods, policy);
       if (bad.length) throw methodsNotAllowedError(bad, policy);
     }
-    await this.prisma.documentTemplate.update({ where: { id }, data: { published } });
+    await this.prisma.documentTemplate.update({ where: { id, tenantId: actor.tenantId }, data: { published } });
     return this.get(id, actor);
   }
 
   async remove(id: string, actor: TemplateActor): Promise<void> {
     const t = await this.visible(id, actor);
     assertTenantKey(actor.tenantId, t.objectKey); // antes de borrar la fila: no se toca un objeto ajeno
-    await this.prisma.documentTemplate.delete({ where: { id } });
+    await this.prisma.documentTemplate.delete({ where: { id, tenantId: actor.tenantId } });
     await this.storage.deleteObject(t.objectKey, actor.tenantId).catch((e: Error) => this.log.warn(`No se pudo borrar ${t.objectKey}: ${e.message}`));
   }
 

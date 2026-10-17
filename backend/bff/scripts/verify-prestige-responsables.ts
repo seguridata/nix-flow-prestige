@@ -41,7 +41,7 @@ const before = await tableSnapshot();
 assert.equal(before.length, 2, 'Tablas existentes requeridas; no sembrar una matriz vacía');
 const deps: { tables: TablesPort; templates: TemplatesPort } = {
   tables: { list: () => api('/lookup-tables'), create: body => api('/lookup-tables', 'POST', body), createRow: (id, body) => api(`/lookup-tables/${id}/rows`, 'POST', body) },
-  templates: { list: () => api('/document-templates?all=true'), get: id => api(`/document-templates/${id}`), createForm: body => api('/document-templates/form', 'POST', body), setPublished: (id, published) => api(`/document-templates/${id}/${published ? 'publish' : 'unpublish'}`, 'POST') },
+  templates: { list: () => api('/document-templates?all=true'), get: id => api(`/document-templates/${id}`), update: (id, patch) => api(`/document-templates/${id}`, 'PUT', patch), createForm: body => api('/document-templates/form', 'POST', body), setPublished: (id, published) => api(`/document-templates/${id}/${published ? 'publish' : 'unpublish'}`, 'POST') },
 };
 const report = await runSeed(deps, { tenant: 'seguridata', dryRun: !apply, force: true });
 assert.equal(report.exitCode, 0, report.lines.map(l => l.text).join('; '));

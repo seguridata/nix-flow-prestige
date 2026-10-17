@@ -1,5 +1,23 @@
 # Continuidad de Claude — 16 de octubre de 2026
 
+## Tanda Prestige Studio y MCP OAuth — 16 de octubre de 2026
+
+La experiencia de Procesos se reorganizó para que el catálogo muestre una sola fila por clave, con búsqueda y filtros. La administración permite crear, archivar y recuperar procesos; el archivo por tenant es reversible y conserva versiones, solicitudes, documentos y auditoría. En el sandbox `seguridata` se revisó el plan y se conservaron `adquisiciones-gastos`, `flujo-de-adquisicion`, `renovacion-licenciamiento`, `proveedores-estrategicos` y `subproceso-gestion-de-proveedores-estrategicos`. Se archivaron cuatro claves ajenas: contrato de prueba, firma de tres partes, onboarding de identidad y vacaciones. Los formatos ya asociados mantienen su publicación y snapshot; deben retirarse desde Formatos si también se quiere impedir nuevas solicitudes.
+
+El constructor vertical guarda nuevas versiones Flow y BPMN a partir de etapas; el editor BPMN queda como vista avanzada. Publicar exige preflight real de tablas y condiciones. El laboratorio consulta el mismo resolvedor y las tablas activas sin crear solicitudes, correos ni firmas. El historial compara cambios y restaura como nueva versión borrador. Importación/exportación verifica SHA-256, y el panel de impacto presenta usos registrados sin inventar atribución de versión. El seguimiento filtra instancias por proceso y muestra estado y error útiles.
+
+La ruta `/conexiones` explica e informa la configuración real de Prestige MCP. Se incorporó servidor Streamable HTTP OAuth de solo lectura, con cinco herramientas limitadas por tenant y actor, y guardas para issuer, audience, scope, roles y membresía. Keycloak sandbox tiene el cliente `prestige-mcp-client` provisionado de forma repetible con PKCE S256 y consentimiento. **El recorrido real de consentimiento, llamada de herramientas y aislamiento todavía está pendiente de la verificación OAuth con navegador**; no se declara como validado hasta completar esa prueba.
+
+Verificación de código: backend **1,218/1,218** pruebas (117 archivos), frontend **269/269**, `tsc --noEmit` en ambos proyectos y build Nest del BFF aprobados. El test que excedió el timeout en la primera corrida pasó aislado y en la repetición con concurrencia limitada. También se levantó el BFF en Windows y `/operations/health/ready` devolvió PostgreSQL, Redis y object storage listos; el navegador autenticado mostró el catálogo reducido. El startup de WSL desde `/mnt/c` fue lento y el host Windows rechazó el puerto publicado de Keycloak; por eso **el consentimiento y las llamadas MCP vía OAuth aún no tienen prueba E2E**. La composición móvil de 390×844 fue revisada; no equivale a gestos en un dispositivo físico.
+
+El formato existente «Solicitud de gastos (Adquisiciones)» quedó asociado a `adquisiciones-gastos` v1 con el seed oficial, sin modificar campos, flujo, anexos ni publicación. El dry run posterior confirma que ya no hay cambios pendientes y las 62 filas de responsables permanecen intactas.
+
+Cinco capacidades de alto impacto añadidas: (1) ciclo de vida reversible de procesos; (2) constructor persistente de etapas; (3) preflight más laboratorio real; (4) comparación/restauración e intercambio verificable de paquetes; (5) análisis de impacto y seguimiento filtrado de ejecuciones. Cinco mejoras visuales: (1) catálogo compacto con búsqueda/filtros y una fila por proceso; (2) pasos verticales editables; (3) historial lateral con diferencias; (4) guía visible proceso→flujo→formato→solicitud y contexto de publicación; (5) estados/errores de ejecución, controles por teclado y disposición adaptada a móvil.
+
+Documentación nueva: [PROCESS-STUDIO.md](PROCESS-STUDIO.md) y [MCP-OAUTH.md](MCP-OAUTH.md). Referencias oficiales de autorización: [MCP Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), [SDK TypeScript](https://github.com/modelcontextprotocol/typescript-sdk) y [Keycloak OIDC](https://www.keycloak.org/securing-apps/oidc-layers).
+
+Siguen pendientes los rangos por monto, las equivalencias de seis áreas de Monday, el clúster destino y el resto del backlog de producción (RLS, staging, imágenes/Trivy, Temporal Cloud, OCR, biometría y legal IA, entre otros). La lista de claves conservadas y los formatos que permanecen publicados están descritos arriba.
+
 Fuente: Notion «Prestige: pendientes tras multitenant, deploy y chatbot», página `3fac115a-cdaa-8128-84a9-de319b704baa`, y sesión Claude `1f6cabab-1f4b-45b9-be8d-dae4a55af010`. La sesión terminó después de `bea0a8e` al agotarse su límite semanal. Rama: `develop`.
 
 ## Cambios y evidencia

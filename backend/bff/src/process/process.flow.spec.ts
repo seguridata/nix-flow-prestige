@@ -28,10 +28,11 @@ function svc(existing: Seed[] = []) {
   const rows = existing.map((r, i) => ({
     id: r.id ?? `id${i}`, tenantId: T1, name: 'N', description: null, bpmnXml: '<x/>', dmnXml: null, decisionRules: null, flow: null, published: true, ...r,
   }));
-  const tenantOk = (w: any, r: any) => !w?.tenantId || (typeof w.tenantId === 'string' ? r.tenantId === w.tenantId : w.tenantId.in.includes(r.tenantId));
+  const tenantOk = (w: any, r: any): boolean => w?.OR ? w.OR.some((branch: any) => tenantOk(branch, r)) : !w?.tenantId || (typeof w.tenantId === 'string' ? r.tenantId === w.tenantId : w.tenantId.in.includes(r.tenantId));
   const match = (w: any, r: any) =>
     tenantOk(w, r) && (!w?.key || r.key === w.key) && (w?.version === undefined || r.version === w.version) && (!w?.published || r.published);
   const prisma = {
+    processCatalogPreference: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     processDefinition: {
       findFirst: vi.fn(async ({ where, orderBy }: any = {}) => {
         let list = rows.filter((r) => match(where, r));
@@ -49,7 +50,7 @@ function svc(existing: Seed[] = []) {
     del: vi.fn(async () => undefined),
     withCache: vi.fn(async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader()),
   };
-  return { s: new ProcessService(prisma as any, redis as any), prisma, redis };
+  return { s: new ProcessService(prisma as any, redis as any, {} as any), prisma, redis };
 }
 
 describe('flujos publicables', () => {
@@ -103,7 +104,7 @@ describe('flujos publicables', () => {
   });
 
   it('publicar una versión despublica solo las demás del mismo tenant y clave', async () => {
-    const { s, prisma } = svc([{ key: 'compras', version: 1 }, { key: 'compras', version: 2, id: 'v2' }]);
+    const { s, prisma } = svc([{ key: 'compras', version: 1, flow }, { key: 'compras', version: 2, id: 'v2', flow }]);
     await s.publish('compras', 2, T1);
     expect(prisma.processDefinition.updateMany).toHaveBeenCalledWith({ where: { tenantId: T1, key: 'compras', version: { not: 2 } }, data: { published: false } });
     expect(prisma.processDefinition.update.mock.calls[0]![0]).toMatchObject({ where: { id: 'v2' }, data: { published: true } });
@@ -148,7 +149,7 @@ describe('flujos publicables', () => {
     const out = (await s.list(T1)) as { key: string }[];
     expect(out.map((r) => r.key)).toEqual(['a']);
     expect(redis.withCache.mock.calls[0]![0]).toBe(`process:list:${T1}`);
-    expect(prisma.processDefinition.findMany.mock.calls[0]![0].where).toEqual({ tenantId: { in: [T1, PLATFORM_TENANT] } });
+    expect(prisma.processDefinition.findMany.mock.calls[0]![0].where).toEqual({ OR: [{ tenantId: T1 }, { tenantId: PLATFORM_TENANT }] });
   });
 
   it('getLatest: lo propio tapa a la plataforma, lo ajeno no existe y la caché lleva el tenant', async () => {
@@ -193,7 +194,7 @@ describe('flujos publicables', () => {
       unpublish: vi.fn(), getLatest: vi.fn(async () => ({ bpmnXml: '', key: 'k', version: 1, name: 'n' })), saveXml: vi.fn(), decide: vi.fn(),
     };
     const c = new ProcessController(process as any, {} as any);
-    const u = { tenantId: 'TX' } as AuthenticatedUser;
+    const u = { tenantId: 'TX', roles: ['admin'] } as AuthenticatedUser;
     await c.list({} as any, u);
     await c.list({ published: 'true' } as any, u);
     await c.create({ name: 'n', flow } as any, u);

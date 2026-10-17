@@ -18,7 +18,7 @@ function svc() {
     onboardingCase: { findFirst: vi.fn(async () => null) },
     processAuditEvent: { findMany: vi.fn(async () => []) },
   };
-  const s = new ProcessService(prisma as any, {} as any);
+  const s = new ProcessService(prisma as any, {} as any, {} as any);
   return { prisma, s };
 }
 

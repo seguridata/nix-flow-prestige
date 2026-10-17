@@ -52,7 +52,7 @@ const selectClass =
  * Alta y edición de un formato: PDF base (o formato digital, cuya hoja base genera el sistema), datos,
  * flujo, anexos, colocación de campos y reglas de firma.
  */
-export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: FormatDetail; mode?: FormatKind; proposal?: { name: string; description: string | null; flow: Flow } }) {
+export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: FormatDetail; mode?: FormatKind; proposal?: { name: string; description: string | null; flow: Flow; flowKey?: string; flowVersion?: number } }) {
   const kind: FormatKind = initial?.kind ?? mode;
   const isForm = kind === "FORM";
   const router = useRouter();
@@ -66,7 +66,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
   const [category, setCategory] = useState(initial?.category ?? "");
   const [flow, setFlow] = useState<Flow>(initial?.flow ?? proposal?.flow ?? { ...emptyFlow() });
   const [flowRef, setFlowRef] = useState<{ key: string; version: number } | null>(
-    initial?.flowKey && initial.flowVersion ? { key: initial.flowKey, version: initial.flowVersion } : null,
+    initial?.flowKey && initial.flowVersion ? { key: initial.flowKey, version: initial.flowVersion } : proposal?.flowKey && proposal.flowVersion ? { key: proposal.flowKey, version: proposal.flowVersion } : null,
   );
   const [fields, setFields] = useState<FormatField[]>(initial?.fields ?? []);
   const [boxes, setBoxes] = useState<SignatureBox[]>(initial?.signatureBoxes ?? []);

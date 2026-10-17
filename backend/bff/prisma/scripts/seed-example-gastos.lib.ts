@@ -142,6 +142,9 @@ export interface FormBody {
   description: string;
   category: string;
   flow: Flow;
+  /** Origen versionado del flujo contenido en el formato. */
+  flowKey: string;
+  flowVersion: number;
   methods: string[];
   attachmentSpecs: AttachmentSpec[];
 }
@@ -153,6 +156,8 @@ export function exampleFormBody(): FormBody {
       'Solicitud de gasto o compra. Captura el área, el tipo y concepto de gasto y el monto, adjunta al menos 3 cotizaciones y el sistema envía cada paso a quien corresponde según la matriz de responsables.',
     category: FORM_CATEGORY,
     flow: exampleFlow(),
+    flowKey: 'adquisiciones-gastos',
+    flowVersion: 1,
     // Vacío a propósito: el servicio calcula los métodos según la política de firma del tenant (no se fija ACCEPT).
     methods: [],
     attachmentSpecs: JSON.parse(JSON.stringify(EXAMPLE_ATTACHMENTS)) as AttachmentSpec[],
@@ -183,6 +188,8 @@ export interface FormDetailLike {
   description?: string | null;
   category?: string | null;
   flow: unknown;
+  flowKey?: string | null;
+  flowVersion?: number | null;
   methods: unknown;
   attachmentSpecs: unknown;
 }
@@ -191,6 +198,7 @@ export interface FormDetailLike {
 export function formDiff(current: FormDetailLike, desired: FormBody): string[] {
   const out: string[] = [];
   if (canon(current.flow) !== canon(desired.flow)) out.push('flujo y variables');
+  if ((current.flowKey ?? null) !== desired.flowKey || (current.flowVersion ?? null) !== desired.flowVersion) out.push('flujo asociado');
   const specs = parseAttachmentSpecs(current.attachmentSpecs).specs;
   if (canon(specs) !== canon(parseAttachmentSpecs(desired.attachmentSpecs).specs)) out.push('anexos');
   const methods = (m: unknown) => (Array.isArray(m) ? [...m].map(String).sort() : []);
@@ -219,6 +227,7 @@ export interface TablesPort {
 export interface TemplatesPort {
   list(actor: SeedActor, all: boolean): Promise<{ id: string; name: string }[]>;
   get(id: string, actor: SeedActor): Promise<FormDetailLike>;
+  update(id: string, patch: { flowKey: string; flowVersion: number }, actor: SeedActor): Promise<unknown>;
   createForm(body: unknown, actor: SeedActor): Promise<{ id: string }>;
   setPublished(id: string, published: boolean, actor: SeedActor): Promise<unknown>;
 }
@@ -336,6 +345,12 @@ export async function runSeed(deps: { tables: TablesPort; templates: TemplatesPo
       if (diff.length === 0) {
         add('existe', `Formato «${FORM_NAME}» (${estado}): sin cambios, no se toca. ${methodsText(current.methods)}`);
         if (!current.published) add('pendiente', `El formato «${FORM_NAME}» está sin publicar; publícalo desde la pantalla de formatos (o corre con --force).`);
+      } else if (diff.every((item) => item === 'flujo asociado')) {
+        if (dryRun) would(`asociaría el formato «${FORM_NAME}» con ${desired.flowKey} v${desired.flowVersion} sin cambiar su contenido`);
+        else {
+          await deps.templates.update(found.id, { flowKey: desired.flowKey, flowVersion: desired.flowVersion }, actor);
+          add('creado', `Formato «${FORM_NAME}» asociado con ${desired.flowKey} v${desired.flowVersion}; el documento, campos, flujo y anexos se conservaron.`);
+        }
       } else if (!force) {
         add('pendiente', `El formato «${FORM_NAME}» (${estado}) difiere de lo que arma este script (${diff.join(', ')}). No se sobrescribe; corre con --force para despublicarlo, regenerarlo y publicarlo de nuevo.`);
       } else if (dryRun) {
