@@ -817,6 +817,70 @@ describe('SignatureRequestsService.create — freeze y biometría', () => {
     return { ...ctx, created };
   }
 
+  function associateProcess(ctx: ReturnType<typeof makeCreate>, overrides: { published?: boolean; publishedAt?: Date | null; missing?: boolean; own?: boolean; templateMissing?: boolean } = {}) {
+    const documentTemplate = { findFirst: vi.fn(async () => overrides.templateMissing ? null : { flowKey: 'adquisiciones-gastos', flowVersion: 1 }) };
+    const processDefinition = { findFirst: vi.fn(async ({ where }: { where: { tenantId: string; version?: number } }) => {
+      if (where.version == null) return overrides.own === false ? null : { id: 'own-process' };
+      if (overrides.missing) return null;
+      return { key: 'adquisiciones-gastos', version: 1, flow: { steps: [] }, published: overrides.published ?? true, publishedAt: overrides.publishedAt ?? null };
+    }) };
+    Object.assign((ctx.service as unknown as { prisma: object }).prisma, { documentTemplate, processDefinition });
+    return { documentTemplate, processDefinition };
+  }
+
+  it('atribuye la ejecución y auditoría al proceso persistido del formato, dentro del tenant', async () => {
+    const ctx = makeCreate();
+    const { documentTemplate } = associateProcess(ctx);
+    await ctx.service.create(createBody(), { documentTemplateId: 'tpl-gastos' });
+    expect(documentTemplate.findFirst).toHaveBeenCalledWith({ where: { id: 'tpl-gastos', tenantId: 'seguridata' }, select: { flowKey: true, flowVersion: true } });
+    expect(ctx.workflow.startInstance).toHaveBeenCalledWith('adquisiciones-gastos', 'case-1', expect.objectContaining({ signatureRequestId: 'sr-new' }), 'seguridata');
+    expect(ctx.collab.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'REQUEST_CREATED', payload: expect.objectContaining({ processKey: 'adquisiciones-gastos', processVersion: 1, processDefinitionTenantId: 'seguridata', documentTemplateId: 'tpl-gastos' }) }));
+  });
+
+  it('permite una versión histórica publicada aunque una sucesora sea la publicada actual', async () => {
+    const ctx = makeCreate();
+    associateProcess(ctx, { published: false, publishedAt: new Date('2026-10-01T00:00:00Z') });
+    await ctx.service.create(createBody(), { documentTemplateId: 'tpl-gastos' });
+    expect(ctx.workflow.startInstance).toHaveBeenCalledWith('adquisiciones-gastos', 'case-1', expect.any(Object), 'seguridata');
+  });
+
+  it('rechaza una versión que nunca se publicó antes de congelar o crear una solicitud', async () => {
+    const ctx = makeCreate();
+    associateProcess(ctx, { published: false, publishedAt: null });
+    await expect(ctx.service.create(createBody(), { documentTemplateId: 'tpl-gastos' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(ctx.documents.freeze).not.toHaveBeenCalled();
+    expect(ctx.workflow.startInstance).not.toHaveBeenCalled();
+    expect(ctx.created).toHaveLength(0);
+  });
+
+  it('no recupera versiones de plataforma cuando una definición propia tapa esa clave', async () => {
+    const ctx = makeCreate();
+    const { processDefinition } = associateProcess(ctx, { missing: true });
+    await expect(ctx.service.create(createBody(), { documentTemplateId: 'tpl-gastos' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(processDefinition.findFirst.mock.calls.every(([query]) => query.where.tenantId === 'seguridata')).toBe(true);
+    expect(ctx.created).toHaveLength(0);
+  });
+
+  it('admite la versión publicada de plataforma solo si el tenant no tiene una copia propia', async () => {
+    const ctx = makeCreate();
+    const { processDefinition } = associateProcess(ctx, { own: false });
+    await ctx.service.create(createBody(), { documentTemplateId: 'tpl-gastos' });
+    expect(processDefinition.findFirst.mock.calls[1]![0].where).toEqual({ tenantId: 'platform', key: 'adquisiciones-gastos', version: 1 });
+  });
+
+  it('no acepta un formato ajeno ni inexistente como fuente de ejecución', async () => {
+    const ctx = makeCreate();
+    associateProcess(ctx, { templateMissing: true });
+    await expect(ctx.service.create(createBody(), { documentTemplateId: 'tpl-ajeno' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(ctx.created).toHaveLength(0);
+  });
+
+  it('campos processKey/flowKey/source en el cuerpo no cambian el proceso por defecto', async () => {
+    const ctx = makeCreate();
+    await ctx.service.create({ ...createBody(), processKey: 'ajeno', flowKey: 'adquisiciones-gastos', source: { documentTemplateId: 'tpl-gastos' } } as Parameters<SignatureRequestsService['create']>[0]);
+    expect(ctx.workflow.startInstance).toHaveBeenCalledWith('contratoDosPartes', 'case-1', expect.any(Object), 'seguridata');
+  });
+
   it('congela automáticamente el documento (con verificación de hash) ANTES de crear la solicitud', async () => {
     const { service, documents, created } = makeCreate();
     const order: string[] = [];

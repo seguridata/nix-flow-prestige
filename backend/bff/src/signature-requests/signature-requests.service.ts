@@ -237,6 +237,37 @@ export class SignatureRequestsService {
     return this.prisma.envelopeTemplate.findMany({ where: { tenantId }, orderBy: { name: 'asc' } });
   }
 
+  /**
+   * Internal template execution context. The HTTP creation DTO never supplies it.
+   * A format pins a version: publishing a successor must not invalidate a version
+   * that was already published and remains immutable in the process history.
+   */
+  async assertDocumentTemplateProcess(documentTemplateId: string, tenantId: string) {
+    const template = await this.prisma.documentTemplate.findFirst({
+      where: { id: documentTemplateId, tenantId },
+      select: { flowKey: true, flowVersion: true },
+    });
+    if (!template) throw new NotFoundException('Formato no encontrado');
+    if (!template.flowKey && template.flowVersion == null) return null;
+    if (!template.flowKey || !Number.isInteger(template.flowVersion) || template.flowVersion! < 1) {
+      throw new BadRequestException('La asociación del formato con su flujo está incompleta');
+    }
+    // As in the catalogue, any tenant-owned version shadows the platform key.
+    // Never fall back to a platform version when a tenant override owns this key.
+    const own = await this.prisma.processDefinition.findFirst({
+      where: { tenantId, key: template.flowKey }, select: { id: true },
+    });
+    const sourceTenantId = own ? tenantId : 'platform';
+    const definition = await this.prisma.processDefinition.findFirst({
+      where: { tenantId: sourceTenantId, key: template.flowKey, version: template.flowVersion! },
+      select: { key: true, version: true, published: true, publishedAt: true, flow: true },
+    });
+    if (!definition?.flow || (!definition.published && !definition.publishedAt)) {
+      throw new BadRequestException('La versión del flujo asociada al formato no existe o nunca se publicó. Pide al administrador que revise su asociación.');
+    }
+    return { key: definition.key, version: definition.version, sourceTenantId };
+  }
+
   async create(body: {
     documentId: string;
     templateId?: string;
@@ -249,7 +280,12 @@ export class SignatureRequestsService {
     signers: { signerId: string; name?: string; email?: string; role?: SignerRole }[];
     requirePasskey?: boolean;
     kycPolicy?: KycPolicy;
-  }) {
+  }, source?: { documentTemplateId: string }) {
+    // Only a trusted in-process caller can supply `source`; arbitrary fields
+    // such as processKey/flowKey in the HTTP body cannot select an execution.
+    const templateProcess = source
+      ? await this.assertDocumentTemplateProcess(source.documentTemplateId, body.tenantId)
+      : null;
     let template: { order: SigningOrder; kycPolicy: KycPolicy; allowedMethods: SignatureMethod[]; requirePasskey: boolean; slaHours: number } | null = null;
     if (body.templateId) {
       template = await this.prisma.envelopeTemplate.findFirst({
@@ -337,13 +373,13 @@ export class SignatureRequestsService {
       created.tenantId,
     );
 
-    await this.workflow.startInstance(CONTRATO_DOS_PARTES, doc.caseId ?? created.id, {
+    await this.workflow.startInstance(templateProcess?.key ?? CONTRATO_DOS_PARTES, doc.caseId ?? created.id, {
       signatureRequestId: created.id,
       documentId: created.documentId,
       order: created.order,
       slaHours,
       signers: created.signers.map((s) => ({ signerId: s.signerId, name: s.name ?? undefined })),
-    });
+    }, body.tenantId);
 
     await this.collab.audit({
       signatureRequestId: created.id,
@@ -357,6 +393,9 @@ export class SignatureRequestsService {
         slaHours,
         policyVersion: policy.version,
         policySource: policy.source,
+        ...(source ? { documentTemplateId: source.documentTemplateId } : {}),
+        processKey: templateProcess?.key ?? CONTRATO_DOS_PARTES,
+        ...(templateProcess ? { processVersion: templateProcess.version, processDefinitionTenantId: templateProcess.sourceTenantId } : {}),
       },
     });
     // Aviso in-app: en SECUENCIAL solo al primer firmante del orden; los demás

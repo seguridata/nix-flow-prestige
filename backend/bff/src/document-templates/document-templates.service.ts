@@ -350,6 +350,11 @@ export class DocumentTemplatesService {
 
   async instantiate(id: string, input: InstantiateInput, actor: TemplateActor) {
     const t = await this.visible(id, actor);
+    // Validate a persisted process association before uploading a filled PDF,
+    // creating a case, or consuming staged attachments. Never read it from input.
+    if (t.flowKey || t.flowVersion != null) {
+      await this.requests.assertDocumentTemplateProcess(t.id, actor.tenantId);
+    }
     // 0) Métodos de firma: si la política cambió desde que se guardó el formato, falla aquí, antes de crear nada.
     const policy = await this.signaturePolicy.resolve(actor.tenantId);
     const methods = (t.methods.length ? t.methods : defaultSignatureMethods(policy)) as SignatureMethod[];
@@ -419,7 +424,7 @@ export class DocumentTemplatesService {
       signers: signers.map((s) => ({ signerId: s.signerId, name: s.name, email: s.email, role: s.role })),
       requirePasskey: t.requirePasskey,
       kycPolicy: t.kycPolicy as KycPolicy,
-    });
+    }, t.flowKey || t.flowVersion != null ? { documentTemplateId: t.id } : undefined);
 
     if (attached.length) {
       await this.attachments

@@ -65,7 +65,7 @@ const boxes = [
 const admin: TemplateActor = { tenantId: 'T', actorId: 'roberto', name: 'Roberto', isAdmin: true };
 const empleado: TemplateActor = { tenantId: 'T', actorId: 'maria', name: 'María Pérez', email: 'maria@x.mx', isAdmin: false };
 
-async function setup(over: { published?: boolean; tenantId?: string; objectKey?: string } = {}) {
+async function setup(over: { published?: boolean; tenantId?: string; objectKey?: string; flowKey?: string; flowVersion?: number } = {}) {
   const pdf = await basePdf();
   const row = {
     id: 'tpl1',
@@ -83,8 +83,8 @@ async function setup(over: { published?: boolean; tenantId?: string; objectKey?:
     requirePasskey: false,
     createdBy: 'roberto',
     createdAt: new Date(),
-    flowKey: null,
-    flowVersion: null,
+    flowKey: over.flowKey ?? null,
+    flowVersion: over.flowVersion ?? null,
     description: null,
     category: null,
     hash: 'h',
@@ -108,6 +108,7 @@ async function setup(over: { published?: boolean; tenantId?: string; objectKey?:
   const storage = { getObject: vi.fn(async () => pdf), putObject: vi.fn(), deleteObject: vi.fn() };
   const documents = { create: vi.fn(async (p: any) => ({ id: 'doc1', bytes: p.bytes })) };
   const requests = {
+    assertDocumentTemplateProcess: vi.fn(async () => ({ key: over.flowKey, version: over.flowVersion, sourceTenantId: over.tenantId ?? 'T' })),
     create: vi.fn(async (b: any) => ({
       id: 'sr1',
       signers: b.signers.map((s: any, i: number) => ({ ...s, signerId: `canon:${s.signerId}`, sortOrder: i })),
@@ -121,6 +122,23 @@ async function setup(over: { published?: boolean; tenantId?: string; objectKey?:
 }
 
 describe('instantiate', () => {
+  it('propaga la asociación persistida al contexto interno de ejecución, ignorando claves de proceso del payload', async () => {
+    const { svc, requests } = await setup({ flowKey: 'adquisiciones-gastos', flowVersion: 1 });
+    await svc.instantiate('tpl1', { values: { nombre: 'María Pérez', dias: 3 }, askedSigners: { jefe: { signerId: 'carlos' } }, processKey: 'proceso-inyectado' } as Parameters<DocumentTemplatesService['instantiate']>[1], empleado);
+    expect(requests.assertDocumentTemplateProcess).toHaveBeenCalledWith('tpl1', 'T');
+    expect(requests.create.mock.calls[0]![1]).toEqual({ documentTemplateId: 'tpl1' });
+    expect(requests.create.mock.calls[0]![0]).not.toHaveProperty('processKey');
+  });
+
+  it('una asociación no publicada falla antes de crear expediente, PDF o solicitud', async () => {
+    const { svc, requests, storage, documents, prisma } = await setup({ flowKey: 'adquisiciones-gastos', flowVersion: 1 });
+    requests.assertDocumentTemplateProcess.mockRejectedValue(new BadRequestException('El flujo nunca se publicó'));
+    await expect(svc.instantiate('tpl1', { values: {} }, empleado)).rejects.toBeInstanceOf(BadRequestException);
+    expect(storage.getObject).not.toHaveBeenCalled();
+    expect(prisma.case.create).not.toHaveBeenCalled();
+    expect(documents.create).not.toHaveBeenCalled();
+    expect(requests.create).not.toHaveBeenCalled();
+  });
   it('rellena el PDF, crea expediente + documento y la solicitud con el flujo resuelto', async () => {
     const { svc, documents, requests, prisma, pdf } = await setup();
     const out = await svc.instantiate('tpl1', { values: { nombre: 'María Pérez', dias: 3 }, askedSigners: { jefe: { signerId: 'carlos' } } }, empleado);
