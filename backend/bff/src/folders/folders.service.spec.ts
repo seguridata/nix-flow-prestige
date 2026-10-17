@@ -75,7 +75,7 @@ describe('carpetas personales', () => {
   it('borra una carpeta vacía', async () => {
     const { s, prisma } = svc(tree);
     await s.remove('c', me);
-    expect(prisma.folder.delete).toHaveBeenCalledWith({ where: { id: 'c' } });
+    expect(prisma.folder.delete).toHaveBeenCalledWith({ where: { id: 'c', tenantId: 'T' } });
   });
 
   it('rechaza nombres vacíos', async () => {

@@ -182,7 +182,7 @@ export class FoldersService {
       }
     }
     await this.assertUniqueName(name, parentId, actor, id);
-    return this.prisma.folder.update({ where: { id }, data: { name, parentId } });
+    return this.prisma.folder.update({ where: { id, tenantId: actor.tenantId }, data: { name, parentId } });
   }
 
   /** Solo borra carpetas vacías: nunca se pierde un expediente por accidente. */
@@ -195,7 +195,7 @@ export class FoldersService {
     if (children + cases > 0) {
       throw new ConflictException('La carpeta no está vacía: mueve o elimina su contenido primero');
     }
-    await this.prisma.folder.delete({ where: { id } });
+    await this.prisma.folder.delete({ where: { id, tenantId: actor.tenantId } });
   }
 
   /** Valida que `folderId` sea del usuario (para crear o mover expedientes dentro). */

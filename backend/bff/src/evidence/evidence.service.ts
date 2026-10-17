@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { Prisma, type EvidenceManifest, type Signer } from '@prisma/client';
+import { runAsSystem } from '../prisma/tenant-guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService, assertTenantKey } from '../storage/storage.service';
 import type { EncMeta } from '../storage/object-crypto';
@@ -90,14 +91,14 @@ export class EvidenceService {
     private readonly auditChain: AuditChainService,
   ) {}
 
-  async generateForRequest(signatureRequestId: string): Promise<EvidenceManifest> {
+  async generateForRequest(signatureRequestId: string, tenantId: string): Promise<EvidenceManifest> {
     const existing = await this.prisma.evidenceManifest.findUnique({
-      where: { signatureRequestId },
+      where: { signatureRequestId, tenantId },
     });
     if (existing) return existing; // idempotente: no regenerar si ya existe
 
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: signatureRequestId },
+      where: { id: signatureRequestId, tenantId },
       include: INCLUDE_FOR_MANIFEST,
     });
     if (!request) {
@@ -265,14 +266,14 @@ export class EvidenceService {
       // Carrera: `sign()` (inline) y el activity `sealEvidence` de Temporal
       // pueden llamar a esto casi a la vez. El primero gana; el segundo relee.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const existing = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
+        const existing = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId, tenantId } });
         if (existing) return existing;
       }
       throw error;
     }
 
     // M14 — eventos CloudEvents (best-effort; no rompen el sellado).
-    const tenantId = document.case.tenantId;
+    // tenantId was supplied by the authorized caller.
     await this.webhooks
       .emit(
         cloudEvent({
@@ -341,13 +342,13 @@ export class EvidenceService {
   async findByRequest(signatureRequestId: string, tenantId: string): Promise<EvidenceManifest | null> {
     // Falla cerrado: sin tenant no se devuelve nada (antes se omitía la comparación).
     if (!tenantId) return null;
-    const found = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
+    const found = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId, tenantId } });
     if (found && found.tenantId !== tenantId) return null;
     return found;
   }
 
   async findByManifestId(manifestId: string, tenantId: string): Promise<EvidenceManifest> {
-    const found = await this.prisma.evidenceManifest.findUnique({ where: { manifestId } });
+    const found = await this.prisma.evidenceManifest.findUnique({ where: { manifestId, tenantId } });
     if (!found || !tenantId || found.tenantId !== tenantId) {
       throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
     }
@@ -361,16 +362,18 @@ export class EvidenceService {
    * Nunca usarlo para devolver el manifiesto ni el documento.
    */
   private async findByManifestIdUnscoped(manifestId: string): Promise<EvidenceManifest> {
-    const found = await this.prisma.evidenceManifest.findUnique({ where: { manifestId } });
-    if (!found) throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
-    return found;
+    const scope = await runAsSystem('Verificador publico: resolver solo tenant del manifestId presentado', () =>
+      this.prisma.evidenceManifest.findUnique({ where: { manifestId }, select: { tenantId: true } }),
+    );
+    if (!scope) throw new NotFoundException(`Manifiesto de evidencia ${manifestId} no encontrado`);
+    return this.findByManifestId(manifestId, scope.tenantId);
   }
 
   async verify(manifestId: string): Promise<EvidenceVerificationResult> {
     const manifest = await this.findByManifestIdUnscoped(manifestId);
 
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: manifest.signatureRequestId },
+      where: { id: manifest.signatureRequestId, tenantId: manifest.tenantId },
       include: INCLUDE_FOR_MANIFEST,
     });
     if (!request) {
@@ -516,7 +519,7 @@ export class EvidenceService {
   async buildDossier(manifestId: string, tenantId: string): Promise<EvidenceDossier> {
     const m = await this.findByManifestId(manifestId, tenantId);
     const doc = await this.prisma.document.findUnique({
-      where: { id: m.documentId },
+      where: { id: m.documentId, tenantId },
       select: {
         caseId: true,
         objectKey: true,

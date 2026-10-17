@@ -426,7 +426,7 @@ describe('SignatureRequestsService.sign — idempotencia', () => {
     expect(realtime.notifyDocumentEvent).toHaveBeenNthCalledWith(1, DOCUMENT_ID, expect.objectContaining({ type: 'SIGNATURE_APPLIED' }));
     expect(realtime.notifyDocumentEvent).toHaveBeenNthCalledWith(2, DOCUMENT_ID, expect.objectContaining({ type: 'REQUEST_COMPLETED' }));
     expect(evidence.generateForRequest).toHaveBeenCalledTimes(1);
-    expect(evidence.generateForRequest).toHaveBeenCalledWith(REQUEST_ID);
+    expect(evidence.generateForRequest).toHaveBeenCalledWith(REQUEST_ID, 'seguridata');
   });
 
   it('reintento sobre COMPLETADA SIN evidencia (el post-commit falló) la vuelve a generar y re-señala', async () => {

@@ -14,6 +14,11 @@ import { tenantModels } from './tenant-guard';
 
 const SRC = join(__dirname, '..');
 const MASS = new Set([
+  'findUnique',
+  'findUniqueOrThrow',
+  'update',
+  'delete',
+  'upsert',
   'findMany',
   'findFirst',
   'findFirstOrThrow',
@@ -42,7 +47,8 @@ const isUndefinedLiteral = (p: ts.ObjectLiteralElementLike) =>
 
 /** 'yes' fija tenantId; 'no' seguro que no; 'dyn' no evaluable estáticamente. */
 function hasTenant(node: ts.Expression | undefined): 'yes' | 'no' | 'dyn' {
-  if (!node || !ts.isObjectLiteralExpression(node)) return 'dyn';
+  if (!node) return 'no';
+  if (!ts.isObjectLiteralExpression(node)) return 'dyn';
   let dyn = false;
   for (const p of node.properties) {
     if (ts.isSpreadAssignment(p)) {
@@ -50,9 +56,23 @@ function hasTenant(node: ts.Expression | undefined): 'yes' | 'no' | 'dyn' {
       continue;
     }
     const k = keyOf(p);
-    if (k === 'tenantId' || k?.startsWith('tenantId_')) {
+    if (k === 'tenantId') {
       if (isUndefinedLiteral(p)) continue;
+      if (ts.isPropertyAssignment(p)) {
+        const value = p.initializer;
+        if (value.kind === ts.SyntaxKind.NullKeyword) continue;
+        if (ts.isStringLiteral(value) && !value.text.trim()) continue;
+        if (ts.isObjectLiteralExpression(value)) {
+          const equals = value.properties.find(e => keyOf(e) === 'equals');
+          if (!equals || isUndefinedLiteral(equals)) continue;
+        }
+      }
       return 'yes';
+    }
+    if (k?.split('_').includes('tenantId') && ts.isPropertyAssignment(p)) {
+      const r = hasTenant(p.initializer);
+      if (r === 'yes') return 'yes';
+      if (r === 'dyn') dyn = true;
     }
     if (k === 'AND' && ts.isPropertyAssignment(p)) {
       const i = p.initializer;
@@ -94,19 +114,17 @@ function violations(): string[] {
           if (MASS.has(op)) {
             if (arg && ts.isObjectLiteralExpression(arg)) {
               const w = arg.properties.find((p) => keyOf(p) === 'where');
-              const where = w && ts.isPropertyAssignment(w) ? w.initializer : undefined;
-              // La guarda deja pasar un where con `id` (direccionado por PK): ver cabecera de tenant-guard.ts.
-              const byId =
-                where && ts.isObjectLiteralExpression(where) && where.properties.some((p) => keyOf(p) === 'id');
-              bad = hasTenant(where) === 'no' && !byId;
+              const where = w && ts.isPropertyAssignment(w) ? w.initializer : w && ts.isShorthandPropertyAssignment(w) ? w.name : undefined;
+              bad = hasTenant(where) === 'no';
             } else if (!arg) {
               bad = true;
             }
-          } else if (CREATES.has(op) && arg && ts.isObjectLiteralExpression(arg)) {
+          }
+          if (CREATES.has(op) && arg && ts.isObjectLiteralExpression(arg)) {
             const key = op === 'upsert' ? 'create' : 'data';
             const d = arg.properties.find((p) => keyOf(p) === key);
-            const data = d && ts.isPropertyAssignment(d) ? d.initializer : undefined;
-            bad = hasTenant(data) === 'no';
+            const data = d && ts.isPropertyAssignment(d) ? d.initializer : d && ts.isShorthandPropertyAssignment(d) ? d.name : undefined;
+            bad ||= hasTenant(data) === 'no';
           }
           if (bad && !insideRunAsSystem(n)) {
             const { line } = sf.getLineAndCharacterOfPosition(n.getStart());
@@ -122,7 +140,7 @@ function violations(): string[] {
 }
 
 describe('TENANT_GUARD: barrido estático de backend/bff/src', () => {
-  it('ninguna consulta masiva o alta sobre modelos con tenantId queda sin acotar', () => {
+  it('ninguna lectura, escritura o alta sobre modelos con tenantId queda sin acotar', () => {
     expect(violations()).toEqual([]);
   });
 

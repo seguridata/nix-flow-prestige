@@ -113,7 +113,7 @@ async function enroll(s: ReturnType<typeof setup>, actorId: string, device = new
 }
 
 async function begin(s: ReturnType<typeof setup>, signerId: string) {
-  const { assertionId, options } = await s.ceremony.begin({ signatureRequestId: 'sr-1', signerId });
+  const { assertionId, options } = await s.ceremony.begin({ tenantId: 't1', signatureRequestId: 'sr-1', signerId });
   return { assertionId, challenge: options.challenge };
 }
 
@@ -143,7 +143,7 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
   it('2. begin->finish ok, el contador sube y la aserción se consume una sola vez', async () => {
     const { assertionId, challenge } = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId, response: sign(maria, challenge, { signCount: 7 }) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(maria, challenge, { signCount: 7 }) }),
     ).resolves.toEqual({ ok: true });
     expect(s.credentials[0].counter).toBe(7n);
     const p = { assertionId, tenantId: 't1', signatureRequestId: 'sr-1', signerId: 'maria' };
@@ -154,12 +154,12 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
   it('3. replay de la misma aserción es rechazado', async () => {
     const { assertionId, challenge } = await begin(s, 'maria');
     const res = sign(maria, challenge);
-    await s.ceremony.finish({ assertionId, response: res });
-    await expect(s.ceremony.finish({ assertionId, response: res })).rejects.toMatchObject({ status: 409 });
+    await s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: res });
+    await expect(s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: res })).rejects.toMatchObject({ status: 409 });
     // Una aserción NUEVA con el mismo signCount también cae (contador no avanza).
     const again = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId: again.assertionId, response: sign(maria, again.challenge, { signCount: 1 }) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId: again.assertionId, response: sign(maria, again.challenge, { signCount: 1 }) }),
     ).rejects.toThrow();
   });
 
@@ -168,7 +168,7 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
     for (const signCount of [5, 3]) {
       const { assertionId, challenge } = await begin(s, 'maria');
       await expect(
-        s.ceremony.finish({ assertionId, response: sign(maria, challenge, { signCount }) }),
+        s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(maria, challenge, { signCount }) }),
       ).rejects.toThrow();
     }
     expect(s.credentials[0].counter).toBe(5n);
@@ -180,7 +180,7 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
     const sig = Buffer.from(res.response.signature, 'base64url');
     sig[sig.length - 1] ^= 0x01;
     res.response.signature = sig.toString('base64url');
-    await expect(s.ceremony.finish({ assertionId, response: res })).rejects.toThrow();
+    await expect(s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: res })).rejects.toThrow();
     expect(s.credentials[0].counter).toBe(0n);
   });
 
@@ -188,35 +188,35 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
     const a = await begin(s, 'maria');
     const b = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId: a.assertionId, response: sign(maria, b.challenge) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId: a.assertionId, response: sign(maria, b.challenge) }),
     ).rejects.toThrow();
   });
 
   it('5c. origin distinto es rechazado', async () => {
     const { assertionId, challenge } = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId, response: sign(maria, challenge, { origin: 'https://evil.example' }) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(maria, challenge, { origin: 'https://evil.example' }) }),
     ).rejects.toThrow();
   });
 
   it('5d. rpId distinto es rechazado', async () => {
     const { assertionId, challenge } = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId, response: sign(maria, challenge, { rpID: 'evil.example' }) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(maria, challenge, { rpID: 'evil.example' }) }),
     ).rejects.toThrow();
   });
 
   it('5e. type webauthn.create en lugar de webauthn.get es rechazado', async () => {
     const { assertionId, challenge } = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId, response: sign(maria, challenge, { type: 'webauthn.create' }) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(maria, challenge, { type: 'webauthn.create' }) }),
     ).rejects.toThrow();
   });
 
   it('6. credencial de otro usuario del mismo tenant no satisface al firmante (403)', async () => {
     const carlos = await enroll(s, 'carlos');
     const { assertionId, challenge } = await begin(s, 'maria');
-    const err = await s.ceremony.finish({ assertionId, response: sign(carlos, challenge) }).catch((e) => e);
+    const err = await s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(carlos, challenge) }).catch((e) => e);
     expect(err).toBeInstanceOf(ForbiddenException);
     expect(s.credentials.find((c) => c.userId === 'carlos')!.counter).toBe(0n);
   });
@@ -224,7 +224,7 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
   it('7. aserción sin flag UV es rechazada (userVerification required)', async () => {
     const { assertionId, challenge } = await begin(s, 'maria');
     await expect(
-      s.ceremony.finish({ assertionId, response: sign(maria, challenge, { flags: FLAG_UP }) }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: sign(maria, challenge, { flags: FLAG_UP }) }),
     ).rejects.toThrow();
     expect(s.credentials[0].counter).toBe(0n);
   });
@@ -233,8 +233,8 @@ describe('Passkey con autenticador software (verificación criptográfica real)'
     const { assertionId, challenge } = await begin(s, 'maria');
     const res = sign(maria, challenge);
     const results = await Promise.allSettled([
-      s.ceremony.finish({ assertionId, response: res }),
-      s.ceremony.finish({ assertionId, response: res }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: res }),
+      s.ceremony.finish({ expectedTenantId: 't1', assertionId, response: res }),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);

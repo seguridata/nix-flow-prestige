@@ -10,11 +10,10 @@
  *    valor se perdió y Prisma omite el filtro).
  *  - Altas (`create`, `createMany*`, `upsert`): el dato debe traer `tenantId`.
  *
- * Qué NO valida (decisión consciente): las operaciones por clave única o por `id`
- * (`findUnique*`, `update`, `delete`, o un `where` con `id`). El patrón del código es
- * cargar la fila con `{ id, tenantId }` y luego operar por su PK; exigir `tenantId` en
- * esa segunda llamada duplicaría el filtro sin ganar aislamiento. Si el `id` viene del
- * cliente sin cargarlo antes con tenant, el hueco está en esa carga, que sí se valida.
+ * Las operaciones por clave única (`findUnique*`, `update`, `delete`, `upsert`)
+ * también exigen tenant en el `where`. Un `id` no sustituye al tenant, incluso
+ * después de haber cargado la fila. La guarda comprueba el filtro; el llamador
+ * debe obtener el tenant del actor autorizado, no del cuerpo de la petición.
  *
  * Excepciones: solo `runAsSystem(razon, fn)` junto a una consulta de sistema.
  * No hay exenciones globales por modelo/operación: otro llamador debe fijar tenant.
@@ -61,6 +60,11 @@ export class TenantGuardError extends Error {
 }
 
 const WHERE_OPS = new Set([
+  'findUnique',
+  'findUniqueOrThrow',
+  'update',
+  'delete',
+  'upsert',
   'findMany',
   'findFirst',
   'findFirstOrThrow',
@@ -100,12 +104,16 @@ export function tenantModels(): ReadonlySet<string> {
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
+const tenantValue = (v: unknown): boolean => typeof v === 'string' && v.trim().length > 0;
+const tenantEquality = (v: unknown): boolean => tenantValue(v) ||
+  (isObj(v) && tenantValue(v.equals) && v.mode !== 'insensitive');
 
 /** ¿El `where` fija el tenant en todos los caminos posibles? */
 export function whereHasTenant(where: unknown): boolean {
   if (!isObj(where)) return false;
-  if (where.tenantId !== undefined) return true;
-  if (Object.keys(where).some((k) => k.startsWith('tenantId_') && where[k] !== undefined)) return true;
+  if (tenantEquality(where.tenantId)) return true;
+  if (Object.entries(where).some(([key, value]) => key.split('_').includes('tenantId') &&
+    isObj(value) && tenantValue(value.tenantId))) return true;
   const and = where.AND;
   if (Array.isArray(and) ? and.some(whereHasTenant) : whereHasTenant(and)) return true;
   const or = where.OR;
@@ -113,21 +121,42 @@ export function whereHasTenant(where: unknown): boolean {
 }
 
 const dataHasTenant = (data: unknown): boolean =>
-  Array.isArray(data) ? data.length > 0 && data.every(dataHasTenant) : isObj(data) && data.tenantId !== undefined;
+  Array.isArray(data) ? data.length > 0 && data.every(dataHasTenant) : isObj(data) && tenantValue(data.tenantId);
+
+/** Comprueba que todas las filas seleccionables pertenecen al tenant de una escritura. */
+function whereSelectsTenant(where: unknown, tenantId: string): boolean {
+  if (!isObj(where)) return false;
+  if (where.tenantId === tenantId || (isObj(where.tenantId) && where.tenantId.equals === tenantId &&
+    where.tenantId.mode !== 'insensitive')) return true;
+  if (Object.entries(where).some(([key, value]) => key.split('_').includes('tenantId') &&
+    isObj(value) && value.tenantId === tenantId)) return true;
+  const and = where.AND;
+  if (Array.isArray(and) ? and.some(w => whereSelectsTenant(w, tenantId)) : whereSelectsTenant(and, tenantId)) return true;
+  return Array.isArray(where.OR) && where.OR.length > 0 && where.OR.every(w => whereSelectsTenant(w, tenantId));
+}
 
 /** Devuelve el motivo de rechazo, o `null` si la consulta está acotada (o no aplica). */
 export function tenantViolation(model: string, operation: string, args: unknown): string | null {
   if (!tenantModels().has(model)) return null;
   const a = isObj(args) ? args : {};
   if (WHERE_OPS.has(operation)) {
-    if (whereHasTenant(a.where)) return null;
-    // Direccionada por PK: ver «Qué NO valida» en la cabecera.
-    if (isObj(a.where) && a.where.id !== undefined) return null;
-    return 'sin tenantId en el where';
+    if (!whereHasTenant(a.where)) return 'sin igualdad concreta de tenantId en el where';
   }
   if (CREATE_OPS.has(operation)) {
     const data = operation === 'upsert' ? a.create : a.data;
-    return dataHasTenant(data) ? null : 'sin tenantId en los datos';
+    if (!dataHasTenant(data)) return 'sin tenantId en los datos';
+    if (operation === 'upsert' && !whereSelectsTenant(a.where, (data as Json).tenantId as string)) {
+      return 'tenantId de create no coincide con el where de upsert';
+    }
+  }
+  if (['update', 'updateMany', 'updateManyAndReturn', 'upsert'].includes(operation)) {
+    const data = operation === 'upsert' ? a.update : a.data;
+    if (isObj(data) && Object.prototype.hasOwnProperty.call(data, 'tenantId')) {
+      const nextTenant = isObj(data.tenantId) ? data.tenantId.set : data.tenantId;
+      if (!tenantValue(nextTenant) || !whereSelectsTenant(a.where, nextTenant as string)) {
+        return 'no se permite cambiar el tenantId de una fila';
+      }
+    }
   }
   return null;
 }

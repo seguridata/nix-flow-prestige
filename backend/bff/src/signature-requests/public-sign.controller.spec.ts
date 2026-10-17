@@ -32,12 +32,12 @@ describe('PublicSignController.passkeyFinish', () => {
   it('pasa expectedSignerId del enlace y la respuesta tipada a ceremony.finish', async () => {
     const links = { resolve: vi.fn(async () => ({ purpose: 'sign', signatureRequestId: 'sr-1', signerId: 'ana' })) };
     const passkeys = { finish: vi.fn(async () => ({ ok: true })) };
-    const ctrl = new PublicSignController(links as never, {} as never, {} as never, passkeys as never);
+    const ctrl = new PublicSignController(links as never, {} as never, { signatureRequest: { findUnique: vi.fn(async () => ({ tenantId: 'seguridata' })) } } as never, passkeys as never);
     const response = { id: 'cred', rawId: 'cred', type: 'public-key', response: {}, clientExtensionResults: {} };
 
     await ctrl.passkeyFinish('tok', { assertionId: 'as-1', response } as never);
 
-    expect(passkeys.finish).toHaveBeenCalledWith({ assertionId: 'as-1', response, expectedSignerId: 'ana' });
+    expect(passkeys.finish).toHaveBeenCalledWith({ assertionId: 'as-1', response, expectedSignerId: 'ana', expectedTenantId: 'seguridata' });
   });
 });
 
@@ -109,6 +109,7 @@ describe('PublicSignController.resolve — allowedMethodsNow', () => {
     const prisma = {
       signatureRequest: {
         findUnique: vi.fn(async () => ({
+          tenantId: 'seguridata',
           documentId: 'd',
           document: { filename: 'x.pdf' },
           methods: ['DIGITAL', 'AUTOGRAFA', 'ACCEPT'],
@@ -134,7 +135,7 @@ describe('PublicSignController - bloqueo por token', () => {
   it('una aserción de passkey rechazada suma un fallo al enlace y relanza', async () => {
     const links = { resolve: vi.fn(async () => link), recordFailure: vi.fn(async () => undefined) };
     const passkeys = { finish: vi.fn(async () => { throw new BadRequestException('aserción inválida'); }) };
-    const ctrl = new PublicSignController(links as never, {} as never, {} as never, passkeys as never);
+    const ctrl = new PublicSignController(links as never, {} as never, { signatureRequest: { findUnique: vi.fn(async () => ({ tenantId: 'seguridata' })) } } as never, passkeys as never);
     await expect(ctrl.passkeyFinish('tok', { assertionId: 'a', response: {} } as never)).rejects.toBeInstanceOf(BadRequestException);
     expect(links.recordFailure).toHaveBeenCalledWith('tok');
   });
@@ -172,7 +173,9 @@ describe('PublicSignController.download', () => {
 
   it('entrega la copia firmada como adjunto, audita y NO consume el enlace', async () => {
     const links = { resolve: vi.fn(async () => link), consume: vi.fn() };
-    const prisma = { signatureRequest: { findUnique: vi.fn(async () => completed) } };
+    const prisma = { signatureRequest: { findUnique: vi.fn()
+      .mockResolvedValueOnce({ tenantId: 't1' })
+      .mockResolvedValueOnce(completed) } };
     const documents = { getPresented: vi.fn(async () => ({ bytes: Buffer.from('%PDF-firmado'), filename: 'contrato.pdf' })) };
     const signatureRequests = { recordSignedCopyDownload: vi.fn(async () => undefined) };
     const ctrl = new PublicSignController(links as never, signatureRequests as never, prisma as never, {} as never, documents as never);

@@ -18,6 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { runAsSystem } from '../prisma/tenant-guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { OneTimeLinkService } from '../notifications/one-time-link.service';
 import { PasskeyCeremonyService } from '../webauthn/passkey-ceremony.service';
@@ -69,13 +70,21 @@ export class PublicSignController {
     }
   }
 
+  private async tenantForLink(signatureRequestId: string): Promise<string> {
+    const scope = await runAsSystem('Portal publico: resolver tenant desde enlace de un uso ya validado', () =>
+      this.prisma.signatureRequest.findUnique({ where: { id: signatureRequestId }, select: { tenantId: true } }),
+    );
+    if (!scope?.tenantId) throw new NotFoundException('La solicitud del enlace no existe');
+    return scope.tenantId;
+  }
+
   @Public()
   @Get(':token')
   async resolve(@Param('token') token: string) {
     const link = await this.links.resolve(token);
     const request = link.signatureRequestId
       ? await this.prisma.signatureRequest.findUnique({
-          where: { id: link.signatureRequestId },
+          where: { id: link.signatureRequestId, tenantId: await this.tenantForLink(link.signatureRequestId) },
           include: { signers: true, document: true },
         })
       : null;
@@ -123,7 +132,7 @@ export class PublicSignController {
   async passkeyBegin(@Param('token') token: string) {
     const link = await this.links.resolve(token);
     if (!link.signatureRequestId) throw new BadRequestException('El enlace no tiene solicitud asociada');
-    return this.passkeys.begin({ signatureRequestId: link.signatureRequestId, signerId: link.signerId });
+    return this.passkeys.begin({ signatureRequestId: link.signatureRequestId, signerId: link.signerId, tenantId: await this.tenantForLink(link.signatureRequestId) });
   }
 
   @Public()
@@ -133,6 +142,8 @@ export class PublicSignController {
     // verificar una aserción sobre esa ceremonia; no lo consume — eso lo
     // hace `sign()`.
     const link = await this.links.resolve(token);
+    if (!link.signatureRequestId) throw new BadRequestException('El enlace no tiene solicitud asociada');
+    const tenantId = await this.tenantForLink(link.signatureRequestId);
     // La aserción debe pertenecer al firmante dueño del enlace (no basta con
     // conocer un assertionId ajeno).
     return this.guarded(token, () =>
@@ -140,6 +151,7 @@ export class PublicSignController {
         assertionId: body.assertionId,
         response: body.response,
         expectedSignerId: link.signerId,
+        expectedTenantId: tenantId,
       }),
     );
   }
@@ -228,7 +240,7 @@ export class PublicSignController {
     const link = await this.links.resolve(token, 'download');
     if (!link.signatureRequestId) throw new NotFoundException('El enlace no tiene solicitud asociada');
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: link.signatureRequestId },
+      where: { id: link.signatureRequestId, tenantId: await this.tenantForLink(link.signatureRequestId) },
       select: { id: true, status: true, documentId: true, document: { select: { tenantId: true } } },
     });
     if (!request || request.status !== 'COMPLETADA') {

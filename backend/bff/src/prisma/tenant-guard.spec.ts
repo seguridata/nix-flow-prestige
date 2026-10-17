@@ -42,20 +42,54 @@ describe('tenant-guard', () => {
     expect(whereHasTenant({ OR: [] })).toBe(false);
   });
 
-  it('escrituras masivas y altas exigen tenant; por id o unique no', () => {
+  it('escrituras masivas, claves únicas y altas exigen tenant', () => {
     expect(tenantViolation('HumanTask', 'updateMany', { where: { signerId: 'x' }, data: {} })).toMatch(/where/);
-    expect(tenantViolation('HumanTask', 'updateMany', { where: { id: 't1' }, data: {} })).toBeNull();
+    expect(tenantViolation('HumanTask', 'updateMany', { where: { id: 't1' }, data: {} })).toMatch(/where/);
     expect(tenantViolation('HumanTask', 'deleteMany', { where: { tenantId: 'a' } })).toBeNull();
     expect(tenantViolation('Document', 'create', { data: { filename: 'x' } })).toMatch(/datos/);
     expect(tenantViolation('Document', 'create', { data: { tenantId: 'a' } })).toBeNull();
     expect(tenantViolation('Document', 'createMany', { data: [{ tenantId: 'a' }, { filename: 'x' }] })).toMatch(
       /datos/,
     );
-    expect(tenantViolation('OutOfOffice', 'upsert', { where: {}, create: { userId: 'u' }, update: {} })).toMatch(
+    expect(tenantViolation('OutOfOffice', 'upsert', { where: { tenantId_userId: { tenantId: 'a', userId: 'u' } }, create: { userId: 'u' }, update: {} })).toMatch(
       /datos/,
     );
-    expect(tenantViolation('Document', 'findUnique', { where: { id: 'd' } })).toBeNull();
+    expect(tenantViolation('Document', 'findUnique', { where: { id: 'd' } })).toMatch(/where/);
     expect(tenantViolation('AuditAnchor', 'findMany', {})).toBeNull();
+  });
+
+  it.each(['findUnique', 'findUniqueOrThrow', 'update', 'delete', 'upsert', 'updateMany', 'deleteMany'])(
+    '%s no acepta una clave como sustituto de tenant', (operation) => {
+      const args = { where: { id: 'victim' }, create: { tenantId: 'a' }, data: {}, update: {} };
+      expect(() => checkTenantScope('Document', operation, args, enforce)).toThrow(TenantGuardError);
+      expect(() => checkTenantScope('Document', operation, { ...args, where: { id: 'victim', tenantId: 'a' } }, enforce)).not.toThrow();
+    },
+  );
+
+  it.each([undefined, null, '', '  ', {}, { not: 'b' }, { in: ['a', 'b'] }, { equals: undefined }, { equals: 'a', mode: 'insensitive' }])(
+    'rechaza filtros de tenant sin igualdad concreta: %j', (tenantId) => {
+      expect(whereHasTenant({ tenantId })).toBe(false);
+      expect(whereHasTenant({ tenantId_userId: { tenantId, userId: 'u' } })).toBe(false);
+    },
+  );
+
+  it('la igualdad explícita acota; un nombre de clave compuesta sin tenant interior no', () => {
+    expect(whereHasTenant({ tenantId: { equals: 'a' } })).toBe(true);
+    expect(whereHasTenant({ tenantId_userId: 'a' })).toBe(false);
+    expect(whereHasTenant({ tenantId_userId: {} })).toBe(false);
+    expect(whereHasTenant({ NOT: { tenantId: 'a' } })).toBe(false);
+    expect(whereHasTenant({ AND: [{ OR: [{ tenantId: 'a' }, { userId: 'x' }] }] })).toBe(false);
+  });
+
+  it('una escritura no cambia de tenant y upsert conserva el tenant de búsqueda al crear', () => {
+    for (const operation of ['update', 'updateMany', 'updateManyAndReturn']) {
+      expect(tenantViolation('Document', operation, { where: { id: 'd', tenantId: 'a' }, data: { tenantId: 'b' } })).toMatch(/cambiar/);
+      expect(tenantViolation('Document', operation, { where: { id: 'd', tenantId: 'a' }, data: { tenantId: { set: 'b' } } })).toMatch(/cambiar/);
+      expect(tenantViolation('Document', operation, { where: { id: 'd', tenantId: 'a' }, data: { tenantId: 'a' } })).toBeNull();
+    }
+    expect(tenantViolation('Document', 'upsert', { where: { id: 'd', tenantId: 'a' }, create: { tenantId: 'b' }, update: {} })).toMatch(/coincide/);
+    expect(tenantViolation('Document', 'upsert', { where: { id: 'd', tenantId: 'a' }, create: { tenantId: 'a' }, update: { tenantId: 'b' } })).toMatch(/cambiar/);
+    expect(tenantViolation('OutOfOffice', 'upsert', { where: { tenantId_userId: { tenantId: 'a', userId: 'u' } }, create: { tenantId: 'a' }, update: {} })).toBeNull();
   });
 
   it('solo runAsSystem permite consultas globales y no deja escapar su contexto', async () => {

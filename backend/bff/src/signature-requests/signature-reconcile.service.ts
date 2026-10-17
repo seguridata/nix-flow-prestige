@@ -81,7 +81,7 @@ export class SignatureReconcileService {
         signatureHash: r.signatureHash,
         signedPdf: r.signedPdf,
         reason: r.reason,
-      });
+      }, req.tenantId);
       if (r.status === 'completed') completed += 1;
       else failed += 1;
     }

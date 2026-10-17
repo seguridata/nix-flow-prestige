@@ -1,3 +1,4 @@
+import { runAsSystem } from '../prisma/tenant-guard';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LINK_PLACEHOLDER, NotificationOutboxService } from './notification-outbox.service';
@@ -24,9 +25,13 @@ export class SignerMailService {
     return `${base}${path}`;
   }
 
-  private async context(signatureRequestId: string) {
+  private async context(signatureRequestId: string, tenantId?: string) {
+    const scope = tenantId ? { tenantId } : await runAsSystem('Correo de workflow interno: resolver tenant de solicitud', () => this.prisma.signatureRequest.findUnique({
+      where: { id: signatureRequestId }, select: { tenantId: true },
+    }));
+    if (!scope) return null;
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: signatureRequestId },
+      where: { id: signatureRequestId, tenantId: scope.tenantId },
       include: { signers: true, document: true },
     });
     if (!request) return null;
@@ -46,11 +51,11 @@ export class SignerMailService {
     return issued.url;
   }
 
-  async sendInvites(signatureRequestId: string) {
-    const ctx = await this.context(signatureRequestId);
+  async sendInvites(signatureRequestId: string, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
     if (!ctx) return;
     for (const signer of ctx.request.signers) {
-      await this.sendInvite(signatureRequestId, signer.signerId);
+      await this.sendInvite(signatureRequestId, signer.signerId, ctx.request.tenantId);
     }
   }
 
@@ -59,8 +64,8 @@ export class SignerMailService {
    * se usa al crear (solo el primero) y luego al pasar el turno a cada
    * siguiente. Idempotente por `dedupeKey`.
    */
-  async sendInvite(signatureRequestId: string, signerId: string) {
-    const ctx = await this.context(signatureRequestId);
+  async sendInvite(signatureRequestId: string, signerId: string, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
     if (!ctx) return;
     const signer = ctx.request.signers.find((s) => s.signerId === signerId);
     // Si la firma está delegada, el suplente ya recibió aviso in-app; el correo
@@ -76,8 +81,8 @@ export class SignerMailService {
     await this.enqueue(signer.email, t, 'signInvite', `invite:${signatureRequestId}:${signer.signerId}`, ctx.request.tenantId, url);
   }
 
-  async sendReminder(signatureRequestId: string, signerId: string, ratio: number) {
-    const ctx = await this.context(signatureRequestId);
+  async sendReminder(signatureRequestId: string, signerId: string, ratio: number, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
     if (!ctx) return;
     const signer = ctx.request.signers.find((s) => s.signerId === signerId || s.delegatedTo === signerId);
     const to = this.emailFromSigners(signerId, ctx.request.signers);
@@ -92,8 +97,8 @@ export class SignerMailService {
     await this.enqueue(to, t, 'reminder', `reminder:${signatureRequestId}:${signerId}:${bucket}`, ctx.request.tenantId, url);
   }
 
-  async sendEscalation(signatureRequestId: string, signerLabel: string, ratio: number) {
-    const ctx = await this.context(signatureRequestId);
+  async sendEscalation(signatureRequestId: string, signerLabel: string, ratio: number, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
     if (!ctx) return;
     const recipients = new Set<string>();
     // El emisor sólo recibe correo si su identificador ya es una dirección; no
@@ -111,10 +116,10 @@ export class SignerMailService {
     }
   }
 
-  async sendCompleted(signatureRequestId: string) {
-    const ctx = await this.context(signatureRequestId);
+  async sendCompleted(signatureRequestId: string, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
     if (!ctx) return;
-    const manifest = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId } });
+    const manifest = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId, tenantId: ctx.request.tenantId } });
     const url = manifest
       ? this.appUrl(`/verificar?id=${manifest.manifestId}`)
       : this.appUrl(`/documents/${ctx.request.documentId}`);

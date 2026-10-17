@@ -143,24 +143,24 @@ export class AuditChainService {
   private async deriveTenant(tx: any, input: AuditInput): Promise<string | undefined> {
     try {
       if (input.signatureRequestId) {
-        const r = await tx.signatureRequest?.findUnique({
+        const r = await runAsSystem('Auditoria: resolver tenant del recurso autorizado para evento interno', async () => await tx.signatureRequest?.findUnique({
           where: { id: input.signatureRequestId },
           select: { tenantId: true },
-        });
+        }));
         if (r?.tenantId) return r.tenantId as string;
       }
       if (input.documentId) {
-        const d = await tx.document?.findUnique({
+        const d = await runAsSystem('Auditoria: resolver tenant del recurso autorizado para evento interno', async () => await tx.document?.findUnique({
           where: { id: input.documentId },
           select: { tenantId: true },
-        });
+        }));
         if (d?.tenantId) return d.tenantId as string;
       }
       if (input.onboardingId) {
-        const o = await tx.onboardingCase?.findUnique({
+        const o = await runAsSystem('Auditoria: resolver tenant del recurso autorizado para evento interno', async () => await tx.onboardingCase?.findUnique({
           where: { id: input.onboardingId },
           select: { tenantId: true },
-        });
+        }));
         if (o?.tenantId) return o.tenantId as string;
       }
     } catch (err) {

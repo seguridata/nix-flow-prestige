@@ -51,11 +51,11 @@ function makeService() {
 
   const prisma = {
     signatureRequest: {
-      findUnique: async () => ({
+      findUnique: async ({ where }: { where: { tenantId: string } }) => where.tenantId === 'seguridata' ? ({
         id: 'sr-1',
         tenantId: 'seguridata',
         document: { hash: 'a'.repeat(64) },
-      }),
+      }) : null,
     },
     passkeyCredential: {
       findMany: async ({ where }: { where: { OR: Array<Record<string, string>> } }) => {
@@ -87,7 +87,10 @@ function makeService() {
         assertions.set(id, row);
         return row;
       },
-      findUnique: async ({ where }: { where: { id: string } }) => assertions.get(where.id) ?? null,
+      findUnique: async ({ where }: { where: { id: string; tenantId: string } }) => {
+        const row = assertions.get(where.id);
+        return row?.tenantId === where.tenantId ? row : null;
+      },
       findUniqueOrThrow: async ({ where }: { where: { id: string } }) => assertions.get(where.id)!,
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const row = assertions.get(where.id)!;
@@ -103,7 +106,8 @@ function makeService() {
       }) => {
         const row = assertions.get(where.id as string);
         if (!row) return { count: 0 };
-        if ('tenantId' in where === false) {
+        if ('signatureRequestId' in where === false) {
+          if (row.tenantId !== where.tenantId) return { count: 0 };
           if (row.verifiedAt !== null || row.consumedAt !== null) return { count: 0 };
           Object.assign(row, data);
           return { count: 1 };
@@ -130,10 +134,18 @@ function makeService() {
 const RESPONSE = { id: Buffer.from('cred-1').toString('base64url') } as never;
 
 describe('PasskeyCeremonyService', () => {
+  it('no crea ni resuelve una ceremonia de otro tenant', async () => {
+    const { svc } = makeService();
+    await expect(svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria', tenantId: 'foreign' }))
+      .rejects.toMatchObject({ status: 404 });
+    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria', tenantId: 'seguridata' });
+    await expect(svc.finish({ assertionId, response: RESPONSE, expectedTenantId: 'foreign' }))
+      .rejects.toMatchObject({ status: 404 });
+  });
   it('begin → finish → consume: camino feliz, y consumir dos veces falla', async () => {
     const { svc, audits } = makeService();
-    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
-    await svc.finish({ assertionId, response: RESPONSE });
+    const { assertionId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
+    await svc.finish({ expectedTenantId: 'seguridata', assertionId, response: RESPONSE });
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ action: 'PASSKEY_ASSERTED' });
 
@@ -152,8 +164,8 @@ describe('PasskeyCeremonyService', () => {
 
   it('consume rechaza una aserción de otro firmante o de otra solicitud', async () => {
     const { svc } = makeService();
-    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
-    await svc.finish({ assertionId, response: RESPONSE });
+    const { assertionId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
+    await svc.finish({ expectedTenantId: 'seguridata', assertionId, response: RESPONSE });
 
     await expect(
       svc.consume({ assertionId, tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'carlos' }),
@@ -166,18 +178,18 @@ describe('PasskeyCeremonyService', () => {
   it('finish rechaza si el contador no avanza (replay/clon)', async () => {
     mockCounter.value = 6;
     const { svc } = makeService();
-    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
-    await svc.finish({ assertionId, response: RESPONSE });
+    const { assertionId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
+    await svc.finish({ expectedTenantId: 'seguridata', assertionId, response: RESPONSE });
     // Segunda aserción, mismo credential: contador guardado 6, newCounter 6.
-    const { assertionId: secondId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
-    await expect(svc.finish({ assertionId: secondId, response: RESPONSE })).rejects.toThrow();
+    const { assertionId: secondId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
+    await expect(svc.finish({ expectedTenantId: 'seguridata', assertionId: secondId, response: RESPONSE })).rejects.toThrow();
   });
 
   it('rechaza newCounter=0 cuando el contador guardado es mayor que 0', async () => {
     mockCounter.value = 0;
     const { svc } = makeService();
-    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
-    await expect(svc.finish({ assertionId, response: RESPONSE })).rejects.toMatchObject({
+    const { assertionId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
+    await expect(svc.finish({ expectedTenantId: 'seguridata', assertionId, response: RESPONSE })).rejects.toMatchObject({
       response: { error: 'PASSKEY_REPLAY' },
     });
     mockCounter.value = 6;
@@ -186,14 +198,14 @@ describe('PasskeyCeremonyService', () => {
   it('passkey de otro usuario del mismo tenant es rechazada', async () => {
     mockCounter.value = 6;
     const { svc } = makeService();
-    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
+    const { assertionId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
     const carlos = { id: Buffer.from('cred-2').toString('base64url') } as never;
-    await expect(svc.finish({ assertionId, response: carlos })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.finish({ expectedTenantId: 'seguridata', assertionId, response: carlos })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('begin construye allowCredentials solo con las credenciales del firmante (userId)', async () => {
     const { svc, findManyArgs } = makeService();
-    await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
+    await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
     expect(findManyArgs[0]).toMatchObject({ OR: [{ userId: 'maria' }, { signerId: 'maria' }] });
     const mod = await import('@simplewebauthn/server');
     const call = vi.mocked(mod.generateAuthenticationOptions).mock.calls.at(-1)![0];
@@ -204,9 +216,9 @@ describe('PasskeyCeremonyService', () => {
   it('finish autenticado rechaza una aserción emitida a otro firmante', async () => {
     mockCounter.value = 6;
     const { svc } = makeService();
-    const { assertionId } = await svc.begin({ signatureRequestId: 'sr-1', signerId: 'maria' });
+    const { assertionId } = await svc.begin({ tenantId: 'seguridata', signatureRequestId: 'sr-1', signerId: 'maria' });
     await expect(
-      svc.finish({ assertionId, response: RESPONSE, expectedSignerId: 'carlos' }),
+      svc.finish({ expectedTenantId: 'seguridata', assertionId, response: RESPONSE, expectedSignerId: 'carlos' }),
     ).rejects.toThrow();
   });
 });

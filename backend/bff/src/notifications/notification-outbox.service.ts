@@ -34,6 +34,7 @@ const PUBLIC_SELECT = {
 
 interface ClaimedRow {
   id: string;
+  tenantId: string;
   toAddress: string;
   subject: string;
   body: string;
@@ -176,7 +177,7 @@ export class NotificationOutboxService {
       try {
         await this.mailer.send({ to: row.toAddress, subject: row.subject, html: this.renderBody(row) });
         await this.prisma.notificationOutbox.update({
-          where: { id: row.id },
+          where: { id: row.id, tenantId: row.tenantId },
           // El enlace cifrado ya no hace falta una vez enviado.
           data: {
             status: 'ENVIADO',
@@ -192,7 +193,7 @@ export class NotificationOutboxService {
         const message = error instanceof Error ? error.message : String(error);
         const toDlq = attempts >= row.maxAttempts;
         await this.prisma.notificationOutbox.update({
-          where: { id: row.id },
+          where: { id: row.id, tenantId: row.tenantId },
           data: {
             status: toDlq ? 'DLQ' : 'FALLIDO',
             attempts,
@@ -233,7 +234,7 @@ export class NotificationOutboxService {
     });
     if (!row) throw new NotFoundException(`Mensaje ${id} no encontrado`);
     return this.prisma.notificationOutbox.update({
-      where: { id },
+      where: { id, tenantId },
       data: { status: 'PENDIENTE', nextAttemptAt: new Date(), lastError: null },
       select: PUBLIC_SELECT,
     });

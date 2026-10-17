@@ -117,7 +117,7 @@ export class WorkflowReconcilerService {
     const request = alreadyRestarted
       ? null
       : await this.prisma.signatureRequest.findUnique({
-          where: { id: run.signatureRequestId },
+          where: { id: run.signatureRequestId, tenantId: run.tenantId },
           include: { signers: { orderBy: { sortOrder: 'asc' } } },
         });
 

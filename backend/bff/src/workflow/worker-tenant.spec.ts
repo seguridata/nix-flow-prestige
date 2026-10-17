@@ -103,7 +103,7 @@ describe('canal worker->BFF atado al tenant', () => {
     await svc.seal('sr-1', 'acme');
     await svc.seal('sr-1', 'acme');
     expect(evidence.generateForRequest).toHaveBeenCalledTimes(2);
-    expect(evidence.generateForRequest).toHaveBeenCalledWith('sr-1');
+    expect(evidence.generateForRequest).toHaveBeenCalledWith('sr-1', 'acme');
   });
 
   it('nudge: reintento inmediato no duplica recordatorio y la notificación lleva tenantId', async () => {

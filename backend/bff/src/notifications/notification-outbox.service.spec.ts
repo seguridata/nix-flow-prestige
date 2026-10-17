@@ -17,7 +17,7 @@ interface Row {
   nextAttemptAt: Date;
   sentAt: Date | null;
   dedupeKey: string | null;
-  tenantId: string | null;
+  tenantId: string;
   payload: unknown;
 }
 
@@ -39,7 +39,7 @@ function fakePrisma(seed: Partial<Row>[] = []) {
           nextAttemptAt: r.nextAttemptAt ?? new Date(0),
           sentAt: r.sentAt ?? null,
           dedupeKey: r.dedupeKey ?? null,
-          tenantId: r.tenantId ?? null,
+          tenantId: r.tenantId ?? 'acme',
           payload: r.payload ?? null,
         },
       ];
@@ -92,8 +92,9 @@ function fakePrisma(seed: Partial<Row>[] = []) {
         rows.set(id, row);
         return row;
       },
-      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      update: async ({ where, data }: { where: { id: string; tenantId: string }; data: Record<string, unknown> }) => {
         const r = rows.get(where.id)!;
+        if (!where.tenantId || r.tenantId !== where.tenantId) throw new Error('tenant scope missing or mismatched');
         for (const [k, v] of Object.entries(data)) {
           if (v && typeof v === 'object' && 'increment' in (v as object)) {
             (r as unknown as Record<string, number>)[k] += (v as { increment: number }).increment;

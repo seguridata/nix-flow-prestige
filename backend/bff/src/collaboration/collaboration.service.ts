@@ -137,7 +137,7 @@ export class CollaborationService {
   async addWatcher(signatureRequestId: string, userId: string, tenantId: string, name?: string) {
     await this.assertSignatureRequestInTenant(signatureRequestId, tenantId);
     return this.prisma.processWatcher.upsert({
-      where: { signatureRequestId_userId: { signatureRequestId, userId } },
+      where: { signatureRequestId_userId: { signatureRequestId, userId }, tenantId },
       create: { signatureRequestId, userId, name, tenantId },
       update: { name },
     });

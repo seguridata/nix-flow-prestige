@@ -79,6 +79,20 @@ const field = (documentId: string): SignatureFieldInput => ({
 });
 
 describe('TENANT_GUARD=enforce: el cliente extendido rechaza lo que no fija tenantId (control)', () => {
+  it('claves únicas y filtros amplios se rechazan antes de llegar al motor', async () => {
+    const { client, calls } = makeClient();
+    for (const operation of ['findUnique', 'findUniqueOrThrow', 'update', 'delete', 'upsert']) {
+      await expect(client.document[operation]({ where: { id: 'foreign-document' }, data: {}, create: { tenantId: TENANT }, update: {} }))
+        .rejects.toBeInstanceOf(TenantGuardError);
+    }
+    for (const tenantId of [null, {}, { not: TENANT }, { in: [TENANT, 'foreign'] }]) {
+      await expect(client.document.findMany({ where: { id: { not: '' }, tenantId } })).rejects.toBeInstanceOf(TenantGuardError);
+    }
+    expect(calls).toHaveLength(0);
+    await client.document.findUnique({ where: { id: 'own-document', tenantId: TENANT } });
+    expect(calls).toHaveLength(1);
+  });
+
   it('una consulta masiva sin tenantId SÍ lanza TenantGuardError con este cliente', async () => {
     const { prisma } = makeClient();
     await expect((prisma as any).signatureField.findMany({ where: { documentId: 'd' } })).rejects.toBeInstanceOf(

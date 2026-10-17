@@ -121,7 +121,7 @@ export class WebhooksService {
     const secret = randomBytes(24).toString('base64url');
     const previousSecretUntil = new Date(Date.now() + rotationWindowMs());
     await this.prisma.webhookSubscription.update({
-      where: { id },
+      where: { id, tenantId },
       data: { secret, previousSecret: sub.secret, previousSecretUntil },
     });
     return { id, secret, previousSecretValidUntil: previousSecretUntil.toISOString() };
@@ -135,7 +135,7 @@ export class WebhooksService {
     await this.getOwned(tenantId, id);
     if (body.url) await this.assertUrl(body.url);
     const row = await this.prisma.webhookSubscription.update({
-      where: { id },
+      where: { id, tenantId },
       data: {
         url: body.url,
         events: body.events,
@@ -148,12 +148,12 @@ export class WebhooksService {
 
   async remove(tenantId: string, id: string) {
     await this.getOwned(tenantId, id);
-    await this.prisma.webhookSubscription.delete({ where: { id } });
+    await this.prisma.webhookSubscription.delete({ where: { id, tenantId } });
     return { ok: true };
   }
 
   private async getOwned(tenantId: string, id: string) {
-    const sub = await this.prisma.webhookSubscription.findUnique({ where: { id } });
+    const sub = await this.prisma.webhookSubscription.findUnique({ where: { id, tenantId } });
     if (!sub || sub.tenantId !== tenantId) throw new NotFoundException(`Suscripción ${id} no encontrada`);
     return sub;
   }
@@ -234,7 +234,7 @@ export class WebhooksService {
       if (sub.previousSecret && !prevActive) {
         // Ventana vencida: limpieza oportunista (best-effort).
         await this.prisma.webhookSubscription
-          .update({ where: { id: sub.id }, data: { previousSecret: null, previousSecretUntil: null } })
+          .update({ where: { id: sub.id, tenantId: sub.tenantId }, data: { previousSecret: null, previousSecretUntil: null } })
           .catch(() => undefined);
       }
       const prevSignature = prevActive ? signPayload(sub.previousSecret!, timestamp, body) : undefined;
@@ -311,14 +311,14 @@ export class WebhooksService {
 
   async retryDelivery(tenantId: string, id: string) {
     const row = await this.prisma.webhookDelivery.findUnique({
-      where: { id },
+      where: { id, subscription: { tenantId } },
       include: { subscription: true },
     });
     if (!row || row.subscription.tenantId !== tenantId) {
       throw new NotFoundException(`Entrega ${id} no encontrada`);
     }
     return this.prisma.webhookDelivery.update({
-      where: { id },
+      where: { id, subscription: { tenantId } },
       data: { status: 'PENDIENTE', nextAttemptAt: new Date(), lastError: null },
     });
   }

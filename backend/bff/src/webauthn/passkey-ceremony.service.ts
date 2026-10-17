@@ -26,9 +26,9 @@ export class PasskeyCeremonyService {
     private readonly config: WebauthnConfig,
   ) {}
 
-  async begin(params: { signatureRequestId: string; signerId: string }) {
+  async begin(params: { signatureRequestId: string; signerId: string; tenantId: string }) {
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: params.signatureRequestId },
+      where: { id: params.signatureRequestId, tenantId: params.tenantId },
       include: { document: true },
     });
     if (!request) throw new NotFoundException('Solicitud de firma no encontrada');
@@ -90,7 +90,7 @@ export class PasskeyCeremonyService {
       (s) => s.signerId === user.actorId || s.delegatedTo === user.actorId,
     );
     if (!isSigner) throw new ForbiddenException('No eres firmante de esta solicitud');
-    return this.begin({ signatureRequestId, signerId: user.actorId });
+    return this.begin({ signatureRequestId, signerId: user.actorId, tenantId: user.tenantId });
   }
 
   async finish(params: {
@@ -98,10 +98,10 @@ export class PasskeyCeremonyService {
     response: AuthenticationResponseJSON;
     /** Si se pasa, la aserción debe ser de este firmante (lo usa el endpoint autenticado). */
     expectedSignerId?: string;
-    expectedTenantId?: string;
+    expectedTenantId: string;
   }) {
     const assertion = await this.prisma.passkeyAssertion.findUnique({
-      where: { id: params.assertionId },
+      where: { id: params.assertionId, tenantId: params.expectedTenantId },
     });
     if (!assertion) throw new NotFoundException('Verificación de passkey no encontrada');
     if (
@@ -118,7 +118,7 @@ export class PasskeyCeremonyService {
     }
 
     const credentialId = Buffer.from(params.response.id, 'base64url');
-    const credential = await this.prisma.passkeyCredential.findUnique({ where: { credentialId } });
+    const credential = await this.prisma.passkeyCredential.findUnique({ where: { credentialId, tenantId: assertion.tenantId } });
     if (!credential || credential.tenantId !== assertion.tenantId) {
       throw new NotFoundException('Passkey no registrada para este firmante');
     }
@@ -159,7 +159,7 @@ export class PasskeyCeremonyService {
     // aserción del autenticador no pueden pasar ambos (solo uno ve count 1).
     if (newCounter > 0) {
       const advanced = await this.prisma.passkeyCredential.updateMany({
-        where: { id: credential.id, counter: { lt: BigInt(newCounter) } },
+        where: { id: credential.id, tenantId: assertion.tenantId, counter: { lt: BigInt(newCounter) } },
         data: { counter: BigInt(newCounter) },
       });
       if (advanced.count !== 1) {
@@ -172,7 +172,7 @@ export class PasskeyCeremonyService {
     // Reclamo único de la aserción: si otra petición la resolvió mientras
     // tanto, esta pierde.
     const claimed = await this.prisma.passkeyAssertion.updateMany({
-      where: { id: assertion.id, verifiedAt: null, consumedAt: null },
+      where: { id: assertion.id, tenantId: assertion.tenantId, verifiedAt: null, consumedAt: null },
       data: { verifiedAt: new Date(), credentialId },
     });
     if (claimed.count !== 1) {
@@ -222,7 +222,7 @@ export class PasskeyCeremonyService {
       });
     }
     const row = await this.prisma.passkeyAssertion.findUniqueOrThrow({
-      where: { id: params.assertionId },
+      where: { id: params.assertionId, tenantId: params.tenantId },
     });
     return { credentialId: Buffer.from(row.credentialId!).toString('base64url') };
   }

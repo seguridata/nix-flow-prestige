@@ -73,7 +73,7 @@ export class PasskeyRegistrationService {
     });
     // El challenge es de un solo uso incluso si la verificación falla: un
     // reintento pide uno nuevo, no reutiliza el mismo.
-    await this.prisma.passkeyRegistrationChallenge.delete({ where: { id: pending.id } });
+    await this.prisma.passkeyRegistrationChallenge.delete({ where: { id: pending.id, tenantId: user.tenantId } });
 
     if (!verification.verified || !verification.registrationInfo) {
       throw new ForbiddenException('El registro de la passkey falló');

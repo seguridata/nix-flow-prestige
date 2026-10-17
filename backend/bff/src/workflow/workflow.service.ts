@@ -1,3 +1,4 @@
+import { runAsSystem } from '../prisma/tenant-guard';
 import { temporalConnectionConfig } from '../temporal/connection-config';
 import {
   BadRequestException,
@@ -156,7 +157,7 @@ export class WorkflowService {
     // reconciliador, workflow en curso con id antiguo) se conserva SU id: así un
     // reintento nunca arranca un segundo workflow para la misma solicitud.
     const existingRun = await this.prisma.workflowRun.findUnique({
-      where: { signatureRequestId },
+      where: { signatureRequestId, tenantId: tenant },
       select: { workflowId: true },
     });
     const workflowId =
@@ -175,7 +176,7 @@ export class WorkflowService {
         ...(tenant ? { memo: { tenantId: tenant } } : {}),
       });
       await this.prisma.workflowRun.upsert({
-        where: { signatureRequestId },
+        where: { signatureRequestId, tenantId: tenant },
         create: {
           tenantId: tenant,
           signatureRequestId,
@@ -201,7 +202,7 @@ export class WorkflowService {
       if (isAlreadyStarted(error)) {
         this.log.log(`Flujo ${workflowId} ya iniciado; se reutiliza el run existente`);
         await this.prisma.workflowRun.upsert({
-          where: { signatureRequestId },
+          where: { signatureRequestId, tenantId: tenant },
           create: {
             tenantId: tenant,
             signatureRequestId,
@@ -217,7 +218,7 @@ export class WorkflowService {
       this.log.warn(`Temporal no arrancó el flujo: ${message}`);
       await this.seedTasks(input, workflowId, tenant);
       await this.prisma.workflowRun.upsert({
-        where: { signatureRequestId },
+        where: { signatureRequestId, tenantId: tenant },
         create: {
           tenantId: tenant,
           signatureRequestId,
@@ -239,7 +240,7 @@ export class WorkflowService {
       select: { id: true },
     });
     if (!owned) throw new NotFoundException('Solicitud de firma no encontrada');
-    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
+    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId, tenantId } });
     const tasks = await this.prisma.humanTask.findMany({
       where: { tenantId, signatureRequestId },
       orderBy: { createdAt: 'asc' },
@@ -324,7 +325,7 @@ export class WorkflowService {
     this.assertTaskActor(task, user);
     // Cierre condicionado a que siga abierta (dos completes no la cierran dos veces).
     const res = await this.prisma.humanTask.updateMany({
-      where: { id: task.id, status: { in: OPEN_TASK } },
+      where: { id: task.id, tenantId: user.tenantId, status: { in: OPEN_TASK } },
       data: {
         status: 'COMPLETADA',
         completedAt: new Date(),
@@ -347,7 +348,7 @@ export class WorkflowService {
       throw new ForbiddenException('La tarea ya fue reclamada por otra persona');
     }
     return this.prisma.humanTask.update({
-      where: { id: task.id },
+      where: { id: task.id, tenantId: user.tenantId },
       data: { claimedBy: user.actorId, claimedAt: new Date(), status: 'ASIGNADA' },
     });
   }
@@ -366,7 +367,7 @@ export class WorkflowService {
       : null;
     if (!member) throw new BadRequestException('El destinatario no pertenece a este tenant');
     return this.prisma.humanTask.update({
-      where: { id: task.id },
+      where: { id: task.id, tenantId: user.tenantId },
       data: { signerId: targetUserId, claimedBy: targetUserId, claimedAt: new Date(), status: 'ASIGNADA' },
     });
   }
@@ -387,7 +388,7 @@ export class WorkflowService {
       where: { tenantId, signatureRequestId },
       data: { status: 'CANCELADO' },
     });
-    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
+    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId, tenantId } });
     if (!run?.workflowId) return;
     try {
       const client = await this.client();
@@ -405,10 +406,10 @@ export class WorkflowService {
   }
 
   private async tenantOfRequest(signatureRequestId: string): Promise<string | undefined> {
-    const r = await this.prisma.signatureRequest.findUnique({
+    const r = await runAsSystem('Worker interno: resolver tenant de solicitud por identificador antes de validarlo', () => this.prisma.signatureRequest.findUnique({
       where: { id: signatureRequestId },
       select: { tenantId: true },
-    });
+    }));
     return r?.tenantId;
   }
 
@@ -422,7 +423,7 @@ export class WorkflowService {
       },
       data: { status: 'COMPLETADA', completedAt: new Date() },
     });
-    await this.signal(signatureRequestId, 'sign', signerId);
+    await this.signal(signatureRequestId, 'sign', signerId, tenantId);
   }
 
   async signalRejected(signatureRequestId: string, signerId: string, tenantId: string) {
@@ -430,7 +431,7 @@ export class WorkflowService {
       where: { tenantId, signatureRequestId, status: { in: ['CREADA', 'ASIGNADA'] } },
       data: { status: 'CANCELADA' },
     });
-    await this.signal(signatureRequestId, 'reject', signerId);
+    await this.signal(signatureRequestId, 'reject', signerId, tenantId);
   }
 
   /**
@@ -456,8 +457,9 @@ export class WorkflowService {
 
   /** Prefiere el `WorkflowRun.workflowId` guardado; sin fila, deduce el id. */
   async resolveWorkflowId(signatureRequestId: string, processKey: string, tenantId?: string) {
+    const tenant = await this.resolveTenant(signatureRequestId, tenantId);
     const run = await this.prisma.workflowRun.findUnique({
-      where: { signatureRequestId },
+      where: { signatureRequestId, tenantId: tenant },
       select: { workflowId: true },
     });
     if (run?.workflowId) return run.workflowId;
@@ -513,7 +515,7 @@ export class WorkflowService {
   async expire(signatureRequestId: string, tenantId?: string) {
     const tenant = await this.assertRequestTenant(signatureRequestId, tenantId, 'expire');
     await this.prisma.signatureRequest.updateMany({
-      where: { id: signatureRequestId, status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
+      where: { id: signatureRequestId, tenantId: tenant, status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
       data: { status: 'EXPIRADA' },
     });
     await this.prisma.humanTask.updateMany({
@@ -529,7 +531,7 @@ export class WorkflowService {
   /** Idempotente: `generateForRequest` devuelve el manifiesto existente si ya se generó. */
   async seal(signatureRequestId: string, tenantId?: string) {
     const tenant = await this.assertRequestTenant(signatureRequestId, tenantId, 'seal-evidence');
-    await this.evidence.generateForRequest(signatureRequestId);
+    await this.evidence.generateForRequest(signatureRequestId, tenant);
     await this.prisma.workflowRun.updateMany({
       where: { tenantId: tenant, signatureRequestId },
       data: { status: 'COMPLETADO' },
@@ -543,8 +545,11 @@ export class WorkflowService {
    * los reintentos de Temporal gracias a la ventana `NUDGE_DEDUPE_MS`.
    */
   async nudge(cmd: NudgeCommand) {
+    const tenant = await this.tenantOfRequest(cmd.signatureRequestId);
+    if (!tenant) return { skipped: true as const, reminded: 0, escalated: 0 };
+    if (cmd.tenantId && cmd.tenantId !== tenant) throw new ForbiddenException('El tenant no corresponde a la solicitud');
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: cmd.signatureRequestId },
+      where: { id: cmd.signatureRequestId, tenantId: tenant },
       include: { document: true },
     });
     if (!request) return { skipped: true as const, reminded: 0, escalated: 0 };
@@ -595,7 +600,7 @@ export class WorkflowService {
       if (cmd.kind === 'REMINDER') {
         if (task.lastReminderAt && now - task.lastReminderAt.getTime() < NUDGE_DEDUPE_MS) continue;
         await this.prisma.humanTask.update({
-          where: { id: task.id },
+          where: { id: task.id, tenantId: request.tenantId },
           data: { remindersSent: { increment: 1 }, lastReminderAt: new Date() },
         });
         await this.notifyUser(
@@ -611,13 +616,13 @@ export class WorkflowService {
           remindersSent: task.remindersSent + 1,
         });
         await this.mail
-          .sendReminder(cmd.signatureRequestId, task.signerId, cmd.ratio ?? 0.5)
+          .sendReminder(cmd.signatureRequestId, task.signerId, cmd.ratio ?? 0.5, request.tenantId)
           .catch(() => undefined);
         reminded += 1;
       } else {
         if (task.escalatedAt && now - task.escalatedAt.getTime() < NUDGE_DEDUPE_MS) continue;
         await this.prisma.humanTask.update({
-          where: { id: task.id },
+          where: { id: task.id, tenantId: request.tenantId },
           data: { escalatedAt: new Date(), priority: Math.max(task.priority, 2) },
         });
         for (const uid of [...new Set([...escalationRecipients, task.signerId])]) {
@@ -635,7 +640,7 @@ export class WorkflowService {
           notified: [...new Set([...escalationRecipients, task.signerId])],
         });
         await this.mail
-          .sendEscalation(cmd.signatureRequestId, task.delegatedFrom ?? task.signerId, cmd.ratio ?? 0.9)
+          .sendEscalation(cmd.signatureRequestId, task.delegatedFrom ?? task.signerId, cmd.ratio ?? 0.9, request.tenantId)
           .catch(() => undefined);
         escalated += 1;
       }
@@ -686,8 +691,8 @@ export class WorkflowService {
     return this.auditChain.append({ signatureRequestId, documentId, actorId: 'system', action, payload });
   }
 
-  private async signal(signatureRequestId: string, kind: 'sign' | 'reject', signerId: string) {
-    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId } });
+  private async signal(signatureRequestId: string, kind: 'sign' | 'reject', signerId: string, tenantId: string) {
+    const run = await this.prisma.workflowRun.findUnique({ where: { signatureRequestId, tenantId } });
     if (!run?.workflowId) return;
     try {
       const client = await this.client();

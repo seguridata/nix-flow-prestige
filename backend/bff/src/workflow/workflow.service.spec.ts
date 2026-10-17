@@ -48,6 +48,7 @@ function makeService(opts: {
     signatureRequest: {
       findUnique: async () => ({
         id: 'req-1',
+        tenantId: 'acme',
         status: opts.requestStatus ?? 'EN_FIRMA',
         documentId: 'doc-1',
         requestedBy: opts.requestedBy === undefined ? 'maria' : opts.requestedBy,

@@ -153,7 +153,7 @@ export class OnboardingService {
     const current = await this.load(id, body.tenantId);
     if (current.biometricConsentAt) return publicView(current);
     const updated = await this.prisma.onboardingCase.update({
-      where: { id },
+      where: { id, tenantId: body.tenantId },
       data: {
         biometricConsentAt: new Date(),
         biometricConsentVersion: BIOMETRIC_CONSENT_VERSION,
@@ -235,7 +235,7 @@ export class OnboardingService {
     }
 
     const updated = await this.prisma.onboardingCase.update({
-      where: { id },
+      where: { id, tenantId: body.tenantId },
       data: {
         ineFront: ineFront as unknown as object,
         ineBack: ineBack as unknown as object,
@@ -297,7 +297,7 @@ export class OnboardingService {
 
     const readyForReview = Boolean(current.ineFront && current.ineBack);
     const updated = await this.prisma.onboardingCase.update({
-      where: { id },
+      where: { id, tenantId: body.tenantId },
       data: {
         selfie: selfie as unknown as object,
         livenessHash,
@@ -365,7 +365,7 @@ export class OnboardingService {
     const verified = body.approve === false ? false : auto ? Boolean(check?.ok) : true;
 
     const updated = await this.prisma.onboardingCase.update({
-      where: { id },
+      where: { id, tenantId: body.tenantId },
       data: {
         ineVerified: verified,
         ineCheck: ineCheck as object,
@@ -412,7 +412,7 @@ export class OnboardingService {
         })) > 0,
     );
     const updated = await this.prisma.onboardingCase.update({
-      where: { id },
+      where: { id, tenantId: body.tenantId },
       data: { status: 'HABILITADO', enabledSignerId: signerId },
     });
     await this.collab.audit({
@@ -457,7 +457,7 @@ export class OnboardingService {
   async reject(id: string, body: { actorId: string; actorName?: string; notes?: string; tenantId: string }) {
     const current = await this.load(id, body.tenantId);
     const updated = await this.prisma.onboardingCase.update({
-      where: { id },
+      where: { id, tenantId: body.tenantId },
       data: { status: 'RECHAZADO', notes: body.notes ?? current.notes },
     });
     await this.collab.audit({

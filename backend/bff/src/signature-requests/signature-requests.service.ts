@@ -16,6 +16,7 @@ import type {
   SignerStatus,
   SigningOrder,
 } from '@prisma/client';
+import { runAsSystem } from '../prisma/tenant-guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -178,7 +179,7 @@ export class SignatureRequestsService {
     if (already > 0) return;
 
     const doc = await this.prisma.document.findUnique({
-      where: { id: request.documentId },
+      where: { id: request.documentId, tenantId: request.tenantId },
       select: { filename: true },
     });
     const docTitle = doc?.filename ?? 'un documento';
@@ -453,12 +454,11 @@ export class SignatureRequestsService {
    * de una sesión de usuario: ahí se usa `getOrThrow(id, tenantId)`.
    */
   async getOrThrowUnscoped(id: string) {
-    const found = await this.prisma.signatureRequest.findFirst({
-      where: { id },
-      include: INCLUDE_SIGNERS,
-    });
-    if (!found) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
-    return found;
+    const scope = await runAsSystem('Portal publico: resolver solo tenant de solicitud ligada a token ya validado', () =>
+      this.prisma.signatureRequest.findUnique({ where: { id }, select: { tenantId: true } }),
+    );
+    if (!scope) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
+    return this.getOrThrow(id, scope.tenantId);
   }
 
   /** Estado de la solicitud + `allowedMethodsNow` (métodos usables hoy según el estado del PDF). */
@@ -575,7 +575,7 @@ export class SignatureRequestsService {
   /** Marca la solicitud EXPIRADA (si sigue abierta) y avisa al workflow. */
   private async expire(request: { id: string; documentId: string; tenantId: string }) {
     const closed = await this.prisma.signatureRequest.updateMany({
-      where: { id: request.id, status: { in: OPEN_REQUEST } },
+      where: { id: request.id, tenantId: request.tenantId, status: { in: OPEN_REQUEST } },
       data: { status: 'EXPIRADA' },
     });
     if (closed.count === 0) return;
@@ -596,7 +596,7 @@ export class SignatureRequestsService {
    */
   private async retryCompletion(request: { id: string; tenantId: string }, signerId: string) {
     const manifest = await this.prisma.evidenceManifest.findUnique({
-      where: { signatureRequestId: request.id },
+      where: { signatureRequestId: request.id, tenantId: request.tenantId },
       select: { id: true },
     });
     if (manifest) return;
@@ -604,7 +604,7 @@ export class SignatureRequestsService {
       this.workflow.signalSigned(request.id, signerId, request.tenantId),
     );
     const ok = await this.safe('evidence.generateForRequest(retry)', () =>
-      this.evidence.generateForRequest(request.id),
+      this.evidence.generateForRequest(request.id, request.tenantId),
     );
     if (ok) await this.mail.sendCompleted(request.id).catch(() => undefined);
   }
@@ -692,10 +692,10 @@ export class SignatureRequestsService {
     const result: TxResult = await this.prisma.$transaction(async (tx): Promise<TxResult> => {
       // Serializa las firmas del mismo documento: el PDF presentado se lee,
       // se firma y se reescribe, y no admite dos escritores a la vez.
-      await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${before.documentId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${before.documentId} AND "tenantId" = ${tenantId} FOR UPDATE`;
 
       const request = await tx.signatureRequest.findUnique({
-        where: { id },
+        where: { id, tenantId },
         include: { ...INCLUDE_SIGNERS, document: true },
       });
       if (!request) throw new NotFoundException(`Solicitud de firma ${id} no encontrada`);
@@ -889,7 +889,7 @@ export class SignatureRequestsService {
           },
         });
         const stillPending = await tx.signatureRequest.update({
-          where: { id },
+          where: { id, tenantId },
           data: { status: 'EN_FIRMA' },
           include: INCLUDE_SIGNERS,
         });
@@ -918,7 +918,7 @@ export class SignatureRequestsService {
           tenantId: request.document.tenantId,
         });
         await tx.document.update({
-          where: { id: request.documentId },
+          where: { id: request.documentId, tenantId: request.tenantId },
           data: {
             presentedObjectKey: stored.objectKey,
             presentedEnc: stored.enc as unknown as object,
@@ -945,7 +945,7 @@ export class SignatureRequestsService {
       const allSigned = signersNow.every((s) => s.status === 'FIRMADO');
 
       const updated = await tx.signatureRequest.update({
-        where: { id },
+        where: { id, tenantId },
         data: { status: allSigned ? 'COMPLETADA' : 'EN_FIRMA' },
         include: INCLUDE_SIGNERS,
       });
@@ -1066,7 +1066,7 @@ export class SignatureRequestsService {
         at: now,
       });
       const ok = await this.safe('evidence.generateForRequest', () =>
-        this.evidence.generateForRequest(request.id),
+        this.evidence.generateForRequest(request.id, request.tenantId),
       );
       if (ok) await this.mail.sendCompleted(request.id).catch(() => undefined);
     }
@@ -1083,9 +1083,10 @@ export class SignatureRequestsService {
     signatureRequestId: string,
     signerId: string,
     r: { status: 'completed' | 'failed'; signatureHash?: string; signedPdf?: Buffer; reason?: string },
+    tenantId: string,
   ) {
     const request = await this.prisma.signatureRequest.findUnique({
-      where: { id: signatureRequestId },
+      where: { id: signatureRequestId, tenantId },
       include: { ...INCLUDE_SIGNERS, document: true },
     });
     if (!request || CLOSED_REQUEST.includes(request.status)) return;
@@ -1101,7 +1102,7 @@ export class SignatureRequestsService {
           data: { status: 'RECHAZADO', pendingRef: null, pendingSince: null },
         });
         await tx.signatureRequest.updateMany({
-          where: { id: signatureRequestId, status: { in: OPEN_REQUEST } },
+          where: { id: signatureRequestId, tenantId, status: { in: OPEN_REQUEST } },
           data: { status: 'RECHAZADA' },
         });
       });
@@ -1121,7 +1122,7 @@ export class SignatureRequestsService {
     // completed
     const signatureHash = r.signatureHash ?? request.document.hash;
     const completed = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${request.documentId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${request.documentId} AND "tenantId" = ${request.tenantId} FOR UPDATE`;
       if (r.signedPdf?.length) {
         const stored = await this.storage.putObject({
           prefix: `presented/${request.document.tenantId}`,
@@ -1131,7 +1132,7 @@ export class SignatureRequestsService {
           tenantId: request.document.tenantId,
         });
         await tx.document.update({
-          where: { id: request.documentId },
+          where: { id: request.documentId, tenantId: request.tenantId },
           data: {
             presentedObjectKey: stored.objectKey,
             presentedEnc: stored.enc as unknown as object,
@@ -1146,7 +1147,7 @@ export class SignatureRequestsService {
       const signersNow = await tx.signer.findMany({ where: { signatureRequestId } });
       const allSigned = signersNow.every((s) => s.status === 'FIRMADO');
       return tx.signatureRequest.update({
-        where: { id: signatureRequestId },
+        where: { id: signatureRequestId, tenantId },
         data: { status: allSigned ? 'COMPLETADA' : 'EN_FIRMA' },
         include: INCLUDE_SIGNERS,
       });
@@ -1165,7 +1166,7 @@ export class SignatureRequestsService {
     );
     if (completed.status === 'COMPLETADA') {
       const ok = await this.safe('evidence.generateForRequest(reconcile)', () =>
-        this.evidence.generateForRequest(signatureRequestId),
+        this.evidence.generateForRequest(signatureRequestId, request.tenantId),
       );
       if (ok) await this.mail.sendCompleted(signatureRequestId).catch(() => undefined);
     }

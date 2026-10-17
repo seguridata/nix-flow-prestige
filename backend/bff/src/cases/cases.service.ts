@@ -46,7 +46,7 @@ export class CasesService {
     if (!kase) throw new NotFoundException(`Caso ${id} no encontrado`);
     if (patch.folderId) await this.folders.assertOwned(patch.folderId, actor);
     return this.prisma.case.update({
-      where: { id },
+      where: { id, tenantId: actor.tenantId },
       data: {
         ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
         ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),

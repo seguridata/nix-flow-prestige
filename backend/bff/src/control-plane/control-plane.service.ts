@@ -154,13 +154,13 @@ export class ControlPlaneService implements OnModuleInit {
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.tenant.update({ where: { id: t.id }, data: { active: false } });
       const subs = await tx.webhookSubscription.updateMany({
-        where: { tenantId: { in: [t.id, t.slug] }, active: true },
+        where: { OR: [{ tenantId: t.id }, { tenantId: t.slug }], active: true },
         data: { active: false },
       });
       const deliveries = await tx.webhookDelivery.updateMany({
         where: {
           status: { in: ['PENDIENTE', 'FALLIDO'] },
-          subscription: { tenantId: { in: [t.id, t.slug] } },
+          subscription: { OR: [{ tenantId: t.id }, { tenantId: t.slug }] },
         },
         data: { status: 'DLQ', lastError: 'tenant_suspended' },
       });

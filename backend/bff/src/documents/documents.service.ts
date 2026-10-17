@@ -126,7 +126,7 @@ export class DocumentsService {
       throw new BadRequestException('El archivo no es un PDF válido');
     }
     const kase = await this.prisma.case.findUnique({
-      where: { id: caseId },
+      where: { id: caseId, tenantId },
       select: { id: true, tenantId: true },
     });
     if (!kase || kase.tenantId !== tenantId) throw new NotFoundException(`Caso ${caseId} no encontrado`);
