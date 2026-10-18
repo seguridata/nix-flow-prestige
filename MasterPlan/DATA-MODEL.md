@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # DATA-MODEL P1
 
 Cambios que este paquete pedía sobre `backend/bff/prisma/schema.prisma`. Lo de abajo de "Conservar" es el pedido original (2026-09-26). El delta es el schema real al 2026-10-05 (`fix/p1-hardening`).

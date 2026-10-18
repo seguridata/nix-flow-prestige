@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](MasterPlan/ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Manual de Identidad de Marca — SeguriData
 
 > Documento de referencia para mantener consistencia visual, conceptual y comunicacional en todos los materiales de SeguriData.

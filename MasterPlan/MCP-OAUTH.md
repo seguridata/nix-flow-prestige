@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Prestige MCP con OAuth
 
 Prestige expone un servidor MCP **Streamable HTTP** en `/mcp`, usando el SDK oficial `@modelcontextprotocol/sdk` 1.32.1. Es de solo lectura. Keycloak mantiene el login, consentimiento, sesiones y renovación de tokens; Prestige verifica firma JWKS, issuer, caducidad, audiencia del recurso, scope `prestige:read`, rol y membresía activa. Los tokens web normales no dan acceso a MCP. No se aceptan credenciales en query strings, ni se reenvían tokens a servicios externos.

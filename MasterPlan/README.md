@@ -1,22 +1,26 @@
-# Paquete P1 — Homologación Prestige
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. [`ESTADO-Y-PENDIENTES.md`](ESTADO-Y-PENDIENTES.md) es su espejo en el repo.
 
-**Estado al 2026-10-06.** P1 está cerrado (DoD 11/11). La foto viva es `PROGRESO.md`, que desde esta fecha incluye la sección «UI y producto» (vista Drive, formatos y flujos, PR #5). `fix/p1-hardening` cierra el seguimiento en `663d5f5` y la UI de plantillas en `4981fd2`. `develop` toma esa rama desde `3c98372`.
+# MasterPlan — índice
 
-`REPORTE.md` es la auditoría del commit `d80a296`. No describe el repo de hoy.
+Esta carpeta guarda la documentación técnica vigente de Prestige. El estado y los pendientes **no** viven aquí a mano: se mantienen en Notion y se replican en `ESTADO-Y-PENDIENTES.md`. Los planes por sprint, los reportes de auditoría y las bitácoras de sesión se eliminaron el 17 oct 2026 por desfasados; siguen en el historial de Git.
 
-**Retomando el trabajo (sesión nueva): empieza por `ESTADO-Y-PENDIENTES.md`.** Es el relevo vivo: qué hay en `develop`, qué se decidió, qué falta y cómo seguir. El estado de P1 de abajo es del 2026-10-06; lo posterior (IA, multitenant, tablas de consulta, formatos digitales y anexos) vive en ese archivo y en `ADR-008-TABLAS-DE-CONSULTA-Y-ADJUNTOS.md`.
+Orden de lectura para retomar:
 
-Usar en este orden:
+1. [`ESTADO-Y-PENDIENTES.md`](ESTADO-Y-PENDIENTES.md): dónde estamos, qué falta, decisiones tomadas y reglas de trabajo.
+2. [`AGENTS.md`](AGENTS.md): reglas para quien programa.
+3. [`REQUERIMIENTO-Y-DECISIONES.md`](REQUERIMIENTO-Y-DECISIONES.md): lo que pidió el dueño tal cual y las decisiones D1–D10 que no se re-litigan.
 
-0. `ESTADO-Y-PENDIENTES.md` — **relevo entre sesiones** (estado actual, decisiones, pendientes, trampas)
-1. `PROGRESO.md` — qué hay hoy, sprint por sprint y hardening
-2. `00-FASES.md` — en qué fase estamos
-3. `REPORTE.md` — auditoría histórica y decisiones de entonces
-4. `SPEC.md` — contrato técnico del P1 (el §9 de IdV se reinterpretó)
-5. `DATA-MODEL.md` — modelo pedido y delta contra el schema real
-6. `PLAN-SPRINTS.md` — cómo se ejecutó P1
-7. `P2-KMS.md` — el paso a HSM, cuando se abra
-8. `AGENTS.md` — reglas para quien codea
-9. `CLI.md` — retomar el repo
+Referencia técnica:
 
-El paquete se quedó en `MasterPlan/`. `docs/` está en `.gitignore` salvo `datos-sensibles.md`, así que no hay copia en `docs/p1/`.
+| Documento | Qué explica |
+| --- | --- |
+| [`SPEC.md`](SPEC.md) | Contrato técnico con el que se cerró P1 (auth, tenants, freeze, firma, evidencia). |
+| [`DATA-MODEL.md`](DATA-MODEL.md) | Modelo de datos pedido y diferencias con el esquema real. |
+| [`ARQUITECTURA-MULTITENANT-Y-ESCALA.md`](ARQUITECTURA-MULTITENANT-Y-ESCALA.md) | Aislamiento por tenant, cuellos de botella y ruta de escala. |
+| [`ADR-008-TABLAS-DE-CONSULTA-Y-ADJUNTOS.md`](ADR-008-TABLAS-DE-CONSULTA-Y-ADJUNTOS.md) | Tablas de consulta, formatos digitales y anexos. |
+| [`PROCESS-STUDIO.md`](PROCESS-STUDIO.md) | De un proceso a una solicitud real: catálogo, constructor, laboratorio y versiones. |
+| [`MCP-OAUTH.md`](MCP-OAUTH.md) | Servidor MCP de lectura con OAuth/PKCE y cómo validarlo. |
+| [`PAGINACION-BANDEJA.md`](PAGINACION-BANDEJA.md) | Paginación por cursor de formatos, bandeja y enviados. |
+| [`P2-KMS.md`](P2-KMS.md) | Paso a HSM/PKCS#11 y constancia, cuando se abra. |
+
+Documentación fuera de esta carpeta: `README.md` raíz (cómo levantar el stack), `deploy/` (Kubernetes y validación local), `backend/infra/` (correo, despliegue por tenant, interoperabilidad Adobe), `Documentacion/` (informes de definición, arquitectura, stack, seguridad, procesos y multitenant) y `docs/datos-sensibles.md`.

@@ -1,10 +1,12 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # SPEC P1 — Prestige homologado al plan de cimiento
 
-Versión del contrato: 2026-09-26. Estado de cumplimiento: 2026-10-05, en `PROGRESO.md`.  
+Versión del contrato: 2026-09-26. Estado vigente: `ESTADO-Y-PENDIENTES.md`.  
 Repo: `seguridata/nix-flow-prestige`  
 Stack vigente: Next.js 16 (`frontend/web`) + NestJS BFF (`backend/bff`) + Prisma 6 + PostgreSQL + MinIO + Temporal + Keycloak + Redis.
 
-Este archivo es el contrato con el que se cerró P1. Donde el código se apartó a propósito, manda `PROGRESO.md`: el §9 (puerto `IdvProvider` + `IdvSession` + webhook) se sustituyó por `kycPolicy` sobre el onboarding que ya existía, y `DIGITAL` no es HMAC (§13).
+Este archivo es el contrato con el que se cerró P1. Donde el código se apartó a propósito, manda el código y `ESTADO-Y-PENDIENTES.md`: el §9 (puerto `IdvProvider` + `IdvSession` + webhook) se sustituyó por `kycPolicy` sobre el onboarding que ya existía, y `DIGITAL` no es HMAC (§13).
 
 ## 1. Objetivo
 

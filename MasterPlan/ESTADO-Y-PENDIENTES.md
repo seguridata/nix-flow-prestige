@@ -1,112 +1,105 @@
-# ESTADO Y PENDIENTES — retoma aquí
+> **Espejo de la página de Notion de Prestige** (`3fac115a-cdaa-8128-84a9-de319b704baa`, https://app.notion.com/p/3fac115acdaa812884a9de319b704baa). Notion es la fuente de la verdad: si este archivo difiere, manda Notion. No se edita a mano; se regenera desde Notion al cerrar cada tanda.
 
-> **Actualización 17 oct 2026 — Prestige Studio/MCP OAuth:** ver la [continuidad más reciente](CONTINUIDAD-2026-10-17.md), la [tanda inicial](CONTINUIDAD-2026-10-16.md#tanda-prestige-studio-y-mcp-oauth--16-de-octubre-de-2026), [guía de Procesos](PROCESS-STUDIO.md) y [guía MCP](MCP-OAUTH.md). Catálogo SeguriData reducido de forma reversible; el formato de gastos conserva su contenido y asociación a Adquisiciones v1. Corridas seriales completas: backend 1,243/1,243, frontend 272/272; TypeScript pasó en ambos. Contratos: 61 operaciones cubiertas y 8 pruebas negativas aprobadas. La atribución del workflow y la protección de ediciones BPMN se cerraron. Formatos y bandejas/enviados ya tienen paginación cursorada; ver pruebas en continuidad y [PAGINACION-BANDEJA.md](PAGINACION-BANDEJA.md). Metadata MCP 200 y reto bearer 401 verificados; falta OAuth E2E real. Rangos de aprobación, equivalencias Monday, destino de clúster y pendientes de producción siguen abiertos.
+# Prestige: estado y pendientes — fuente de la verdad (17 oct 2026)
 
-> **Continuación del 16 de octubre:** leer primero [CONTINUIDAD-2026-10-16.md](CONTINUIDAD-2026-10-16.md). Contiene los cambios posteriores a `bea0a8e`, pruebas reales y el incidente WSL/disco. Las casillas históricas siguientes no sustituyen esa actualización.
+> **Fuente de la verdad de Prestige desde el 17 oct 2026.** Esta página manda sobre los `.md` del repo, Monday y cualquier plan histórico. El repo conserva el detalle técnico (ADR, contratos, reglas); aquí vive el estado, los pendientes y las decisiones. Se actualiza al cerrar cada tanda.
 
-> **Léelo primero.** Es el documento de relevo entre sesiones: qué hay hoy, qué se decidió, qué falta y cómo seguir sin perder tiempo.
-> Se actualiza con cada tanda de trabajo. **Última actualización: 2026-10-16**, contra `develop` en `d83c4a0` (más lo marcado «en curso»).
-> La lista viva de pendientes también está en Notion (página «Prestige: pendientes tras multitenant, deploy y chatbot»); este archivo es la copia versionada.
+## Corte vigente
+17 oct 2026
+- Rama `develop`; trabajo directo con commits temáticos. `main` solo recibe el PR que apruebe el dueño.
+- Estado general: la plataforma está implementada en gran parte y probada en sandbox local. **No hay despliegue de producción ni staging validado.** Este corte no volvió a correr pruebas ni a levantar servicios; los números de abajo son los últimos registrados.
+- Contenedores del sandbox arriba al revisar: Keycloak, MinIO, Temporal, Redis, Mailpit y Postgres. BFF y web no se comprobaron.
 
-## 1. Retomar en 5 minutos
+## Realizado
+### Base A/B y producto
+- [x] Identidad OIDC/PKCE, roles, aislamiento de aplicación, canal interno autenticado y portal de enlaces de un uso.
+- [x] Firma digital PAdES real, TSA RFC 3161, evidencia firmada, verificador offline y auditoría encadenada. La confianza productiva y la interoperabilidad externa no se deducen de esto.
+- [x] DMN, recordatorios y delegación, correo con outbox, webhooks/SDK y control plane.
+- [x] Tablas de consulta (solo admin) con 14 operadores, importación/exportación, paginación y resolución de participantes con auditoría.
+- [x] Formatos digitales y anexos: validación por contenido, hash, cifrado AAD, permisos; métodos de firma sujetos a la política del tenant.
+- [x] `UserNotification.tenantId NOT NULL`; huérfanas retiradas por migración.
+- [x] Usuarios reales y membresías en Keycloak local; ficticios retirados. Nueve reglas de responsables, solicitante autenticado, modalidad Compra/Reembolso y 20 previews de ruteo aprobados.
+- [x] 30 objetos antiguos migrados a AAD; 55 referencias verificadas en modo estricto; originales conservados.
+- [x] MinIO local sin root e identidad limitada al bucket.
+- [x] Soporte TLS/API key/mTLS de Temporal Cloud implementado (no hay conexión Cloud validada).
+- [x] Imagen Keycloak de producción probada aislada; imagen BFF construida y comprobada (Node/Prisma). No es despliegue.
+- [x] Chat: borradores visibles, revisión editable y conversión humana a FORM; E2E de navegador con borrador sintético y carga/retiro de PDF.
+- [x] `businessRuleTask` con `prestige:lookup` como variable derivada (solo consultas previas incondicionales).
+- [x] Observabilidad por tenant (span y métricas con `tenant.id`) verificada una vez contra un collector temporal con contexto sintético.
 
-1. Lee en este orden: este archivo → [ADR-008](ADR-008-TABLAS-DE-CONSULTA-Y-ADJUNTOS.md) → [ARQUITECTURA-MULTITENANT-Y-ESCALA.md](ARQUITECTURA-MULTITENANT-Y-ESCALA.md) → [AGENTS.md](AGENTS.md) (reglas duras).
-2. Rama: **`develop`**, commits temáticos **directos, sin PRs** (instrucción del dueño, 2026-10-15). Un PR de `develop` a `main` solo cuando él lo pida y **nunca se fusiona sin avisarle**.
-3. Verificar antes de dar algo por hecho (ver §5): `tsc` y `vitest` de backend y front, y una prueba con HTTP real. No te fíes solo del reporte de un agente.
-4. Stack local: Docker corre **en WSL**; `bun run dev` se ejecuta en WSL sobre la ruta de Windows (nada se copia a WSL). Detalles y trampas en §5.
-5. Trabajo pesado: agentes con **archivos disjuntos**; el esquema de Prisma y las migraciones los hace quien orquesta **antes** de lanzar a los agentes.
+### Process Studio, MCP y paginación
+- [x] Catálogo de procesos con archivo reversible, constructor de etapas, editor BPMN, preflight, laboratorio sin envío, comparación/restauración y paquetes SHA-256.
+- [x] Formato de gastos asociado a `adquisiciones-gastos` v1; solicitudes atribuidas al proceso/versión persistidos (el payload no puede elegir otra); 62 filas de responsables intactas.
+- [x] BPMN conserva XML/deshacer al cambiar de pestaña y protege cambios sin guardar.
+- [x] MCP Streamable HTTP de lectura con cinco herramientas, tenant/actor, issuer/audience/scope/roles/membresía y cliente local PKCE S256. Metadata 200 y sin bearer 401.
+- [x] Formatos, bandeja y enviados con cursor (lotes de 50), validación por tenant/actor, reintento y deduplicación; contrato legado compatible.
+- [x] OpenAPI/Postman actualizados; validador de 61 operaciones.
 
-## 2. Qué existe hoy (en `develop`)
+### Retirado el 17 oct
+- [x] **Collector OpenTelemetry del sandbox** (servicio de compose y `otel-collector.yaml`): no recibía tráfico ni había destino donde guardar datos. El SDK del BFF sigue apagado por defecto y el script `verify-tenant-otlp.ts` se conserva. Se retoma cuando se elija backend en staging.
 
-| Área | Estado | Dónde |
-|---|---|---|
-| IA con Grok (texto a flujo, revisión, PDF a formato), proveedor detrás de `LlmProvider`; la IA **propone y nunca publica** | Hecho, probado de punta a punta | `backend/bff/src/ai` |
-| Chatbot interno que solo guarda borradores (flujo y formato) | Hecho; falta probarlo en vivo contra Grok y en el navegador | `backend/bff/src/chat`, `frontend/web/components/chat` |
-| Aislamiento multitenant: `tenantId` NOT NULL en 7 tablas, `OutOfOffice` por tenant, índices, guarda de tenant | Hecho. **`UserNotification.tenantId` sigue nullable** (ver §4) | `backend/bff/prisma`, `src/prisma/tenant-guard.ts` |
-| Guarda de tenant (ADR-004) | `enforce` por defecto en desarrollo y tests; **producción en `log`** hasta validar staging. Barrido estático como prueba de regresión | `src/prisma/tenant-guard*.ts`, `tenant-id-resolver.ts` |
-| Cifrado con AAD de tenant, tenant validado en `getObject/deleteObject` | Hecho; falta backfill de claves antiguas y re-cifrado | `src/storage` |
-| **Tablas de consulta** (solo admin): 14 operadores, filas ordenadas, import CSV/Excel, exportar, probar consulta, paginación y mover filas | Hecho y verificado | `src/lookup-tables`, `frontend/web/app/tablas-consulta` |
-| Participante `lookup` y variables derivadas en el flujo; resultado congelado en `LOOKUP_RESOLVED` | Hecho | `src/flow`, `src/lookup-tables/flow-resolver.service.ts` |
-| **Formatos digitales** (hoja base generada) y **anexos** (carga previa, validación por contenido real, cifrado, hash) | Hecho y verificado | `src/document-templates`, `src/attachments` |
-| Métodos de firma del formato validados contra la política del tenant | Hecho | `src/document-templates/signature-methods.ts` |
-| **Caso real «Solicitud de gastos (Adquisiciones)»** cargado de ejemplo (`bun run seed:example-gastos`, idempotente) | Hecho. Tabla `responsables-gasto` (53 filas) y `roles-adquisiciones` | `prisma/scripts/seed-example-gastos*.ts`, `src/process/adquisiciones.flows.ts` |
-| Deploy: PKI desde Secret, Keycloak de producción, README de despliegue | Escrito; **nada aplicado a un clúster** | `deploy/`, `backend/docker-compose.prod.yml` |
-| SDK TypeScript regenerado | Hecho | `backend/sdk/typescript/schema.d.ts` |
+## Evidencia y límites
+- Suite backend: 1,243/1,243 (118 archivos). Frontend: 272/272 (34 archivos). TypeScript aprobado en ambos. Registrado antes de consolidar la paginación; no sumar pruebas dirigidas para inventar un total nuevo.
+- Contratos: 61 operaciones, 8/8 pruebas negativas. No es OAuth interactivo.
+- Paginación: pruebas dirigidas backend 10/10, UI/servicios 12/12, validador 8/8. El HTTP usó adaptador de BD de prueba; falta recorrido contra BFF, Keycloak y Postgres persistentes.
+- OAuth MCP: solo metadata 200 y bearer 401. No hay consentimiento ni llamadas autenticadas E2E.
+- Grok: no validado en vivo; el E2E de formatos usó borrador sintético.
+- `digital.adapter.spec` y algún test de firma fallan por carga al correr la suite completa en paralelo y pasan solos.
 
-## 3. Decisiones tomadas
+## Pendientes
+### P0 — Verificación próxima
+- [ ] **OAuth MCP real.** Bloqueado por conectividad Windows↔WSL (Windows no llega al puerto de Keycloak en WSL). Intentos con portproxy/Hyper-V y BFF aislado fallaron y se retiraron. Idea sin probar: red espejo de WSL (`networkingMode=mirrored`). Cierre: login PKCE, consentimiento, token, cinco herramientas, denegaciones por scope/rol/tenant y aislamiento entre dos tenants.
+- [ ] **Paginación contra stack persistente** (formatos, inbox, sent): múltiples páginas, delegación, cambio de tenant/actor, reintento y navegador, sin crear envíos ni firmas de negocio.
+- [ ] **Suite completa posterior** al conjunto final de cambios.
+- [ ] **Grok en vivo:** chatbot, flujo y PDF a formato, con revisión humana; sin documentos sensibles sin aprobación de Legal.
 
-- **2026-10-15** — Sin PRs: commit directo a `develop`. El dueño delega las decisiones («lo mejor para el proyecto, sin que el esfuerzo pese»).
-- **2026-10-16** — Las tablas de consulta son **solo para admin**; el usuario nunca las ve, solo ve «Se enviará a: …».
-- **2026-10-16** — Guarda de tenant en `enforce` fuera de producción; producción en `log` hasta validar staging.
-- **2026-10-16** — Anexos: lectura solo para el dueño del expediente y los participantes de sus solicitudes (ni un admin ajeno); no son firmables.
-- **2026-10-16 (respuestas del dueño en Notion)**
-  - `UserNotification` huérfanas: **borrar** las 11 y contraer la columna a `NOT NULL`.
-  - MinIO: lo decide el equipo técnico → **usuario de servicio sin permisos de raíz y política limitada al bucket** (no usar las credenciales de raíz desde la app).
-  - Temporal en producción: **Temporal Cloud** (o lo que resulte mejor); el de desarrollo no cambia.
-  - Nuevo Director de DDN: **Alejandro Jiménez**, responsable de todo lo de Marketing y CRM.
-  - Reembolsos de gastos de jefes de área: si el solicitante es **Olga García, Alejandro Díaz o Bernardo Calatayud** → autoriza **Javier Alarcón**; si es **Margarita Ramírez, Alejandro Jiménez o Jesús Vázquez** → autoriza **Alberto Yarza**.
-  - Ejecutivo de Administración y Tesorería: **Jesús Vázquez** (editable desde la pantalla de tablas).
-  - Usuarios reales de Keycloak: crear a los responsables de la matriz como administradores y a **`draygoza` (David Raygoza, Admin Master)**; borrar los ficticios (María, Roberto, Carlos). La contraseña la dio el dueño en Notion: **no se escribe en el repo, ni aquí, ni en commits** (cambiarla antes de cualquier uso fuera del sandbox local).
+### P1 — Producción e infraestructura
+- [ ] Staging real con dos tenants; `TENANT_GUARD=enforce` en producción solo tras validar (hoy `log`).
+- [ ] RLS en Postgres (`SET LOCAL app.tenant`) con rol de sistema acotado; auditar operaciones por clave única de la guarda.
+- [ ] Imagen web final, Trivy y ejecución remota del CI (el YAML existe; nunca corrió).
+- [ ] Compose productivo y clúster real: hosts, TLS, Secrets, CIDR de egress, RWX para `prestige-signers`, réplicas y caché de Keycloak, usuarios del entorno real.
+- [ ] Temporal Cloud con endpoint, namespace y credenciales; worker y reconciliador conectados; colas por tier.
+- [ ] Pooling por réplica, backup/PITR con prueba de recuperación, rotación de secretos.
+- [ ] PKCS#11 con módulo y certificado reales; CA de confianza, OCSP/CRL/LTV, QA manual de Adobe.
+- [ ] NOM-151 solo con contrato de un PSC (RFC 3161 no es NOM-151).
+- [ ] MinIO/S3 de producción y AAD estricto verificado en ese entorno.
+- [ ] OCR, biometría y estampado de PDF a Temporal; proveedor biométrico real sujeto a contrato.
+- [ ] Observabilidad: elegir backend (Tempo, Prometheus u otro) y recién entonces reintroducir un collector.
 
-## 4. Pendientes
-
-Convención: `[x]` hecho · `[ ]` pendiente · **(en curso)** lo está haciendo alguien ahora · **(dueño)** necesita un dato o decisión del dueño.
-
-### En curso (tanda del 2026-10-16)
-- [x] `UserNotification.tenantId` a `NOT NULL` (migración que borra las 11 huérfanas, commit `bea0a8e`).
-- [ ] **(en curso)** Cargar a Alejandro Jiménez como responsable de Marketing, CRM y «Aliados» y el ruteo de reembolsos de jefes de área (requiere la variable integrada `solicitante` en las consultas).
-- [ ] **(en curso)** Provisionar usuarios reales en Keycloak y borrar los ficticios (script repetible; la contraseña llega por variable de entorno, nunca en un archivo).
-- [ ] **(en curso)** MinIO sin root, soporte de Temporal Cloud, probar la imagen de Keycloak de producción y el compose de producción en local.
-
-### Datos que faltan (dueño)
-- [ ] **(dueño)** Rangos de monto: el PDF `SD-MATRIZ-APROBACION-GASTO`. El campo `monto` existe pero la tabla aún no decide por rangos.
-- [ ] **(dueño)** Equivalencia de 6 áreas de Monday con la matriz: **VP Tecnología, Comercial, Seguridad-Infraestructura, Logalty, Seguridad 4B, Soporte** (explicación sencilla en Notion). Mientras no se defina, esos pasos le preguntan a quien llena el formato.
-- [ ] **(dueño)** Tres conceptos sin responsable en el Excel: Seguros corporativos (Multimodal), Reparaciones, Licencias, software y actualización.
-- [ ] **(dueño)** Aprobación de legal para enviar texto de documentos al proveedor de IA (ADR-006).
-
-### Técnicos
-- [ ] Activar `TENANT_GUARD=enforce` en producción tras validar un staging real.
-- [ ] RLS en Postgres (`SET LOCAL app.tenant`, rol que omita RLS para ticks y worker), con interruptor y despliegue por etapas.
-- [ ] Cifrado: backfill de claves S3 antiguas, re-cifrado con AAD, adaptar `prisma/scripts/backfill-storage.ts`, exigir AAD en modo estricto.
-- [ ] Cuota de almacenamiento y de solicitudes por tenant (incluye anexos); `tenant.id` en spans y métricas.
-- [ ] PgBouncer o `connection_limit` por réplica; cola de Temporal por tier y secreto de worker por entorno.
-- [ ] Mover OCR, biometría y estampado de PDF a Temporal (hoy dentro de la petición, acotados por semáforo).
-- [ ] CI que construya y escanee las imágenes. Aplicar `deploy/k8s` en un clúster real (`storageClassName` RWX, egress con CIDR reales, hosts, Secrets reales, Keycloak con más de una réplica).
-- [ ] PKCS#11: módulo en la imagen, `graphene-pk11` y certificado de una CA reconocida.
-- [ ] Branding por tenant (hoy fijo «SeguriData»); CA intermedia y `keyId` por tenant en la evidencia.
-- [ ] Exportar y purgar tenants (ADR-007): **destructivo, solo con aprobación explícita del dueño**.
-- [ ] Paginación y virtualización de los listados del front.
-
-### Producto (ADR-008, siguientes fases)
-- [ ] `businessRuleTask` de BPMN como consulta a tabla al convertir a flujo.
-- [ ] Versionado con vigencia y aprobación de cambios de las tablas (configuración sensible).
-- [ ] Fuentes externas sincronizadas (tablero de Monday, hoja de Google) y asistente que propone una tabla desde un Excel (la IA propone, una persona revisa).
+### P2 — Escala y producto
+- [ ] Cuotas de almacenamiento y solicitudes por tenant.
+- [ ] Versionado de tablas con vigencia y aprobación de cambios.
+- [ ] Sincronización con Monday/Google y asistente Excel que solo proponga.
 - [ ] Pasar «Renovación de licenciamiento» y «Proveedores estratégicos» de `ask` a consulta de tabla.
-- [ ] Pantalla para ver y descargar los anexos de un expediente ajeno, si el producto lo necesita.
-- [ ] Chatbot: probar en vivo contra Grok y en el navegador; UI en Formatos que convierta los borradores de formato (hoy en Redis, 30 días) en formatos digitales; mostrar `GET /chat/drafts/templates` en el panel; spec de controller con la app real; siguiente fase: MCP de solo lectura.
-- [ ] Calidad de la IA: conjunto de formatos reales para medir (en un PDF de vacaciones el modelo hizo condicional la firma del jefe en vez de crear el paso de RH).
-- [ ] Probar la carga de anexos con clics reales en el navegador (la API se probó con HTTP real).
-- [ ] Contrato OpenAPI escrito a mano (`backend/contracts/openapi.yaml`) y Postman: añadir las rutas nuevas.
-- [ ] Llevar al repo las pruebas de punta a punta (hoy son scripts del scratchpad de una sesión) como pruebas ejecutables.
+- [ ] Evaluar paginación/virtualización del resto de listados.
+- [ ] Branding, CA intermedia y `keyId` por tenant.
+- [ ] Dataset real de evaluación de IA (en un PDF de vacaciones el modelo hizo condicional la firma del jefe en lugar de crear el paso de RH).
+- [ ] Exportar y purgar tenants (ADR-007); la purga requiere aprobación explícita.
+- [ ] Pantalla de anexos de expediente ajeno, solo si el producto lo requiere.
+- [ ] E2E reproducible en CI (hoy `ci.yml` no tiene paso de navegador) y revisión SAST/SBOM.
+- [ ] Revalidar con evidencia: cajas de firma en editor, limpieza si falla la creación de solicitud, auditoría al publicar/despublicar, claim multiproceso de despachadores (hay advisory lock en el código; falta probar con dos instancias), rate limit del portal y rotación del secreto de webhook.
+- [ ] Riesgo conocido: quien escriba en la base puede quitar el campo `aad` de un `enc` y saltarse el AAD.
 
-## 5. Reglas de trabajo y trampas conocidas
+### Pendientes del dueño
+- [ ] PDF `SD-MATRIZ-APROBACION-GASTO` con los rangos por monto.
+- [ ] Equivalencia de VP Tecnología, Comercial, Seguridad-Infraestructura, Logalty, Seguridad 4B y Soporte con la matriz.
+- [ ] Responsables de Seguros corporativos (Multimodal), Reparaciones y Licencias/software/actualización.
+- [ ] Servidor o clúster destino y parámetros de infraestructura.
+- [ ] Aprobación de Legal para enviar contenido documental al proveedor de IA (ADR-006).
+- [ ] Contratos, endpoints, credenciales y certificados de confianza e identidad de producción.
+- [ ] Definir el piloto (área, documentos, criterio de éxito, runbook y rollback) y cliente o fecha objetivo.
 
-- **Archivos con CRLF**: `sed -i` los pasa a LF y el diff marca todo el archivo. Usa la herramienta de edición o un script que respete CRLF y revisa `git diff --stat` (solo líneas reales). `git ls-files --eol <archivo>` dice cuál es el fin de línea.
-- **El BFF no recompila solo** al editar desde Windows sobre `/mnt/c` (no hay inotify): hay que reiniciar el árbol y la primera compilación tarda ~6 minutos. El front (Next) sí recompila en caliente.
-- **Reiniciar**: detener solo el árbol de `bun scripts/dev.ts` y lo que escucha en 3000 y 3001. **El puerto 4000 es el monitor de otro sistema: no tocarlo ni matar procesos por patrón de ruta.** Relanzar con `bun run dev` desde WSL (cargando `~/.nvm/nvm.sh`; `node` no está en el PATH de un `bash` sin login).
-- **Docker**: los contenedores pueden desaparecer (WSL reiniciado) pero los volúmenes `prestige-sandbox_pgdata` y `_miniodata` persisten; `docker compose up -d postgres` desde `backend/` basta para migrar.
-- **Prisma**: `migrate deploy` y `generate` se corren **en WSL**. Una migración a mano debe coincidir con `schema.prisma` (el CI corre `prisma migrate diff`); se genera con una base shadow temporal.
-- **`tenantId` de negocio es el slug**; `TenantMembership.tenantId` y `Policy.tenantId` guardan el uuid del `Tenant` (usa `TenantIdResolver`, no filtres por la relación `tenant`).
-- **Secretos**: nunca en archivos, commits, Notion ni reportes. `.env` está protegido; usa `.env.example` para los nombres.
-- **Verificación**: `npx tsc --noEmit` y `npx vitest run` desde `backend/bff` y `frontend/web` (Windows). `digital.adapter.spec` y algún test de firma fallan **por carga** al correr toda la suite en paralelo y pasan solos.
-- **Pruebas con HTTP real**: password grant contra Keycloak con `client_id=prestige-web` desde WSL (`curl`); desde Windows `localhost:3000` puede dar timeout.
-- Cada tanda grande: ADR/contrato primero, esquema y migraciones por quien orquesta, agentes con archivos disjuntos, verificación propia, commits temáticos, y **actualizar este archivo y Notion**.
+### Decisiones ya respondidas (no volver a preguntar)
+Borrar notificaciones huérfanas; MinIO sin root y app limitada al bucket; Temporal Cloud; Alejandro Jiménez para Marketing/CRM/Aliados; reembolsos de jefes de área a Javier Alarcón o a Alberto Yarza según el solicitante; Jesús Vázquez en Administración y Tesorería; usuarios reales con `draygoza` Admin Master y ficticios retirados. **No se registran contraseñas.**
 
-## 6. Mapa rápido de archivos
+## Reglas de trabajo
+- Docker, Prisma y `bun run dev -- --no-demo` corren en WSL sobre la ruta Windows. BFF 3000, web 3001. **El puerto 4000 es un monitor ajeno: no tocarlo.**
+- El BFF no recompila solo desde `/mnt/c`: reiniciar el árbol (primera compilación ~6 min). Esperar `/operations/health/ready`.
+- No usar reset, borrar volúmenes ni reiniciar WSL sin evaluar efectos. No escribir secretos ni `.env` en repo, Notion, logs o respuestas.
+- El tenant de negocio es el slug; las membresías usan UUID. Las tablas de consulta son solo admin.
+- La IA propone y una persona revisa. No reescribir bytes de documentos congelados o firmados.
+- Archivos con CRLF: no usar `sed -i`; revisar `git diff --stat`.
+- Al cerrar una tanda: actualizar Notion primero y luego el espejo del repo. No marcar verificaciones externas por pruebas unitarias.
 
-- Tablas de consulta: `backend/bff/src/lookup-tables/` (motor `lookup-engine.ts`, resolvedor `flow-resolver.service.ts`), front `frontend/web/app/tablas-consulta/` y `components/lookup/`.
-- Flujo y participantes: `backend/bff/src/flow/` (`flow.ts`, `flow.types.ts`, `bpmn-to-flow.ts`).
-- Formatos y anexos: `backend/bff/src/document-templates/` (`form-pdf.ts`, `signature-methods.ts`), `backend/bff/src/attachments/`; front `frontend/web/app/formatos/` y `components/formats/`.
-- Caso de Adquisiciones: `backend/bff/src/process/adquisiciones*.ts`, `backend/bff/prisma/scripts/seed-example-gastos*.ts`.
-- Guarda de tenant: `backend/bff/src/prisma/` (`tenant-guard.ts`, `tenant-id-resolver.ts`).
-- Deploy: `deploy/k8s/`, `deploy/keycloak/`, `backend/docker-compose*.yml`.
+## Documentación del repo
+Índice y orden de lectura en `MasterPlan/README.md`. Se eliminaron por desfasados: el plan y el handoff de Fases A/B, el plan por sprints, el reporte de auditoría, el progreso por sprint, las fases, la guía de retoma, las continuidades de 16 y 17 oct y la página `Documentacion/07-estado-y-ruta.html`. Lo vigente de ellos (requerimiento original y decisiones D1–D10) quedó en `MasterPlan/REQUERIMIENTO-Y-DECISIONES.md`; el resto está en el historial de Git.

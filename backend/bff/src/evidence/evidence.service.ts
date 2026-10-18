@@ -649,7 +649,7 @@ export class EvidenceService {
 
     // pack.sha256 — sha256 de cada archivo del expediente hasta este punto;
     // se verifica con `sha256sum -c pack.sha256` desde dentro del ZIP
-    // extraído (objetivo medible #4 de REPORTE.md).
+    // extraído (objetivo medible: reducir la memoria del evidence pack).
     const packSha256 =
       files
         .map((f) => `${createHash('sha256').update(f.content).digest('hex')}  ${f.path}`)

@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Estudio de procesos: de una ruta a una solicitud real
 
 La entrada es **Procesos** (`/process`). El catálogo presenta una tarjeta por proceso. Las versiones anteriores se consultan en **Historial**, en lugar de mezclarse con los procesos disponibles. Los administradores diseñan y publican; las personas remitentes usan los flujos publicados a través de un formato.

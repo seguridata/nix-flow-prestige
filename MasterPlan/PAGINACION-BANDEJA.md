@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Paginación de bandeja y enviados
 
 Implementación del 17 de octubre de 2026. Código y pruebas focales terminados. La prueba contra el BFF/Keycloak/Postgres local activo corresponde al orquestador; las pruebas HTTP de esta tanda usan Nest y servicios reales con un adaptador de base de datos de prueba.

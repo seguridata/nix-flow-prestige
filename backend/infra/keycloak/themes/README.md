@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](../../../../MasterPlan/ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Tema de login de Prestige (Keycloak)
 
 Tema `prestige` (login) sobre `keycloak.v2`: panel carbón con la propuesta de valor y formulario a la derecha, en español. Siempre claro (no sigue el modo oscuro del sistema).

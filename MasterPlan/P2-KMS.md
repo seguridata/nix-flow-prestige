@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # P2 — Custodia PKCS#11 y constancia (una página)
 
 > Fuera del paquete P1 y del hardening ya integrado en `develop` (`1e22320`). El corte de custodia está en `09e6ac3`, rama `feat/p2-pkcs11`. P1 está cerrado. El canónico no se muta y `DIGITAL` ya es PAdES/CAdES. P2 no está cerrado: este sandbox no tiene módulo PKCS#11, ni certificado de una CA que Acrobat reconozca, ni contrato de PSC.

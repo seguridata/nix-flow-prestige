@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](../../../../MasterPlan/ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Propuesta de UI de Prestige: "mostrar la prueba"
 
 Maquetas y traspaso de la propuesta del 5 de octubre de 2026. Las imágenes son **maquetas con datos sintéticos** (nombres, hashes y fechas inventados), generadas en Higgsfield (GPT Image 2.5, calidad alta 2k). Sirven como referencia de calidad y de estructura, no como contrato pixel a pixel.
