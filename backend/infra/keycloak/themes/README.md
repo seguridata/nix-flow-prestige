@@ -40,7 +40,7 @@ Con `start-dev` no hay caché de temas: los cambios en CSS y plantillas se ven a
 |---|---|
 | Paleta | Rojo `#E3121A` (muestreado del logo entregado), plata `#C9CED3`, negro y blanco. Sustituye al verde de SeguriData. No hay especificación oficial pública de la marca. |
 | Archivos | `prestige-tecate/login/theme.properties`, `css/tecate.css`, `img/tecate-logo.png`, `messages/messages_{es,en}.properties` (solo 3 textos propios). |
-| Logo | PNG transparente: va sobre una tarjeta blanca con borde plateado porque el águila y el sombreado son negros. |
+| Logo | PNG transparente, sin tarjeta ni fondo: va directo sobre el panel con un halo blanco fino (`drop-shadow`) que perfila el águila y las sombras negras para que no se pierdan sobre el negro. |
 | Cliente OIDC | `prestige-web-tecate`, con el atributo `login_theme=prestige-tecate`. El tema se asigna **por cliente**, no por realm. |
 | Tenant | Slug `tecate`. El usuario lleva el atributo `tenant=tecate`, que el token expone como claim y el BFF resuelve con `TenantContextGuard`. |
 | Usuario | Un solo administrador: `tecate-admin`, rol `admin` (nunca `platform_admin`), grupo `tecate`. |
