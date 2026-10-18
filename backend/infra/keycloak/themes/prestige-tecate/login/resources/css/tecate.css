@@ -25,14 +25,15 @@
   color: var(--tc-black);
   border-bottom: 6px solid var(--tc-red);
 }
-.prestige-brand__mark { color: var(--tc-black); }
-.prestige-brand__by { color: var(--tc-silver-dark); }
-.prestige-brand__headline { color: var(--tc-black); }
-.prestige-brand__lead { color: #3b3f43; }
-.prestige-brand__foot { color: var(--tc-silver-dark); }
-.prestige-brand__list { border-top-color: #d9dce0; }
-.prestige-brand__list li { border-top-color: #d9dce0; color: var(--tc-red); }
-.prestige-brand__list span { color: var(--tc-black); }
+/* Sobre blanco los textos del tema original (finos y grises) se pierden: más grosor y más oscuros */
+.prestige-brand__mark { color: var(--tc-black); font-weight: 600; letter-spacing: .3em; }
+.prestige-brand__by { color: #2b2f33; font-size: 13px; font-weight: 600; }
+.prestige-brand__headline { color: var(--tc-black); font-weight: 700; }
+.prestige-brand__lead { color: #1f2327; font-size: 17px; font-weight: 500; }
+.prestige-brand__foot { color: #2b2f33; font-size: 13px; font-weight: 500; }
+.prestige-brand__list { border-top-color: #b9bec3; }
+.prestige-brand__list li { border-top-color: #b9bec3; color: var(--tc-red); }
+.prestige-brand__list span { color: var(--tc-black); font-size: 14px; font-weight: 500; }
 
 /* Regla de acento mitad rojo, mitad plata */
 .prestige-brand__rule {
