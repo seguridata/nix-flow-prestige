@@ -42,6 +42,14 @@
 - [x] La demo se retiró completa: cliente, grupo, usuario y tenant `tecate` borrados del sandbox (la base quedó con `seguridata` y `acme`) y su código revertido en el repo. La demo llegó a `main` en el PR #13; el revert está en `develop` y requiere publicarse.
 - La coexistencia entre dos tenants se verificó contra el BFF antes de retirarla: cada usuario ve solo los datos de su tenant y el tema no cambia la pertenencia.
 
+### Despliegue ligero en el servidor (en preparación, 18 oct)
+- Servidor `5.161.61.67` (3.8 GB de RAM, 3 CPU): tras quitar n8n, kronos y ares quedan 23 GB de disco y ~2.2 GB de RAM disponibles; `gea` y `themis` se quedan. Prestige allí necesita ~2.1 GB en reposo si todo es local, por lo que se reparte así: web en Vercel (equipo `Seguridata`), BFF + Keycloak + worker en el servidor, Postgres y Storage en Supabase, Redis de sesiones en Upstash. Estimación total del servidor: ~2.8 a 3.0 GB de 3.8 GB (estimada, sin prueba de carga).
+- Temporal Cloud cuesta desde $100 USD/mes (Essentials); con 4 usuarios no se justifica. Propuesta: Temporal local por ahora (pendiente de confirmar).
+- [x] Proyecto Supabase `Prestige` (`yhovbnxclzyrvsrkotdb`, `us-east-1`, Postgres 17), vacío: 0 tablas y 0 migraciones. Bucket privado `prestige-docs` creado; `storage.objects` con seguridad por fila y sin políticas (nadie con la clave pública lo lee).
+- **Decisión: Supabase Storage** para documentos. Prestige habla S3 por `S3_ENDPOINT`, pero Supabase no ofrece Object Lock ni versionado, así que se pierde el candado GOVERNANCE de 30 días que hoy configura el compose de MinIO. Aceptado para desarrollo; para evidencia con garantía de inmutabilidad habría que usar AWS S3 con Object Lock.
+- Keycloak se mantiene como proveedor de identidad (reemplazarlo por Supabase Auth se descartó por ahora: el BFF depende de las claves `tenant`, `realm_access.roles` y `auth_time`, del step-up y del consentimiento del MCP OAuth).
+- Falta: cadena de conexión de Postgres (Session pooler, puerto 5432) en `backend/bff/.env.supabase`; llave S3 de Storage; dos dominios con HTTPS (API y Keycloak); base de Upstash. Después de migrar: activar RLS y revocar `anon` y `authenticated` en todas las tablas de `public`, porque Supabase las expone por su API de datos.
+
 ### Retirado el 17 oct
 - [x] **Collector OpenTelemetry del sandbox** (servicio de compose y `otel-collector.yaml`): no recibía tráfico ni había destino donde guardar datos. El SDK del BFF sigue apagado por defecto y el script `verify-tenant-otlp.ts` se conserva. Se retoma cuando se elija backend en staging.
 
