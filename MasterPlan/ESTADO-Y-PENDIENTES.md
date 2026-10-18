@@ -38,6 +38,14 @@
 - [x] Formatos, bandeja y enviados con cursor (lotes de 50), validación por tenant/actor, reintento y deduplicación; contrato legado compatible.
 - [x] OpenAPI/Postman actualizados; validador de 61 operaciones.
 
+### Demo de tenants: Tecate (18 oct)
+- [x] Tema de Keycloak `prestige-tecate`, hijo de `prestige`: rojo `#E3121A` (muestreado del logo), plata, negro y blanco en lugar del verde; conserva la marca «PRESTIGE por SeguriData». Verificado visualmente en el navegador junto al original, que no cambió.
+- [x] Cliente OIDC `prestige-web-tecate` (el tema se asigna por cliente), grupo `tecate` y un único usuario `tecate-admin` con rol `admin` y `tenant=tecate`; tenant `tecate` y su membresía creados en la BD del sandbox. Un token real del cliente trae `tenant=tecate`, `azp=prestige-web-tecate` y el rol `admin`.
+- [x] Frontend: `/login?tenant=tecate` abre Keycloak con el cliente del tenant (lista cerrada `OIDC_TENANT_CLIENTS`); refresh y logout usan el mismo cliente que emitió los tokens. BFF: `KEYCLOAK_AUDIENCE` admite varias audiencias separadas por coma.
+- [x] Pruebas nuevas: 3 de cliente por tenant (frontend), 6 del aprovisionamiento y 1 de audiencias múltiples (backend); TypeScript de ambos limpio. No se corrió la suite completa.
+- Límite: el tema por cliente es solo marca; el aislamiento de datos sigue siendo claim `tenant` + membresía. Un realm por tenant daría aislamiento total de identidades pero exigiría que el BFF soporte varios emisores. La contraseña del admin de Tecate no se guarda en el repo ni aquí.
+- Detalle y comandos: `backend/infra/keycloak/themes/README.md`.
+
 ### Retirado el 17 oct
 - [x] **Collector OpenTelemetry del sandbox** (servicio de compose y `otel-collector.yaml`): no recibía tráfico ni había destino donde guardar datos. El SDK del BFF sigue apagado por defecto y el script `verify-tenant-otlp.ts` se conserva. Se retoma cuando se elija backend en staging.
 
@@ -51,7 +59,7 @@
 
 ## Pendientes
 ### P0 — Verificación próxima
-- [ ] **OAuth MCP real.** Bloqueado por conectividad Windows↔WSL (Windows no llega al puerto de Keycloak en WSL). Intentos con portproxy/Hyper-V y BFF aislado fallaron y se retiraron. Idea sin probar: red espejo de WSL (`networkingMode=mirrored`). Cierre: login PKCE, consentimiento, token, cinco herramientas, denegaciones por scope/rol/tenant y aislamiento entre dos tenants.
+- [ ] **OAuth MCP real.** Bloqueado por conectividad Windows↔WSL (Windows no llega al puerto de Keycloak en WSL). Intentos con portproxy/Hyper-V y BFF aislado fallaron y se retiraron. **Novedad 18 oct:** Windows sí alcanzó Keycloak en `localhost:8081` (HTTP 200 con curl y el navegador abrió las pantallas de login), así que ese tramo ya no bloquea; falta comprobar el BFF (3000) y el flujo completo. Idea sin probar si reaparece: red espejo de WSL (`networkingMode=mirrored`). Cierre: login PKCE, consentimiento, token, cinco herramientas, denegaciones por scope/rol/tenant y aislamiento entre dos tenants.
 - [ ] **Paginación contra stack persistente** (formatos, inbox, sent): múltiples páginas, delegación, cambio de tenant/actor, reintento y navegador, sin crear envíos ni firmas de negocio.
 - [ ] **Suite completa posterior** al conjunto final de cambios.
 - [ ] **Grok en vivo:** chatbot, flujo y PDF a formato, con revisión humana; sin documentos sensibles sin aprobación de Legal.
