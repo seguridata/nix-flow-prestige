@@ -43,6 +43,7 @@
 - [x] Frontend: `/login?tenant=tecate` abre Keycloak con el cliente del tenant (lista cerrada `OIDC_TENANT_CLIENTS`); refresh y logout usan el mismo cliente que emitió los tokens. BFF: `KEYCLOAK_AUDIENCE` admite varias audiencias separadas por coma.
 - [x] Pruebas nuevas: 3 de cliente por tenant (frontend), 6 del aprovisionamiento y 1 de audiencias múltiples (backend); TypeScript de ambos limpio. No se corrió la suite completa.
 - Límite: el tema por cliente es solo marca; el aislamiento de datos sigue siendo claim `tenant` + membresía. Un realm por tenant daría aislamiento total de identidades pero exigiría que el BFF soporte varios emisores. La contraseña del admin de Tecate no se guarda en el repo ni aquí.
+- [x] Coexistencia verificada contra el BFF en marcha (18 oct): `draygoza` (Seguridata, cliente `prestige-web`) ve 2 formatos, 2 tablas, 16 documentos y 13 casos; `tecate-admin` ve 0 de todo y recibe 403 en `/admin/tenants`. `draygoza` entrando por la pantalla de Tecate sigue viendo solo los datos de Seguridata (el tema es marca, no pertenencia). Como `platform_admin`, `draygoza` lista los tenants `seguridata`, `acme` y `tecate`; `acme` ya existía. No se probó con sesiones abiertas a la vez en la app web (el frontend en 3001 requiere reinicio para el login por tenant).
 - Detalle y comandos: `backend/infra/keycloak/themes/README.md`.
 
 ### Retirado el 17 oct
