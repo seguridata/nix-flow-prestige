@@ -7,6 +7,9 @@
 ## Corte vigente
 17 oct 2026
 - Rama `develop`; trabajo directo con commits temáticos. `main` solo recibe el PR que apruebe el dueño.
+- Commits de esta tanda sobre `11584d6`: `d47da52` (retiro del collector OTel) y `3936800` (Notion como fuente de la verdad y retiro de documentos desfasados). Árbol limpio salvo una carpeta ajena sin seguimiento, `backend/infra/keycloak/themes/Tecate/`.
+- **Sin publicar:** `develop` va 27 commits por delante de la referencia local `origin/develop`, que no se refrescó. El push, el borrado de ramas remotas y el PR a main fueron bloqueados por el control de permisos de la sesión y esperan autorización. No afirmar que está en el remoto.
+- **Ramas:** todas las ramas locales y remotas, salvo `main` y `develop`, están contenidas en `develop` (verificado con `rev-list`); `claude/bpmn-adquisiciones-diagram-844231` tiene su contenido idéntico en `develop`. El borrado está pendiente de autorización; el worktree de esa rama ya se eliminó del disco.
 - Estado general: la plataforma está implementada en gran parte y probada en sandbox local. **No hay despliegue de producción ni staging validado.** Este corte no volvió a correr pruebas ni a levantar servicios; los números de abajo son los últimos registrados.
 - Contenedores del sandbox arriba al revisar: Keycloak, MinIO, Temporal, Redis, Mailpit y Postgres. BFF y web no se comprobaron.
 
@@ -52,6 +55,7 @@
 - [ ] **Paginación contra stack persistente** (formatos, inbox, sent): múltiples páginas, delegación, cambio de tenant/actor, reintento y navegador, sin crear envíos ni firmas de negocio.
 - [ ] **Suite completa posterior** al conjunto final de cambios.
 - [ ] **Grok en vivo:** chatbot, flujo y PDF a formato, con revisión humana; sin documentos sensibles sin aprobación de Legal.
+- [ ] **Publicar:** `push` de `develop`, borrar las ramas ya fusionadas (local y remoto), eliminar el worktree `claude/prestige-pending-tasks-2b5af0` y abrir un PR `develop` → `main` (solo abrir; la fusión la aprueba el dueño).
 
 ### P1 — Producción e infraestructura
 - [ ] Staging real con dos tenants; `TENANT_GUARD=enforce` en producción solo tras validar (hoy `log`).
@@ -100,6 +104,10 @@ Borrar notificaciones huérfanas; MinIO sin root y app limitada al bucket; Tempo
 - La IA propone y una persona revisa. No reescribir bytes de documentos congelados o firmados.
 - Archivos con CRLF: no usar `sed -i`; revisar `git diff --stat`.
 - Al cerrar una tanda: actualizar Notion primero y luego el espejo del repo. No marcar verificaciones externas por pruebas unitarias.
+
+## Monday y tareas
+- Tablero Prestige (id 18433023650, 103 ítems), auditado el 17 oct. Sin tareas nuevas: «Forzar tenant en comentario, notificación, enlace, correo y definición» pasó a Terminado (Validado en Pendiente) y 10 ítems recibieron comentario de corte. Muchos ítems de septiembre siguen con estado antiguo; no se ha depurado el resto.
+- La base «Mis Tareas» de Notion no tiene filas abiertas asignadas.
 
 ## Documentación del repo
 Índice y orden de lectura en `MasterPlan/README.md`. Se eliminaron por desfasados: el plan y el handoff de Fases A/B, el plan por sprints, el reporte de auditoría, el progreso por sprint, las fases, la guía de retoma, las continuidades de 16 y 17 oct y la página `Documentacion/07-estado-y-ruta.html`. Lo vigente de ellos (requerimiento original y decisiones D1–D10) quedó en `MasterPlan/REQUERIMIENTO-Y-DECISIONES.md`; el resto está en el historial de Git.
