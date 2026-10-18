@@ -1,8 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
-  CLIENT_COOKIE,
   exchangeCode,
-  knownClient,
   PKCE_COOKIE,
   sessionFromTokens,
   STATE_COOKIE,
@@ -33,9 +31,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const clientId = knownClient(req.cookies.get(CLIENT_COOKIE)?.value);
-    const tokens = await exchangeCode(code, verifier, clientId);
-    await writeSessionCookie(sessionFromTokens(tokens, clientId));
+    const tokens = await exchangeCode(code, verifier);
+    await writeSessionCookie(sessionFromTokens(tokens));
   } catch {
     return NextResponse.redirect(new URL("/login?error=token_exchange", req.url));
   }
@@ -43,6 +40,5 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.redirect(new URL(returnTo.startsWith("/") ? returnTo : "/", req.url));
   res.cookies.delete(PKCE_COOKIE);
   res.cookies.delete(STATE_COOKIE);
-  res.cookies.delete(CLIENT_COOKIE);
   return res;
 }

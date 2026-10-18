@@ -7,7 +7,7 @@
 ## Corte vigente
 17 oct 2026
 - Rama `develop`; trabajo directo con commits temáticos. `main` solo recibe el PR que apruebe el dueño.
-- **Publicado (18 oct):** el PR #13 (`develop` → `main`) está fusionado. `main` incluye todos los commits de `develop` hasta `e0d535c`, con el retiro del collector OTel, Notion como fuente de la verdad y la demo de Tecate; `develop` y `origin/develop` coinciden.
+- **Publicado (18 oct):** el PR #13 (`develop` → `main`) está fusionado. `main` incluye todos los commits de `develop` hasta `e0d535c`, con el retiro del collector OTel, Notion como fuente de la verdad y una demo de Tecate que después se retiró (ver «Sonda de conectividad»). Los commits posteriores a `e0d535c` están solo en local.
 - **Ramas:** solo existen `main` y `develop`, locales y remotas. Se borraron las 14 ramas ya fusionadas (verificado que todas estaban contenidas en `main`; `claude/bpmn-adquisiciones-diagram-844231` tenía un commit propio con su contenido idéntico ya presente) y los dos worktrees de `.claude/worktrees`.
 - Estado general: la plataforma está implementada en gran parte y probada en sandbox local. **No hay despliegue de producción ni staging validado.** Este corte no volvió a correr pruebas ni a levantar servicios; los números de abajo son los últimos registrados.
 - Contenedores del sandbox arriba al revisar: Keycloak, MinIO, Temporal, Redis, Mailpit y Postgres. BFF y web no se comprobaron.
@@ -37,14 +37,10 @@
 - [x] Formatos, bandeja y enviados con cursor (lotes de 50), validación por tenant/actor, reintento y deduplicación; contrato legado compatible.
 - [x] OpenAPI/Postman actualizados; validador de 61 operaciones.
 
-### Demo de tenants: Tecate (18 oct)
-- [x] Tema de Keycloak `prestige-tecate`, hijo de `prestige`: rojo `#E3121A` (muestreado del logo), plata, negro y blanco en lugar del verde; conserva la marca «PRESTIGE por SeguriData». Verificado visualmente en el navegador junto al original, que no cambió.
-- [x] Cliente OIDC `prestige-web-tecate` (el tema se asigna por cliente), grupo `tecate` y un único usuario `tecate-admin` con rol `admin` y `tenant=tecate`; tenant `tecate` y su membresía creados en la BD del sandbox. Un token real del cliente trae `tenant=tecate`, `azp=prestige-web-tecate` y el rol `admin`.
-- [x] Frontend: `/login?tenant=tecate` abre Keycloak con el cliente del tenant (lista cerrada `OIDC_TENANT_CLIENTS`); refresh y logout usan el mismo cliente que emitió los tokens. BFF: `KEYCLOAK_AUDIENCE` admite varias audiencias separadas por coma.
-- [x] Pruebas nuevas: 3 de cliente por tenant (frontend), 6 del aprovisionamiento y 1 de audiencias múltiples (backend); TypeScript de ambos limpio. No se corrió la suite completa.
-- Límite: el tema por cliente es solo marca; el aislamiento de datos sigue siendo claim `tenant` + membresía. Un realm por tenant daría aislamiento total de identidades pero exigiría que el BFF soporte varios emisores. La contraseña del admin de Tecate no se guarda en el repo ni aquí.
-- [x] Coexistencia verificada contra el BFF en marcha (18 oct): `draygoza` (Seguridata, cliente `prestige-web`) ve 2 formatos, 2 tablas, 16 documentos y 13 casos; `tecate-admin` ve 0 de todo y recibe 403 en `/admin/tenants`. `draygoza` entrando por la pantalla de Tecate sigue viendo solo los datos de Seguridata (el tema es marca, no pertenencia). Como `platform_admin`, `draygoza` lista los tenants `seguridata`, `acme` y `tecate`; `acme` ya existía. No se probó con sesiones abiertas a la vez en la app web (el frontend en 3001 requiere reinicio para el login por tenant).
-- Detalle y comandos: `backend/infra/keycloak/themes/README.md`.
+### Sonda de conectividad Windows↔WSL (18 oct)
+- [x] Una demo de multitenancy con marca (tema de Keycloak, cliente OIDC, usuario y tenant de Tecate) sirvió solo como sonda para saber si Windows alcanzaba los puertos de WSL. Resultado: **sí**. Desde Windows respondieron Keycloak en `localhost:8081` (HTTP 200 y las pantallas de login abrieron en el navegador) y la web en `localhost:3001` (redirect 307 a Keycloak). El BFF (3000) respondió health 200 solo desde WSL.
+- [x] La demo se retiró completa: cliente, grupo, usuario y tenant `tecate` borrados del sandbox (la base quedó con `seguridata` y `acme`) y su código revertido en el repo. La demo llegó a `main` en el PR #13; el revert está en `develop` y requiere publicarse.
+- La coexistencia entre dos tenants se verificó contra el BFF antes de retirarla: cada usuario ve solo los datos de su tenant y el tema no cambia la pertenencia.
 
 ### Retirado el 17 oct
 - [x] **Collector OpenTelemetry del sandbox** (servicio de compose y `otel-collector.yaml`): no recibía tráfico ni había destino donde guardar datos. El SDK del BFF sigue apagado por defecto y el script `verify-tenant-otlp.ts` se conserva. Se retoma cuando se elija backend en staging.
@@ -59,7 +55,7 @@
 
 ## Pendientes
 ### P0 — Verificación próxima
-- [ ] **OAuth MCP real.** Bloqueado por conectividad Windows↔WSL (Windows no llega al puerto de Keycloak en WSL). Intentos con portproxy/Hyper-V y BFF aislado fallaron y se retiraron. **Novedad 18 oct:** Windows sí alcanzó Keycloak en `localhost:8081` (HTTP 200 con curl y el navegador abrió las pantallas de login), así que ese tramo ya no bloquea; falta comprobar el BFF (3000) y el flujo completo. Idea sin probar si reaparece: red espejo de WSL (`networkingMode=mirrored`). Cierre: login PKCE, consentimiento, token, cinco herramientas, denegaciones por scope/rol/tenant y aislamiento entre dos tenants.
+- [ ] **OAuth MCP real.** Bloqueado por conectividad Windows↔WSL (Windows no llega al puerto de Keycloak en WSL). Intentos con portproxy/Hyper-V y BFF aislado fallaron y se retiraron. **Novedad 18 oct:** la sonda confirmó que Windows sí alcanza Keycloak (`localhost:8081`) y la web (`localhost:3001`), así que la conectividad ya no bloquea; falta correr el flujo completo contra el BFF (3000, comprobado solo desde WSL) y el consentimiento. Idea sin probar si reaparece: red espejo de WSL (`networkingMode=mirrored`). Cierre: login PKCE, consentimiento, token, cinco herramientas, denegaciones por scope/rol/tenant y aislamiento entre dos tenants.
 - [ ] **Paginación contra stack persistente** (formatos, inbox, sent): múltiples páginas, delegación, cambio de tenant/actor, reintento y navegador, sin crear envíos ni firmas de negocio.
 - [ ] **Suite completa posterior** al conjunto final de cambios.
 - [ ] **Grok en vivo:** chatbot, flujo y PDF a formato, con revisión humana; sin documentos sensibles sin aprobación de Legal.
