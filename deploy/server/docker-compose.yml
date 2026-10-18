@@ -154,6 +154,10 @@ services:
     image: prestige-bff:prod
     restart: unless-stopped
     command: ["node", "dist/src/temporal/worker.js"]
+    # La imagen trae un HEALTHCHECK del puerto 3000 que solo aplica al BFF; el worker no abre puertos
+    # y quedaría «unhealthy» aunque funcione (su estado real se ve en `docker logs`: «state: RUNNING»).
+    healthcheck:
+      disable: true
     environment:
       <<: *bff-env
       RUN_MIGRATIONS: "false"
