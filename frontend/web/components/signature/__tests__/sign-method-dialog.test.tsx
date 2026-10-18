@@ -6,6 +6,7 @@ import type { SignatureMethod } from "@/libs/types";
 
 function renderDialog(overrides?: {
   allowedMethods?: SignatureMethod[];
+  allowedMethodsNow?: SignatureMethod[];
   onConfirm?: (payload: { method: SignatureMethod; consentAccepted: boolean }) => void;
   isSubmitting?: boolean;
 }) {
@@ -16,6 +17,7 @@ function renderDialog(overrides?: {
       open
       onOpenChange={onOpenChange}
       allowedMethods={overrides?.allowedMethods ?? ["DIGITAL"]}
+      allowedMethodsNow={overrides?.allowedMethodsNow}
       consentText={{ version: "1.1", text: "Acepto firmar." }}
       biometricReady
       onConfirm={onConfirm}
@@ -67,5 +69,22 @@ describe("SignMethodDialog", () => {
     expect(onConfirm).toHaveBeenCalledWith(
       expect.objectContaining({ method: "BIOMETRICA", consentAccepted: true }),
     );
+  });
+
+  it("con allowedMethodsNow oculta los métodos visuales y explica por qué", () => {
+    renderDialog({ allowedMethods: ["DIGITAL", "AUTOGRAFA", "ACCEPT"], allowedMethodsNow: ["DIGITAL", "ACCEPT"] });
+
+    expect(screen.queryByText("Autógrafa")).not.toBeInTheDocument();
+    expect(screen.getByText("Digital")).toBeInTheDocument();
+    expect(
+      screen.getByText("Este documento ya tiene firma digital: las firmas visibles ya no se pueden agregar."),
+    ).toBeInTheDocument();
+  });
+
+  it("sin allowedMethodsNow mantiene todos los métodos y no muestra el aviso", () => {
+    renderDialog({ allowedMethods: ["DIGITAL", "AUTOGRAFA"] });
+
+    expect(screen.getByText("Autógrafa")).toBeInTheDocument();
+    expect(screen.queryByText(/ya tiene firma digital/)).not.toBeInTheDocument();
   });
 });

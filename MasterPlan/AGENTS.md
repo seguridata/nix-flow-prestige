@@ -1,0 +1,115 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
+# AGENTS.md — Prestige P1
+
+Instrucciones para humanos y agentes de código que toquen `seguridata/nix-flow-prestige`.
+
+## Relevo entre sesiones (2026-10-16)
+
+**Antes de tocar nada lee [`ESTADO-Y-PENDIENTES.md`](ESTADO-Y-PENDIENTES.md)**: estado actual de `develop`, decisiones del dueño, pendientes y trampas conocidas (CRLF, el BFF que no recompila solo desde Windows, el puerto 4000 que es de otro sistema, Prisma en WSL).
+Reglas de flujo de trabajo vigentes: commits temáticos **directos a `develop`, sin PRs**; agentes con archivos disjuntos; el esquema y las migraciones los hace quien orquesta antes de lanzarlos; verificar con `tsc`, `vitest` y HTTP real; y **al cerrar cada tanda actualizar primero Notion (fuente de la verdad) y después `ESTADO-Y-PENDIENTES.md`, el relevo y Monday**.
+Regla nueva de datos: las **consultas a tablas** (`lookup`) son configuración de un admin (ADR-008); el usuario normal nunca ve las tablas. Tampoco se escriben secretos ni contraseñas en el repo.
+
+## Nota de estado (17 oct 2026)
+
+`develop` trae la propuesta de UI, vista Drive (`Folder`), formatos (`DocumentTemplate`) y flujos publicables (`ProcessDefinition.flow`). El estado vigente está en `ESTADO-Y-PENDIENTES.md` (espejo de la página de Notion, que es la fuente de la verdad). Antes de tocar `backend/bff/src/folders`, `document-templates` o `flow`, o `frontend/web/app/{documentos,formatos,flujos}` lee el estado y los límites ahí.
+
+P1 está cerrado. Lee `ESTADO-Y-PENDIENTES.md` antes de tocar código. La auditoría original del commit `d80a296` y el historial por sprint se eliminaron por desfasados; están en el historial de Git.
+
+La rama con el endurecimiento es `fix/p1-hardening`. El seguimiento (métodos tras un PAdES, reconciliador de Temporal, `bootstrap:tenant`, `backfill:tenant-ids`, 404 de evidencia, passkey en solicitud cerrada y guarda de Object Lock) está en `663d5f5`. La UI de plantillas está en `4981fd2`. No los reimplementes.
+
+**`DigitalSignerAdapter` no es HMAC.** Firma PAdES (`backend/bff/src/signing/digital.adapter.ts`). El default de este sandbox es la CA interna. `KEY_CUSTODIAN=pkcs11` selecciona `Pkcs11KeyCustodian` (`09e6ac3`): la RSA se calcula en el token (`CKM_RSA_PKCS`) y este proceso no recibe la llave. Sin módulo, PIN, etiqueta o `graphene-pk11`, el servicio no está disponible y no hay fallback a software. OCSP/CRL embebido y la constancia NOM-151 siguen abiertos (`P2-KMS.md`).
+
+`TenantContextGuard` deja `user.tenantId` en el slug. `TenantMembership.tenantId` es el uuid del `Tenant`. Un backfill o un filtro que copie ese uuid aísla contra el identificador equivocado.
+
+## Misión
+
+P1 ya está homologado. El hardening de `fix/p1-hardening` está cerrado en esta rama. No reabras los sprints. P2 (HSM/KMS, NOM-151) no se mezcla aquí. No crees un vendor IdV: no hay contrato y el gate `kycPolicy` se queda.
+
+Leer antes de codear:
+
+- `ESTADO-Y-PENDIENTES.md`
+- `REQUERIMIENTO-Y-DECISIONES.md`
+- `SPEC.md`
+- `DATA-MODEL.md`
+
+## Repo layout (no inventar otro)
+
+- App: `frontend/web` (Next.js, puerto 3001)
+- API: `backend/bff` (NestJS, puerto 3000)
+- Schema: `backend/bff/prisma/schema.prisma`
+- Infra: `backend/docker-compose.yml`
+- Firmas: `backend/bff/src/signing/`
+- Evidencia: `backend/bff/src/evidence/`
+- Onboarding: `backend/bff/src/onboarding/`
+- Vista Drive: `backend/bff/src/folders/` y `frontend/web/app/documentos`
+- Formatos y flujos: `backend/bff/src/document-templates/`, `backend/bff/src/flow/`, `frontend/web/app/{formatos,flujos}`
+
+## Reglas duras
+
+1. No llamés `pdf-lib` `save()` sobre el objectKey canónico.  
+2. No escribas INE/selfie en columnas Prisma Text.  
+3. No expongas `contentBase64` en endpoints nuevos.  
+4. En la UI, “firma digital” es el PAdES de `DigitalSignerAdapter`. Un HMAC, un sello visual o la autógrafa no se etiquetan así.  
+5. Toda query de negocio filtra `tenantId`, y ese valor es el slug (el que deja el guard), no el uuid de `TenantMembership`.  
+6. Eventos de auditoría: insert only + `prevHash`. El trigger de inmutabilidad ya está.  
+7. `@Public()` ya usado, y que no se ensancha sin motivo: `GET /operations/health`, `GET /signature-requests/consent`, `GET /signature-requests/capabilities`, el portal `/public/links/:token/*`, `GET /evidence/:manifestId/verify`, y `POST /internal/workflows/*` (ese último solo salta el JWT: lo cierra `WorkerGuard`). No hay webhook IdV.  
+8. No agregues NOM-151, blockchain ni FIEL en el cierre del hardening.  
+9. Si un cambio rompe el freeze, el cambio se rechaza.
+
+## Cómo implementar (orden)
+
+P1 ya se ejecutó. Un cambio nuevo sigue siendo un PR temático. No mezcles el cierre del hardening con HSM, NOM-151 ni un vendor IdV.
+
+## Patrones de código
+
+### Adapters
+
+Un proveedor nuevo va detrás de la interfaz que ya existe (`SignerAdapter`, `KeyCustodian`, `IdentityVerifier`, `BiometricEngine`). No crees `backend/bff/src/idv/` ni `IdvSession`: el Sprint 4 dejó el gate en `kycPolicy` sobre `OnboardingCase`. `biometric.adapter.ts` es un método de ceremonia, no el puerto de identidad.
+
+### Tokens
+
+```
+plain = randomBytes(32).toString('base64url')
+stored = sha256(plain)
+```
+
+Se envía `plain` una vez (mail/UI). Se busca por hash.
+
+### Hash de archivo
+
+```
+sha256 = createHash('sha256').update(bytes).digest('hex')
+```
+
+Nunca hashear el string base64 si podés hashear bytes.
+
+### Passkeys
+
+Challenge de ceremonia = SHA-256 de `frozenHash || envelopeId || nonce`.  
+Verificar con SimpleWebAuthn. Guardar `counter`.
+
+## Tests mínimos por PR
+
+- Freeze: segundo write a bytes → 409.  
+- Hash mismatch en complete → 409, sin Signer.status=FIRMADO.  
+- Token reuse → 410.  
+- Tenant A no lee Document de B.  
+- El pack trae el hash del canónico igual al freeze (`Document.hash`).  
+- INE y selfie no se guardan en base64 en SQL.
+
+Los specs existentes en `signature-requests.service.spec.ts` se actualizan; no se ignoran.
+
+Una migración escrita a mano debe coincidir con `schema.prisma`: el CI corre `prisma migrate diff` y falla ante cualquier desfase (p. ej. un `onDelete` distinto del que declara el esquema).
+
+Con `ValidationPipe` + `enableImplicitConversion`, un DTO con `unknown[]` de objetos necesita `@Type(() => Object)`; si no, cada elemento llega como Array.
+
+## Estilo
+
+TypeScript strict. Bun. Prisma migrate con nombre explícito (`p1_freeze_tokens`, etc.).  
+UI: evolucionar dentro de la marca SeguriData (verde `#84bd00`, carbón, DM Sans, IBM Plex Mono). El verde no alcanza contraste como texto sobre blanco: se usa como relleno con texto en carbón. El estado nunca depende solo del color. Decisiones y defectos de las maquetas: `frontend/web/design/propuesta-ui/README.md`.  
+Textos de firma: “Acepto” / “Autógrafa” / “Passkey”. Nunca “e.firma SAT” ni “FIEL”.
+
+## Definition of Done P1
+
+El DoD P1 quedó en 11/11 (registro en el historial de Git). Abrir HSM es el plan de `P2-KMS.md`, separado del cierre de `fix/p1-hardening`.

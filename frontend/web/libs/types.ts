@@ -22,7 +22,7 @@ export interface DocumentRecord {
   locked: boolean;
 }
 
-export type SignatureMethod = "DIGITAL" | "AUTOGRAFA" | "BIOMETRICA";
+export type SignatureMethod = "DIGITAL" | "AUTOGRAFA" | "BIOMETRICA" | "ACCEPT" | "PASSKEY";
 export type SigningOrder = "SECUENCIAL" | "PARALELO";
 export type SignerStatus = "PENDIENTE" | "FIRMADO" | "RECHAZADO";
 export type SignatureRequestStatus =
@@ -31,6 +31,13 @@ export type SignatureRequestStatus =
   | "COMPLETADA"
   | "RECHAZADA"
   | "EXPIRADA";
+
+/** Miembro del directorio del tenant, para autocompletar firmantes. */
+export interface Colleague {
+  userId: string;
+  name: string | null;
+  email: string | null;
+}
 
 export interface Signer {
   signerId: string;
@@ -49,8 +56,12 @@ export interface SignatureRequest {
   documentId: string;
   /** Métodos autorizados por el remitente; el firmante elige uno al firmar. */
   methods: SignatureMethod[];
+  /** Métodos usables hoy (sin los visuales si el PDF ya lleva firma digital). Puede no venir. */
+  allowedMethodsNow?: SignatureMethod[];
   order: SigningOrder;
   status: SignatureRequestStatus;
+  /** El sobre exige verificación con passkey antes de firmar. */
+  requirePasskey?: boolean;
   requestedBy?: string;
   requestedByName?: string;
   createdAt: string;

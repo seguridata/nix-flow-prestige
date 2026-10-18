@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 export function AutographPad({
   onChange,
 }: {
-  onChange: (dataUrl: string | null) => void;
+  onChange: (png: Blob | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<SignaturePad | null>(null);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -40,7 +42,11 @@ export function AutographPad({
       throttle: 8,
     });
     pad.addEventListener("endStroke", () => {
-      onChangeRef.current(pad.isEmpty() ? null : pad.toDataURL("image/png"));
+      if (pad.isEmpty()) {
+        onChangeRef.current(null);
+        return;
+      }
+      canvas.toBlob((blob) => onChangeRef.current(blob), "image/png");
     });
     padRef.current = pad;
     fit();

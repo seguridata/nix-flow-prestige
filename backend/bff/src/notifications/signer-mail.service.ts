@@ -1,0 +1,190 @@
+import { runAsSystem } from '../prisma/tenant-guard';
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { LINK_PLACEHOLDER, NotificationOutboxService } from './notification-outbox.service';
+import { OneTimeLinkService } from './one-time-link.service';
+import { templates } from './templates';
+
+/**
+ * M13 — orquesta los correos del flujo de firma: emite (o reutiliza) el enlace
+ * de un solo uso del firmante y encola el mensaje en la bandeja de salida.
+ * Idempotente por `dedupeKey`. No lanza: un fallo de correo no rompe el flujo.
+ */
+@Injectable()
+export class SignerMailService {
+  private readonly log = new Logger(SignerMailService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outbox: NotificationOutboxService,
+    private readonly links: OneTimeLinkService,
+  ) {}
+
+  private appUrl(path: string): string {
+    const base = (process.env.PUBLIC_WEB_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+    return `${base}${path}`;
+  }
+
+  private async context(signatureRequestId: string, tenantId?: string) {
+    const scope = tenantId ? { tenantId } : await runAsSystem('Correo de workflow interno: resolver tenant de solicitud', () => this.prisma.signatureRequest.findUnique({
+      where: { id: signatureRequestId }, select: { tenantId: true },
+    }));
+    if (!scope) return null;
+    const request = await this.prisma.signatureRequest.findUnique({
+      where: { id: signatureRequestId, tenantId: scope.tenantId },
+      include: { signers: true, document: true },
+    });
+    if (!request) return null;
+    return {
+      request,
+      documentTitle: request.document?.filename ?? 'documento',
+    };
+  }
+
+  /**
+   * Emite un enlace de un solo uso para el firmante. Cada correo lleva su propio
+   * token (el hash en BD no es reversible); al firmar por un enlace se marca
+   * `usedAt` de ese token y no se puede reutilizar.
+   */
+  async linkUrlFor(signatureRequestId: string, signerId: string, ttlHours?: number): Promise<string> {
+    const issued = await this.links.issue({ purpose: 'sign', signatureRequestId, signerId, ttlHours });
+    return issued.url;
+  }
+
+  async sendInvites(signatureRequestId: string, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
+    if (!ctx) return;
+    for (const signer of ctx.request.signers) {
+      await this.sendInvite(signatureRequestId, signer.signerId, ctx.request.tenantId);
+    }
+  }
+
+  /**
+   * Invitación con enlace de un solo uso para UN firmante. En orden secuencial
+   * se usa al crear (solo el primero) y luego al pasar el turno a cada
+   * siguiente. Idempotente por `dedupeKey`.
+   */
+  async sendInvite(signatureRequestId: string, signerId: string, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
+    if (!ctx) return;
+    const signer = ctx.request.signers.find((s) => s.signerId === signerId);
+    // Si la firma está delegada, el suplente ya recibió aviso in-app; el correo
+    // externo requeriría su dirección (no la capturamos en la delegación).
+    if (!signer || signer.delegatedTo || !signer.email) return;
+    const url = await this.linkUrlFor(signatureRequestId, signer.signerId);
+    const t = templates.signInvite({
+      signerName: signer.name ?? undefined,
+      requesterName: ctx.request.requestedByName ?? undefined,
+      documentTitle: ctx.documentTitle,
+      url: LINK_PLACEHOLDER,
+    });
+    await this.enqueue(signer.email, t, 'signInvite', `invite:${signatureRequestId}:${signer.signerId}`, ctx.request.tenantId, url);
+  }
+
+  async sendReminder(signatureRequestId: string, signerId: string, ratio: number, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
+    if (!ctx) return;
+    const signer = ctx.request.signers.find((s) => s.signerId === signerId || s.delegatedTo === signerId);
+    const to = this.emailFromSigners(signerId, ctx.request.signers);
+    if (!to) return;
+    const url = await this.linkUrlFor(signatureRequestId, signerId);
+    const t = templates.reminder({
+      signerName: signer?.delegatedToName ?? signer?.name ?? undefined,
+      documentTitle: ctx.documentTitle,
+      url: LINK_PLACEHOLDER,
+    });
+    const bucket = Math.round(ratio * 100);
+    await this.enqueue(to, t, 'reminder', `reminder:${signatureRequestId}:${signerId}:${bucket}`, ctx.request.tenantId, url);
+  }
+
+  async sendEscalation(signatureRequestId: string, signerLabel: string, ratio: number, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
+    if (!ctx) return;
+    const recipients = new Set<string>();
+    // El emisor sólo recibe correo si su identificador ya es una dirección; no
+    // hay directorio de usuarios en el BFF (el aviso in-app lo cubre aparte).
+    if (ctx.request.requestedBy?.includes('@')) recipients.add(ctx.request.requestedBy);
+    const url = this.appUrl('/sent');
+    for (const to of recipients) {
+      const t = templates.escalation({
+        requesterName: ctx.request.requestedByName ?? undefined,
+        signerLabel,
+        documentTitle: ctx.documentTitle,
+        url,
+      });
+      await this.enqueue(to, t, 'escalation', `escalation:${signatureRequestId}:${signerLabel}:${Math.round(ratio * 100)}`, ctx.request.tenantId);
+    }
+  }
+
+  async sendCompleted(signatureRequestId: string, tenantId?: string) {
+    const ctx = await this.context(signatureRequestId, tenantId);
+    if (!ctx) return;
+    const manifest = await this.prisma.evidenceManifest.findUnique({ where: { signatureRequestId, tenantId: ctx.request.tenantId } });
+    const url = manifest
+      ? this.appUrl(`/verificar?id=${manifest.manifestId}`)
+      : this.appUrl(`/documents/${ctx.request.documentId}`);
+    // Copia firmada para cada firmante: sólo si hay copia de ceremonia y no está
+    // apagada (`SIGNED_COPY_TO_SIGNERS=false`, p. ej. documentos confidenciales).
+    const sendCopy =
+      process.env.SIGNED_COPY_TO_SIGNERS !== 'false' && Boolean(ctx.request.document?.presentedObjectKey);
+    const recipients = new Map<string, { name?: string; signerId?: string }>();
+    for (const s of ctx.request.signers) {
+      const to = s.email ?? undefined; // el correo de firma es el del `Signer` de ESTA solicitud
+      if (to) recipients.set(to, { name: s.delegatedToName ?? s.name ?? undefined, signerId: s.delegatedTo ?? s.signerId });
+    }
+    if (ctx.request.requestedBy?.includes('@')) {
+      recipients.set(ctx.request.requestedBy, { name: ctx.request.requestedByName ?? undefined });
+    }
+    for (const [to, who] of recipients) {
+      // El emisor (sin `signerId`) usa la app; sólo los firmantes reciben enlace de descarga.
+      const copy = sendCopy && who.signerId ? await this.copyLink(signatureRequestId, who.signerId) : undefined;
+      const t = templates.completed({
+        name: who.name,
+        documentTitle: ctx.documentTitle,
+        url,
+        copyUrl: copy ? LINK_PLACEHOLDER : undefined,
+      });
+      await this.enqueue(to, t, 'completed', `completed:${signatureRequestId}:${to}`, ctx.request.tenantId, copy);
+    }
+  }
+
+  /** Enlace de descarga (ventana de tiempo, sin consumirse). Un fallo no debe tumbar el correo. */
+  private async copyLink(signatureRequestId: string, signerId: string): Promise<string | undefined> {
+    try {
+      const issued = await this.links.issue({ purpose: 'download', signatureRequestId, signerId });
+      return issued.url;
+    } catch (error) {
+      this.log.warn(`No se pudo emitir el enlace de copia firmada: ${(error as Error).message}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Resuelve el correo SÓLO entre los firmantes de la solicitud en curso (nunca
+   * con una búsqueda global de `Signer`, que podría cruzar de tenant por
+   * coincidencia de username).
+   */
+  private emailFromSigners(
+    idOrEmail: string,
+    signers: { signerId: string; delegatedTo: string | null; email: string | null }[],
+  ): string | undefined {
+    if (idOrEmail.includes('@')) return idOrEmail;
+    const s = signers.find((x) => x.signerId === idOrEmail || x.delegatedTo === idOrEmail);
+    return s?.email ?? undefined;
+  }
+
+  private async enqueue(
+    to: string,
+    t: { subject: string; html: string },
+    template: string,
+    dedupeKey: string,
+    tenantId: string,
+    link?: string,
+  ) {
+    try {
+      await this.outbox.enqueueEmail({ to, subject: t.subject, html: t.html, template, dedupeKey, tenantId, link });
+    } catch (error) {
+      this.log.warn(`No se pudo encolar correo (${template}): ${(error as Error).message}`);
+    }
+  }
+}

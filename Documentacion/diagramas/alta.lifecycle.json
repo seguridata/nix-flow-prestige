@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Prestige — alta de identidad",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 720],
+    "views": [
+      { "id": "riel", "label": "Alta", "focus": ["borrador", "datos", "identidad", "revision", "habilitado"], "note": "De la ficha al firmante habilitado." },
+      { "id": "identidad", "label": "Identidad", "focus": ["datos", "identidad", "revision"], "note": "INE y prueba de vida se revisan antes de habilitar." },
+      { "id": "corte", "label": "Rechazo", "focus": ["revision", "rechazado"], "note": "RH puede cerrar el alta sin crear firmante." }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "Alta" },
+    { "id": "terminal", "label": "Cierre negativo" }
+  ],
+  "states": [
+    { "id": "borrador", "type": "start", "label": "Borrador", "sublabel": "alta creada", "lane": "main", "col": 0, "step": "01" },
+    { "id": "datos", "type": "active", "label": "Datos", "sublabel": "nombre y CURP", "lane": "main", "col": 1, "step": "02" },
+    { "id": "identidad", "type": "active", "label": "Identidad", "sublabel": "INE y vida", "lane": "main", "col": 2, "step": "03" },
+    { "id": "revision", "type": "decision", "label": "Revisión", "sublabel": "EN_REVISION", "lane": "main", "col": 3, "step": "04" },
+    { "id": "habilitado", "type": "success", "label": "Habilitado", "sublabel": "puede firmar", "lane": "main", "col": 4, "step": "05" },
+    { "id": "rechazado", "type": "failure", "label": "Rechazado", "sublabel": "no se habilita", "lane": "terminal", "col": 1 }
+  ],
+  "transitions": [
+    { "from": "revision", "to": "rechazado", "label": "niega", "variant": "security", "labelDy": 24 }
+  ],
+  "cards": []
+}

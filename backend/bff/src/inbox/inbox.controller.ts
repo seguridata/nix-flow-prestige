@@ -1,40 +1,79 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { Public } from '../auth/public.decorator';
-import { InboxService, type InboxItem } from './inbox.service';
+import { PageQueryDto, finishPage, pageArgs, prismaPage } from '../common/pagination';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard';
+import { InboxService } from './inbox.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantIdResolver } from '../prisma/tenant-id-resolver';
 
+/**
+ * `/me/*` — siempre relativo al usuario autenticado. La identidad sale del
+ * token (JwtAuthGuard), nunca de un query param.
+ */
 @Controller('me')
 export class InboxController {
   constructor(
     private readonly inbox: InboxService,
     private readonly prisma: PrismaService,
+    private readonly tenantIds: TenantIdResolver,
   ) {}
 
-  @Public()
   @Get('inbox')
-  inboxFor(@Query('signerId') signerId: string): Promise<InboxItem[]> {
-    return this.inbox.forSigner(signerId);
+  inboxFor(@CurrentUser() user: AuthenticatedUser, @Query() page: PageQueryDto) {
+    return this.inbox.forSigner(user.actorId, user.tenantId, page);
   }
 
-  @Public()
   @Get('sent')
-  sentFor(@Query('requestedBy') requestedBy: string): Promise<InboxItem[]> {
-    return this.inbox.forRequester(requestedBy);
+  sentFor(@CurrentUser() user: AuthenticatedUser, @Query() page: PageQueryDto) {
+    return this.inbox.forRequester(user.actorId, user.tenantId, page);
   }
 
-  @Public()
+  /**
+   * Directorio del tenant para el autocompletado de firmantes en `/new`.
+   * Solo identidad (userId, nombre, correo) — nunca roles. Cualquier usuario
+   * autenticado del tenant puede leerlo; el filtro sale del token.
+   */
+  @Get('colleagues')
+  async colleagues(@Query() page: PageQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    const args = pageArgs(page);
+    // `user.tenantId` es el slug (o el uuid); `TenantMembership.tenantId` guarda el uuid.
+    // Se traduce y se filtra por la columna; tenant desconocido => directorio vacío.
+    const tenantUuid = await this.tenantIds.toId(user.tenantId);
+    const rows = await this.prisma.tenantMembership.findMany({
+      where: {
+        tenantId: tenantUuid ?? '',
+        active: true,
+        OR: [{ name: { not: null } }, { email: { not: null } }],
+      },
+      // id se selecciona solo como cursor de paginación.
+      select: { id: true, userId: true, name: true, email: true },
+      orderBy: [{ name: 'asc' }, { userId: 'asc' }, { id: 'asc' }],
+      ...prismaPage(args),
+    });
+    const out = finishPage(rows, args);
+    const strip = ({ userId, name, email }: { userId: string; name: string | null; email: string | null }) => ({
+      userId,
+      name,
+      email,
+    });
+    return Array.isArray(out)
+      ? out.map(strip)
+      : { items: out.items.map(strip), nextCursor: out.nextCursor };
+  }
+
   @Get('snapshot')
-  async snapshot(@Query('userId') userId: string) {
+  async snapshot(@CurrentUser() user: AuthenticatedUser) {
+    const userId = user.actorId;
     const [unread, pendingTasks, pendingSign] = await Promise.all([
-      this.prisma.userNotification.count({ where: { userId, read: false } }),
+      this.prisma.userNotification.count({ where: { userId, tenantId: user.tenantId, read: false } }),
       this.prisma.humanTask.count({
-        where: { signerId: userId, status: { in: ['CREADA', 'ASIGNADA'] } },
+        where: { tenantId: user.tenantId, signerId: userId, status: { in: ['CREADA', 'ASIGNADA'] } },
       }),
       this.prisma.signer.count({
         where: {
           OR: [{ signerId: userId }, { delegatedTo: userId }],
           status: 'PENDIENTE',
-          signatureRequest: { status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
+          signatureRequest: { tenantId: user.tenantId, status: { in: ['PENDIENTE', 'EN_FIRMA'] } },
         },
       }),
     ]);

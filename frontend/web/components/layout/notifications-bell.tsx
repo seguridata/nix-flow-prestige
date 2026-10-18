@@ -21,8 +21,9 @@ export function NotificationsBell() {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["notifications", signerId],
-    queryFn: () => apiClient.get<Notification[]>(`/me/notifications?userId=${encodeURIComponent(signerId)}`),
-    refetchInterval: 20_000,
+    // The BFF scopes notifications by the authenticated actor; never accept identity from query params.
+    queryFn: () => apiClient.get<Notification[]>("/me/notifications"),
+    refetchInterval: 60_000,
   });
   const unread = (query.data ?? []).filter((n) => !n.read).length;
   const mark = useMutation({
@@ -30,7 +31,7 @@ export function NotificationsBell() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications", signerId] }),
   });
   const markAll = useMutation({
-    mutationFn: () => apiClient.post("/me/notifications/read-all", { userId: signerId }),
+    mutationFn: () => apiClient.post("/me/notifications/read-all", {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications", signerId] }),
   });
 

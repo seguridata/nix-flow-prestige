@@ -2,6 +2,12 @@ export const PRESTIGE_TASK_QUEUE = 'prestige';
 export const CONTRATO_DOS_PARTES = 'contratoDosPartes';
 
 export interface ContratoWorkflowInput {
+  /**
+   * Tenant dueño de la solicitud. Opcional por compatibilidad con workflows en
+   * curso iniciados antes de que el input lo trajera: en ese caso el BFF lo
+   * deduce de la BD (y registra un warn).
+   */
+  tenantId?: string;
   signatureRequestId: string;
   documentId: string;
   caseId?: string;
@@ -16,4 +22,39 @@ export interface ContratoWorkflowState {
   signed: string[];
   rejectedBy?: string;
   currentSignerId?: string;
+  /** M07 — recordatorios/escalamientos emitidos por los timers de Temporal. */
+  nudges: number;
+}
+
+/** Id de workflow para workflows NUEVOS: incluye el tenant. */
+export function workflowIdFor(tenantId: string, processKey: string, signatureRequestId: string): string {
+  return `${tenantId}:${processKey}:${signatureRequestId}`;
+}
+
+/** Fórmula antigua (sin tenant): solo para workflows ya en curso sin fila en BD. */
+export function legacyWorkflowIdFor(processKey: string, signatureRequestId: string): string {
+  return `${processKey}:${signatureRequestId}`;
+}
+
+export type NudgeKind = 'REMINDER' | 'ESCALATION';
+
+export interface NudgeCommand {
+  /** Tenant de la solicitud; el BFF verifica que coincida. Opcional (workflows antiguos). */
+  tenantId?: string;
+  signatureRequestId: string;
+  kind: NudgeKind;
+  /** Fracción del SLA en la que se dispara (0.5, 0.75, 0.9…). */
+  ratio: number;
+  /** En orden secuencial, el firmante concreto al que apunta el recordatorio. */
+  signerId?: string;
+}
+
+/**
+ * Fracciones del SLA en las que el workflow envía un aviso. `< 0.9` es
+ * recordatorio (nudge); `>= 0.9` escala al emisor y observadores.
+ */
+export const NUDGE_MARKS = [0.5, 0.75, 0.9] as const;
+
+export function nudgeKindFor(mark: number): NudgeKind {
+  return mark >= 0.9 ? 'ESCALATION' : 'REMINDER';
 }

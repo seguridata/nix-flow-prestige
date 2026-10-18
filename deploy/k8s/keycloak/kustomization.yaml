@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prestige
+resources:
+  - keycloak.yaml
+# Requiere antes: Secret keycloak-secrets y ConfigMap keycloak-realm (ver deploy/k8s/README.md).

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/services/api-client";
-import { useSession } from "@/store/session-store";
+import { buildCommentPayload } from "@/services/payloads";
 
 interface Comment {
   id: string;
@@ -14,7 +14,6 @@ interface Comment {
 }
 
 export function CommentThread({ documentId }: { documentId: string }) {
-  const { signerId, name } = useSession();
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
   const comments = useQuery({
@@ -23,11 +22,7 @@ export function CommentThread({ documentId }: { documentId: string }) {
   });
   const add = useMutation({
     mutationFn: () =>
-      apiClient.post(`/documents/${documentId}/comments`, {
-        authorId: signerId,
-        authorName: name,
-        body,
-      }),
+      apiClient.post(`/documents/${documentId}/comments`, buildCommentPayload(body)),
     onSuccess: () => {
       setBody("");
       queryClient.invalidateQueries({ queryKey: ["comments", documentId] });

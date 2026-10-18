@@ -1,16 +1,145 @@
+// M15 — OTel: PRIMER import; parchea http/express/prisma como efecto de carga,
+// antes de que se evalúen los imports de Nest/Prisma de abajo.
+import './tracing';
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { NestExpressApplication } from '@nestjs/platform-express';
-import { AppModule } from './app.module';
 
+// M11 — `ProcessAuditEvent.seq` es BIGINT; que `JSON.stringify` no reviente.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (this: bigint) {
+  return this.toString();
+};
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
+import compression from 'compression';
+import { Logger } from 'nestjs-pino';
+import { AppModule } from './app.module';
+import { assertRuntimeSecrets } from './config/runtime-secrets';
+import { envPositiveInt } from './common/env-number';
+import { correlationMiddleware } from './common/log-context';
+
+/**
+ * Bootstrap del BFF de Prestige.
+ *
+ * Endurecimiento de plataforma (Fase A):
+ *  - helmet: cabeceras de seguridad.
+ *  - CORS por lista explícita de orígenes (CORS_ORIGINS), no `origin: true`.
+ *  - Body limit realista (2 MB) — el contenido de documentos ya no viaja en base64.
+ *  - ValidationPipe global con whitelist + forbidNonWhitelisted.
+ *  - compression y shutdown hooks.
+ *  - Logger estructurado (pino) como logger de Nest.
+ */
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useBodyParser('json', { limit: '50mb' });
-  app.useBodyParser('urlencoded', { limit: '50mb', extended: true });
-  app.enableCors({ origin: true });
+  const secrets = assertRuntimeSecrets();
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+
+  app.useLogger(app.get(Logger));
+  app.flushLogs();
+  for (const warning of secrets.warnings) app.get(Logger).warn(warning);
+
+  app.set('trust proxy', 1);
+  app.use(correlationMiddleware); // id de correlación en req.id y en la respuesta, antes que el logger
+  app.use(helmet());
+  app.use(
+    compression({
+      // No comprimir binarios ya comprimidos (ZIP del expediente, PDFs).
+      filter: (req, res) => {
+        const type = String(res.getHeader('Content-Type') ?? '');
+        if (/application\/(zip|pdf|octet-stream)/.test(type)) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
+
+  // La importación de una tabla de consulta (hasta 5000 filas) necesita más margen que el resto de la API. Este parser
+  // solo actúa en esa ruta (`type` devuelve falso en las demás, que pasan al parser global de abajo, con el límite normal).
+  const importLimit = process.env.LOOKUP_IMPORT_BODY_LIMIT ?? '12mb';
+  const isLookupImport = (req: { method?: string; url?: string; originalUrl?: string; headers: Record<string, unknown> }) =>
+    req.method === 'POST' &&
+    /^\/lookup-tables\/[^/?]+\/rows\/import\/?(\?|$)/.test(req.originalUrl ?? req.url ?? '') &&
+    /json/i.test(String(req.headers['content-type'] ?? ''));
+  app.useBodyParser('json', { limit: importLimit, type: (req: Parameters<typeof isLookupImport>[0]) => isLookupImport(req) });
+
+  const bodyLimit = process.env.BODY_LIMIT ?? '2mb';
+  app.useBodyParser('json', { limit: bodyLimit });
+  app.useBodyParser('urlencoded', { limit: bodyLimit, extended: true });
+
+  const origins = `${process.env.CORS_ORIGINS ?? 'http://localhost:3001'},${process.env.MCP_ALLOWED_ORIGINS ?? ''}`
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: origins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key',
+      'X-Prestige-Worker-Token',
+      'X-Tenant-Id',
+      'MCP-Protocol-Version',
+      'Mcp-Session-Id',
+    ],
+    exposedHeaders: ['WWW-Authenticate', 'Mcp-Session-Id'],
+  });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
+  app.enableShutdownHooks();
+
+  // OpenAPI (M14). UI en /docs, JSON en /docs-json. En dev se vuelca el spec a
+  // backend/contracts/openapi.generated.json para diff contra el contrato a mano.
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Prestige BFF')
+    .setDescription(
+      'API del BFF de Prestige (firma electrónica, evidencia verificable, onboarding). ' +
+        'El navegador nunca habla directo con Postgres, Temporal, MinIO o el HSM.',
+    )
+    .setVersion(process.env.npm_package_version ?? '0.1.0')
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'keycloak')
+    .addApiKey({ type: 'apiKey', name: 'X-Prestige-Worker-Token', in: 'header' }, 'worker-token')
+    .build();
+  const openapi = SwaggerModule.createDocument(app, swaggerConfig);
+  // Sin /docs ni /docs-json en producción (no exponer el mapa de la API).
+  if (process.env.NODE_ENV !== 'production') {
+    SwaggerModule.setup('docs', app, openapi, {
+      swaggerOptions: { persistAuthorization: true },
+      jsonDocumentUrl: 'docs-json',
+    });
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      writeFileSync(
+        join(__dirname, '..', '..', '..', 'contracts', 'openapi.generated.json'),
+        JSON.stringify(openapi, null, 2),
+      );
+    } catch {
+      /* el volcado del contrato es best-effort */
+    }
+  }
+
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-  await app.listen(port);
-  // eslint-disable-next-line no-console
-  console.log(`Prestige BFF escuchando en http://localhost:${port}`);
+  const server = await app.listen(port);
+  // Detras de un balanceador (ALB/nginx, idle ~60 s) el BFF debe mantener la
+  // conexion mas tiempo que el LB, o este reutiliza sockets ya cerrados (502).
+  // headersTimeout debe ser > keepAliveTimeout.
+  const keepAliveTimeout = envPositiveInt('KEEP_ALIVE_TIMEOUT_MS', 65_000);
+  server.keepAliveTimeout = keepAliveTimeout;
+  server.headersTimeout = Math.max(envPositiveInt('HEADERS_TIMEOUT_MS', 66_000), keepAliveTimeout + 1_000);
+  app.get(Logger).log(`Prestige BFF escuchando en http://localhost:${port}`);
 }
-bootstrap();
+
+void bootstrap();

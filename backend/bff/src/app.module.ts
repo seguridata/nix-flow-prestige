@@ -1,8 +1,20 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { HttpExceptionFilter } from './common/http-exception.filter';
+import { LoggerModule } from 'nestjs-pino';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { RedisThrottlerStorage } from './common/redis-throttler-storage';
+import { PrestigeThrottlerGuard } from './common/throttle-tracker';
+import { IdempotencyInterceptor } from './common/idempotency.interceptor';
+import { genReqId, ignoreHealthLog, logCustomProps } from './common/log-context';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { CasesModule } from './cases/cases.module';
+import { FoldersModule } from './folders/folders.module';
+import { DocumentTemplatesModule } from './document-templates/document-templates.module';
 import { DocumentsModule } from './documents/documents.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { SignatureRequestsModule } from './signature-requests/signature-requests.module';
@@ -12,18 +24,62 @@ import { EvidenceModule } from './evidence/evidence.module';
 import { StorageModule } from './storage/storage.module';
 import { SigningModule } from './signing/signing.module';
 import { OperationsModule } from './operations/operations.module';
-import { DemoModule } from './demo/demo.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { ProcessModule } from './process/process.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { AvailabilityModule } from './availability/availability.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { ControlPlaneModule } from './control-plane/control-plane.module';
+import { WebauthnModule } from './webauthn/webauthn.module';
+import { AiModule } from './ai/ai.module';
+import { ChatModule } from './chat/chat.module';
+import { LookupTablesModule } from './lookup-tables/lookup-tables.module';
+import { TenantObservabilityInterceptor } from './common/tenant-observability.interceptor';
+import { McpModule } from './mcp/mcp.module';
+
+/** Misma instancia dinámica para AppModule y ThrottleGuardModule (comparten opciones y storage). */
+const THROTTLER = ThrottlerModule.forRoot({
+  throttlers: [{ name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT ?? 120) }],
+  // Con REDIS_URL el contador se comparte entre réplicas; sin él, memoria local (default).
+  storage: process.env.REDIS_URL ? new RedisThrottlerStorage(process.env.REDIS_URL) : undefined,
+  // Las sondas de salud (LB/orquestador) no deben consumir ni sufrir el límite.
+  skipIf: (ctx) => /^\/(?:operations\/)?health(?:[/?]|$)/.test(ctx.switchToHttp().getRequest()?.url ?? ''),
+});
+
+@Module({
+  imports: [THROTTLER],
+  providers: [{ provide: APP_GUARD, useClass: PrestigeThrottlerGuard }],
+})
+class ThrottleGuardModule {}
 
 @Module({
   imports: [
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? { target: 'pino-pretty', options: { singleLine: true, translateTime: 'SYS:HH:MM:ss' } }
+            : undefined,
+        redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-prestige-worker-token"]'],
+        // Correlación: lee/genera `x-correlation-id` y lo devuelve en la respuesta.
+        genReqId,
+        // tenantId/actorId salen de `req.user` (se evalúa al cerrar la petición, ya autenticada).
+        customProps: (req) => logCustomProps(req as never),
+        autoLogging: { ignore: (req) => ignoreHealthLog(req as { url?: string }) },
+      },
+    }),
+    THROTTLER,
+    ScheduleModule.forRoot(),
     PrismaModule,
+    RedisModule,
     StorageModule,
     AuthModule,
     RealtimeModule,
     CasesModule,
+    FoldersModule,
+    DocumentTemplatesModule,
     DocumentsModule,
     WorkflowModule,
     SigningModule,
@@ -32,10 +88,26 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     SignatureFieldsModule,
     EvidenceModule,
     OperationsModule,
-    DemoModule,
     CollaborationModule,
     ProcessModule,
     OnboardingModule,
+    AvailabilityModule,
+    NotificationsModule,
+    WebhooksModule,
+    ControlPlaneModule,
+    WebauthnModule,
+    AiModule,
+    ChatModule,
+    LookupTablesModule,
+    McpModule,
+    // SIEMPRE después de AuthModule: sus APP_GUARD corren en orden de registro y el
+    // tracker necesita `req.user` (ya autenticado) para limitar por `tenantId:actorId`.
+    ThrottleGuardModule,
+  ],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: TenantObservabilityInterceptor },
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
 })
 export class AppModule {}

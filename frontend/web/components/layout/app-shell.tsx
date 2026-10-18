@@ -1,19 +1,27 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import {
   FilePlus2,
+  Files,
+  FileText,
+  FolderOpen,
   GitBranch,
   Inbox,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   Menu,
+  Plug2,
   Search,
   Send,
   Server,
+  Table2,
   UserPlus,
+  Workflow,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/layout/notifications-bell";
 import { ProductTourButton } from "@/components/tour/product-tour";
@@ -21,19 +29,28 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 import { SeguriDataLogo } from "@/components/brand/logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
+import { ChatPanel } from "@/components/chat/chat-panel";
 import { CommandPalette, useCommandPalette } from "@/components/command/command-palette";
 
-const NAV = [
+/** `roles`: la entrada solo se muestra si el usuario tiene alguno (espeja los @Roles del BFF). */
+const NAV: { href: Route; label: string; icon: typeof Inbox; roles?: string[] }[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/inbox", label: "Bandeja", icon: Inbox },
   { href: "/sent", label: "Enviados", icon: Send },
-  { href: "/new", label: "Enviar", icon: FilePlus2 },
-  { href: "/onboarding", label: "Onboarding", icon: UserPlus },
+  { href: "/documentos" as Route, label: "Mis documentos", icon: FolderOpen },
+  { href: "/new", label: "Enviar", icon: FilePlus2, roles: ["sender", "admin"] },
+  { href: "/formatos" as Route, label: "Formatos", icon: FileText },
+  { href: "/plantillas", label: "Plantillas", icon: Files, roles: ["sender", "admin"] },
+  { href: "/onboarding", label: "Onboarding", icon: UserPlus, roles: ["rh", "admin"] },
   { href: "/tasks", label: "Tareas", icon: ListChecks },
-  { href: "/process", label: "Proceso", icon: GitBranch },
-  { href: "/operations", label: "Operación", icon: Server },
+  { href: "/process", label: "Procesos", icon: GitBranch, roles: ["sender", "admin"] },
+  { href: "/flujos" as Route, label: "Flujos", icon: Workflow, roles: ["admin"] },
+  { href: "/tablas-consulta" as Route, label: "Tablas de consulta", icon: Table2, roles: ["admin"] },
+  { href: "/operations", label: "Operación", icon: Server, roles: ["sender", "rh", "admin"] },
+  { href: "/conexiones" as Route, label: "Conexiones", icon: Plug2, roles: ["admin"] },
 ];
 
 export function AppShell({
@@ -46,7 +63,8 @@ export function AppShell({
   actions?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { name } = useSession();
+  const { name, email, roles } = useSession();
+  const visibleNav = NAV.filter((n) => !n.roles || n.roles.some((r) => roles.includes(r)));
   const palette = useCommandPalette();
   const initials = name
     .split(" ")
@@ -62,7 +80,7 @@ export function AppShell({
           <SeguriDataLogo inverted />
         </div>
         <nav className="flex flex-1 flex-col gap-1 px-3" data-tour="nav">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
             return (
@@ -100,12 +118,12 @@ export function AppShell({
               <SheetTrigger className="rounded-md p-2 hover:bg-muted" aria-label="Menú">
                 <Menu className="size-4" />
               </SheetTrigger>
-              <SheetContent direction="left" title="Navegación" className="bg-secondary text-secondary-foreground">
+              <SheetContent title="Navegación" className="bg-secondary text-secondary-foreground">
                 <div className="px-5 py-5">
                   <SeguriDataLogo inverted />
                 </div>
                 <nav className="flex flex-col gap-1 px-3">
-                  {NAV.map((item) => {
+                  {visibleNav.map((item) => {
                     const Icon = item.icon;
                     return (
                       <Link
@@ -132,9 +150,30 @@ export function AppShell({
             <div data-tour="notify">
               <NotificationsBell />
             </div>
-            <Avatar className="size-9">
-              <AvatarFallback>{initials}</AvatarFallback>
-            </Avatar>
+            <Popover>
+              <PopoverTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring">
+                <Avatar className="size-9">
+                  <AvatarFallback>{initials}</AvatarFallback>
+                </Avatar>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-60 p-0">
+                <div className="border-b border-border px-4 py-3">
+                  <p className="truncate text-sm font-medium">{name}</p>
+                  {email ? <p className="truncate text-xs text-muted-foreground">{email}</p> : null}
+                  {roles.length ? (
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {roles.join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+                <a
+                  href="/api/auth/logout"
+                  className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-muted"
+                >
+                  <LogOut className="size-4" /> Cerrar sesión
+                </a>
+              </PopoverContent>
+            </Popover>
           </div>
         </header>
         <motion.main
@@ -146,6 +185,7 @@ export function AppShell({
           {children}
         </motion.main>
       </div>
+      {roles.includes("admin") ? <ChatPanel /> : null}
       <CommandPalette open={palette.open} onOpenChange={palette.setOpen} />
     </div>
   );

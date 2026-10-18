@@ -13,11 +13,18 @@ import type { DraftField, SignerColor } from "./field-editor-types";
 // avoids bundler asset-resolution edge cases with Turbopack.
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+// Ref. estable (si no, react-pdf recarga en cada render). `disableRange` evita
+// que pdf.js pida rangos a un endpoint que descifra al vuelo y no los soporta.
+const PDF_OPTIONS = { disableRange: true } as const;
+
 const MIN_DRAG_PCT = 0.012;
 const MIN_FIELD_PCT = 0.03;
 
 interface SignatureFieldCanvasProps {
-  fileDataUrl: string;
+  // URL same-origin del PDF. Con http(s), pdf.js usa PDFFetchStream (fetch +
+  // Headers reales): ni el bug de _onHeadersReceived con `blob:`, ni la
+  // transferencia del ArrayBuffer que rompe el 2º parse en StrictMode.
+  fileUrl: string;
   pageNumber: number;
   pageWidth: number;
   onNumPages: (n: number) => void;
@@ -34,7 +41,7 @@ interface SignatureFieldCanvasProps {
 }
 
 export function SignatureFieldCanvas({
-  fileDataUrl,
+  fileUrl,
   pageNumber,
   pageWidth,
   onNumPages,
@@ -134,7 +141,8 @@ export function SignatureFieldCanvas({
 
   return (
     <Document
-      file={fileDataUrl}
+      file={fileUrl}
+      options={PDF_OPTIONS}
       onLoadSuccess={({ numPages }) => onNumPages(numPages)}
       loading={<div className="flex h-[70vh] items-center justify-center text-sm text-muted-foreground">Cargando PDF…</div>}
       error={

@@ -1,3 +1,5 @@
+> **Fuente de la verdad (17 oct 2026):** la [página de Notion de Prestige](https://app.notion.com/p/3fac115acdaa812884a9de319b704baa) manda sobre estado, pendientes y decisiones. El [espejo en el repo](MasterPlan/ESTADO-Y-PENDIENTES.md) lo replica; los documentos históricos y las especificaciones técnicas conservan su alcance.
+
 # Prestige
 
 Plataforma propia de firma electrónica, workflow y evidencia verificable de **SeguriData**. Sustituye a **Resolve**, el BPM actual (HD Soluciones): inseguro, con vulnerabilidades activas y el incidente CFE originado en ese mismo producto.
@@ -16,7 +18,7 @@ Identidad visual: [`branding.md`](./branding.md) + isotipo oficial en `frontend/
 | Búsqueda            | cmdk                              | Paleta ⌘K                                               |
 | Autógrafa           | signature_pad + pdf-lib           | Trazo real incrustado en el PDF                         |
 | Backend             | NestJS 10                         | Dominios + Workflow Port                                |
-| Motor BPM           | Tempomarral                       | Ejecución durable; sustituye Flowable                   |
+| Motor BPM           | Temporal                       | Ejecución durable; sustituye Flowable                   |
 | Object storage      | MinIO (S3)                        | Documentos fuera de Postgres                            |
 | ORM / DB            | Prisma 6 + PostgreSQL             | Fuente de verdad de firma y evidencia                   |
 | Caché / tiempo real | Redis + Socket.IO                 | Listo para escala                                       |
@@ -54,7 +56,7 @@ Biometría: adaptador listo (`BIOMETRIC_PROVIDER_URL`, `BIOMETRIC_API_KEY`). Sin
 
 ## Cómo levantarlo
 
-Requiere **Bun ≥ 1.3** y **Docker Desktop** (Compose v2). Los comandos salen de la raíz del repo.
+En este workspace, ejecutar Docker/Prisma/dev dentro de **WSL/Ubuntu**, sobre la ruta Windows del repositorio. Requiere **Bun ≥ 1.3** y **Docker Compose v2**. Los comandos salen de la raíz del repo.
 
 En PowerShell, `cp` y `cd` funcionan. Usa `curl.exe` (el alias `curl` es `Invoke-WebRequest`). Si `localhost` no responde, usa `127.0.0.1`.
 
@@ -72,7 +74,7 @@ Infra Docker (Postgres, Keycloak, Temporal, MinIO, Redis) + Prisma + frontend (`
 
 `Ctrl+C` para front y BFF. La infra Docker sigue; `bun run down` la baja. Para rehacer el sandbox: `bun run dev -- --reset`.
 
-App: http://127.0.0.1:3001 (sesión local `maria`). BFF: http://127.0.0.1:3000.
+App: http://localhost:3001 (login OIDC contra Keycloak; usuarios reales provisionados en el sandbox; los ficticios fueron retirados. No usar credenciales del seed histórico). BFF: http://localhost:3000. Usa `localhost`, no `127.0.0.1`: el redirect OIDC del realm está registrado para `localhost`.
 
 ### Paso a paso (manual)
 
@@ -166,7 +168,7 @@ curl.exe -s http://127.0.0.1:3000/operations/health
 
 | Servicio      | URL                              | Credenciales                                 |
 | ------------- | -------------------------------- | -------------------------------------------- |
-| App           | http://localhost:3001            | sesión local `maria` (aún no hay login OIDC) |
+| App           | http://localhost:3001            | login OIDC (Keycloak, realm `prestige`)      |
 | BFF           | http://localhost:3000            | —                                            |
 | Cockpit       | http://localhost:3001/operations | salud Postgres / MinIO / Temporal            |
 | Temporal UI   | http://localhost:8088            | —                                            |
@@ -197,6 +199,6 @@ Solo van en `.env` las URLs y secretos de conexión (ver `backend/bff/.env.examp
 
 ## Qué es real
 
-- Persistencia Postgres, guard JWT Keycloak, WebSocket, orden secuencial, evidencia SHA-256 verificable, campos sobre PDF, Temporal (con fallback local si el motor aún no responde), MinIO opcional, consentimiento persistido, autógrafa sellada.
+- Persistencia Postgres, guard JWT Keycloak, WebSocket, orden secuencial, evidencia SHA-256 verificable, campos sobre PDF, Temporal y MinIO, cuya disponibilidad debe comprobarse en cada arranque, consentimiento persistido, autógrafa sellada.
 
-Pendiente explícito: login OIDC en el cliente, HSM/PKI de producción, proveedor biométrico de pago, constancia NOM-151.
+Pendiente explícito: HSM/PKI de producción, proveedor biométrico de pago, constancia NOM-151.

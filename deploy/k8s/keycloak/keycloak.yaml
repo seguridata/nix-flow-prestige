@@ -1,0 +1,119 @@
+# Keycloak de producción: imagen optimizada (deploy/keycloak/Dockerfile), `start --optimized`, Postgres propio,
+# credenciales por Secret (keycloak-secrets, ver keycloak-secrets.example.yaml) y realm sin usuarios demo.
+# Namespace: el mismo de la aplicación (kustomization.yaml de esta carpeta). Ajustar hostname e imagen.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: keycloak-config }
+data:
+  KC_DB: postgres
+  KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+  KC_HOSTNAME: https://auth.example.com       # AJUSTAR: URL pública del IdP (debe coincidir con KEYCLOAK_ISSUER)
+  KC_HOSTNAME_STRICT: "true"
+  KC_HTTP_ENABLED: "true"                      # TLS termina en el Ingress
+  KC_PROXY_HEADERS: xforwarded
+  KC_HEALTH_ENABLED: "true"
+---
+apiVersion: v1
+kind: Service
+metadata: { name: keycloak-db, labels: { app: keycloak-db } }
+spec: { clusterIP: None, selector: { app: keycloak-db }, ports: [{ name: pg, port: 5432 }] }
+---
+# Para producción seria preferir un Postgres gestionado (y apuntar KC_DB_URL a él). Esto es la opción autocontenida.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: keycloak-db, labels: { app: keycloak-db } }
+spec:
+  serviceName: keycloak-db
+  replicas: 1
+  selector: { matchLabels: { app: keycloak-db } }
+  template:
+    metadata: { labels: { app: keycloak-db } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 70, fsGroup: 70, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{ name: pg, containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_DB, value: keycloak }
+            - { name: POSTGRES_USER, valueFrom: { secretKeyRef: { name: keycloak-secrets, key: KC_DB_USERNAME } } }
+            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: keycloak-secrets, key: KC_DB_PASSWORD } } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          readinessProbe: { exec: { command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d keycloak"] }, periodSeconds: 10 }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }, { name: run, mountPath: /var/run/postgresql }]
+      volumes: [{ name: run, emptyDir: {} }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 10Gi } } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: keycloak, labels: { app: keycloak } }
+spec:
+  replicas: 1   # más de 1 réplica exige caché distribuida (Infinispan); no configurada aquí
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: keycloak
+          image: prestige-keycloak:26.0   # construida con deploy/keycloak/Dockerfile; fijar por digest
+          args: ["start", "--optimized", "--import-realm"]
+          ports: [{ name: http, containerPort: 8080 }, { name: mgmt, containerPort: 9000 }]
+          envFrom:
+            - configMapRef: { name: keycloak-config }
+          env:
+            - { name: KC_DB_USERNAME, valueFrom: { secretKeyRef: { name: keycloak-secrets, key: KC_DB_USERNAME } } }
+            - { name: KC_DB_PASSWORD, valueFrom: { secretKeyRef: { name: keycloak-secrets, key: KC_DB_PASSWORD } } }
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, valueFrom: { secretKeyRef: { name: keycloak-secrets, key: KC_BOOTSTRAP_ADMIN_USERNAME } } }
+            - { name: KC_BOOTSTRAP_ADMIN_PASSWORD, valueFrom: { secretKeyRef: { name: keycloak-secrets, key: KC_BOOTSTRAP_ADMIN_PASSWORD } } }
+          resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: "2", memory: 2Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          startupProbe: { httpGet: { path: /health/ready, port: mgmt, scheme: HTTPS }, periodSeconds: 5, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /health/ready, port: mgmt, scheme: HTTPS }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /health/live, port: mgmt, scheme: HTTPS }, periodSeconds: 20, failureThreshold: 5 }
+          volumeMounts:
+            - { name: realm, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        # ConfigMap keycloak-realm: se crea con `kubectl create configmap` desde prestige-realm.prod.json (ver README).
+        - { name: realm, configMap: { name: keycloak-realm } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: keycloak, labels: { app: keycloak } }
+spec: { selector: { app: keycloak }, ports: [{ name: http, port: 8080, targetPort: http }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt   # ajustar
+    nginx.ingress.kubernetes.io/proxy-buffer-size: 16k
+spec:
+  ingressClassName: nginx
+  tls: [{ hosts: [auth.example.com], secretName: keycloak-tls }]
+  rules:
+    - host: auth.example.com
+      http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: keycloak, port: { name: http } } } }] }
+---
+# Red: el BFF y el front consultan Keycloak; Keycloak solo habla con su Postgres. Se suma al default-deny de base.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: keycloak-ingress }
+spec:
+  podSelector: { matchLabels: { app: keycloak } }
+  policyTypes: [Ingress, Egress]
+  ingress: [{ from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }, { podSelector: { matchExpressions: [{ key: app, operator: In, values: [bff, web] }] } }] }]
+  egress: [{ to: [{ podSelector: { matchLabels: { app: keycloak-db } } }], ports: [{ port: 5432 }] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: keycloak-db-ingress }
+spec:
+  podSelector: { matchLabels: { app: keycloak-db } }
+  policyTypes: [Ingress]
+  ingress: [{ from: [{ podSelector: { matchLabels: { app: keycloak } } }], ports: [{ port: 5432 }] }]

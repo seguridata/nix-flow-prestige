@@ -19,7 +19,12 @@ export interface AuthenticatedUser {
   preferredUsername?: string;
   name?: string;
   email?: string;
+  /** Identidad de negocio: hoy = preferred_username (los usuarios del realm son maria/carlos/roberto). */
+  actorId: string;
+  tenantId: string;
   roles: string[];
+  /** `auth_time` del token (epoch s): cuándo se autenticó el usuario. Para `A-11` step-up. */
+  authTime?: number;
   raw: JWTPayload;
 }
 
@@ -27,6 +32,9 @@ interface KeycloakAccessToken extends JWTPayload {
   preferred_username?: string;
   name?: string;
   email?: string;
+  tenant?: string;
+  azp?: string;
+  auth_time?: number;
   realm_access?: { roles?: string[] };
 }
 
@@ -86,18 +94,30 @@ export class JwtAuthGuard implements CanActivate {
       const { payload } = await jwtVerify<KeycloakAccessToken>(token, this.jwks, {
         issuer: this.issuer,
       });
+      assertAudience(payload);
+      const tenantClaim = typeof payload.tenant === 'string' ? payload.tenant.trim() : '';
+      // Fail-closed: sin claim `tenant` no hay aislamiento posible. Ya no se
+      // asume 'seguridata'. El realm publica el claim (mapper `tenant`).
+      if (!tenantClaim) {
+        this.logger.warn(`Token sin claim tenant (sub=${payload.sub ?? '?'}): rechazado`);
+        throw new UnauthorizedException('El token no trae el claim tenant');
+      }
 
       request.user = {
         sub: payload.sub ?? '',
         preferredUsername: payload.preferred_username,
         name: payload.name,
         email: payload.email,
+        actorId: payload.preferred_username ?? payload.sub ?? '',
+        tenantId: tenantClaim,
         roles: payload.realm_access?.roles ?? [],
+        authTime: typeof payload.auth_time === 'number' ? payload.auth_time : undefined,
         raw: payload,
       } satisfies AuthenticatedUser;
 
       return true;
     } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
       this.logger.debug(`Verificación de JWT fallida: ${(err as Error).message}`);
       throw new UnauthorizedException('Token inválido o expirado');
     }
@@ -108,4 +128,23 @@ export class JwtAuthGuard implements CanActivate {
     const [scheme, token] = authorizationHeader.split(' ');
     return scheme === 'Bearer' && token ? token : undefined;
   }
+}
+
+/**
+ * Validación opcional de audiencia: si `KEYCLOAK_AUDIENCE` está definida, el
+ * token debe traerla en `aud` o como `azp` (Keycloak suele emitir el
+ * client id como `azp` y solo agrega `aud` con un audience mapper).
+ * Admite varias audiencias separadas por coma (un cliente OIDC por tenant,
+ * p. ej. `prestige-web,prestige-web-tecate`).
+ * Compartido con el gateway realtime.
+ */
+export function assertAudience(payload: { aud?: string | string[]; azp?: string }): void {
+  const expected = (process.env.KEYCLOAK_AUDIENCE ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (expected.length === 0) return;
+  const aud = Array.isArray(payload.aud) ? payload.aud : payload.aud ? [payload.aud] : [];
+  if (expected.some(e => aud.includes(e) || payload.azp === e)) return;
+  throw new UnauthorizedException('Token emitido para otra audiencia');
 }

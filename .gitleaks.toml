@@ -1,0 +1,52 @@
+title = "gitleaks config — Nix Flow Prestige"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Falsos positivos conocidos en historial git"
+
+# backend/bff/.env.example (commit 36058a76) tenia STORAGE_MASTER_KEY/
+# WORKER_SHARED_SECRET con valores base64 de 32 bytes reales pero de
+# DESARROLLO, nunca usados en ningun ambiente real (verificado: no
+# aparecen en ningun otro archivo del repo). Ya se reemplazaron por
+# placeholders explicitos (ver commit 1060b10), pero el valor viejo
+# permanece en el historial de git y gitleaks lo sigue detectando ahi.
+commits = [
+  "36058a7619a4a4693169c4a2563f7c2a2807201c",
+  "3e2bf39ac0ecdeb73317e1c5dec40b45d13327d3", # frase PKI de prueba en un spec (no es un secreto); el valor ya se corrigió a la de ejemplo documentada
+]
+
+# Formato propio de Prestige. Las reglas genéricas no distinguen un
+# placeholder de una llave de 32 bytes ni una passphrase de PKCS#12.
+# El secreto capturado es el grupo 1. `prestige-pki-dev` y `REPLACE_ME…`
+# quedan fuera: son el ejemplo de máquina local, no un secreto de entorno.
+
+[[rules]]
+id = "prestige-storage-master-key"
+description = "STORAGE_MASTER_KEY real (base64 de 32 bytes, AES-256)"
+regex = '''(?i)storage_master_key\s*(?:=|:|:=)+\s*['"]?([A-Za-z0-9+/]{43}=)['"]?'''
+keywords = ["storage_master_key"]
+[[rules.allowlists]]
+description = "Placeholder del .env.example y la llave de relleno de CI (solo letras A)"
+regexTarget = "secret"
+regexes = ['''REPLACE_ME''', '''^A{43}=$''']
+
+[[rules]]
+id = "prestige-pki-passphrase"
+description = "PKI_PASSPHRASE distinta del ejemplo local"
+regex = '''(?i)pki_passphrase\s*(?:=|:|:=)+\s*['"]?([^\s'"]{12,128})['"]?'''
+keywords = ["pki_passphrase"]
+[[rules.allowlists]]
+description = "Ejemplo documentado para una máquina puramente local"
+regexTarget = "secret"
+# `prestige-pki-dev` también aparece en prosa dentro de comentarios (con ` pegado) y el spec
+# de runtime-secrets usa una frase de relleno de prueba, no un secreto.
+regexes = ['''^prestige-pki-dev`?$''', '''^REPLACE_ME''', '''^frase-propia-del-entorno$''']
+
+[[rules]]
+id = "prestige-dotenv-committed"
+description = "Un .env real (no .example) no debe entrar al repositorio"
+path = '''(^|/)(\.env|\.env\.(local|production|development|test))$'''
+regex = '''(?i)(storage_master_key|pki_passphrase|worker_shared_secret|session_secret)\s*=\s*(\S+)'''
+keywords = ["storage_master_key", "pki_passphrase", "worker_shared_secret", "session_secret"]

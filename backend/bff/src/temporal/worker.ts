@@ -1,17 +1,18 @@
 import { NativeConnection, Worker } from '@temporalio/worker';
 import * as activities from './activities';
-import { PRESTIGE_TASK_QUEUE } from './shared';
+import { temporalConnectionConfig } from './connection-config';
+import { temporalWorkerLimits } from './worker-config';
 
 async function run() {
-  const address = process.env.TEMPORAL_ADDRESS ?? 'localhost:7233';
-  const namespace = process.env.TEMPORAL_NAMESPACE ?? 'default';
+  const { connection: options, namespace, taskQueue } = temporalConnectionConfig();
+  const address = options.address;
 
   let connection: NativeConnection | undefined;
   let attempt = 0;
   while (!connection) {
     attempt += 1;
     try {
-      connection = await NativeConnection.connect({ address });
+      connection = await NativeConnection.connect(options);
     } catch (error) {
       if (attempt === 1 || attempt % 10 === 0) {
         const message = error instanceof Error ? error.message : String(error);
@@ -27,13 +28,18 @@ async function run() {
   const worker = await Worker.create({
     connection,
     namespace,
-    taskQueue: PRESTIGE_TASK_QUEUE,
+    taskQueue,
     workflowsPath: require.resolve('./workflows'),
     activities,
+    ...temporalWorkerLimits(),
   });
 
-  console.log(`[worker] Prestige Temporal worker en cola "${PRESTIGE_TASK_QUEUE}"`);
-  await worker.run();
+  console.log(`[worker] Prestige Temporal worker en cola "${taskQueue}"`);
+  try {
+    await worker.run();
+  } finally {
+    await connection.close();
+  }
 }
 
 run().catch((error) => {

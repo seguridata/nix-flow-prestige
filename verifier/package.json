@@ -1,0 +1,12 @@
+{
+  "name": "prestige-evidence-verifier",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Verificador OFFLINE del expediente probatorio de Prestige. No necesita el BFF, la base de datos ni Temporal.",
+  "bin": { "prestige-verify": "./verify.mjs" },
+  "scripts": { "verify": "node verify.mjs" },
+  "dependencies": {
+    "node-forge": "^1.4.0"
+  }
+}

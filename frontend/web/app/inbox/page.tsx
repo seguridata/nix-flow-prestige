@@ -1,165 +1,240 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { motion } from "motion/react";
-import { FileText, FlaskConical, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { StatusBadge } from "@/components/documents/status-badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { EvidencePanel } from "@/components/inbox/evidence-panel";
+import { SignerRail } from "@/components/inbox/signer-rail";
+import { usePagedInbox } from "@/components/inbox/use-paged-inbox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { groupEnvelopes, statusSentence, type EnvelopeRow } from "@/libs/envelope-status";
+import { cn } from "@/libs/utils";
+import { filterInboxItems, mergeInboxPages } from "@/services/inbox-service";
 import { useSession } from "@/store/session-store";
-import { fetchInbox } from "@/services/inbox-service";
-import { createSelfSignDemo } from "@/services/signature-requests-service";
 
-function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+function EnvelopeItem({
+  row,
+  selected,
+  onSelect,
+}: {
+  row: EnvelopeRow;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li>
+      <div
+        className={cn(
+          "rounded-lg border bg-background p-4 transition-colors duration-150",
+          selected ? "border-foreground bg-muted/60" : "border-border hover:bg-muted/40",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={onSelect}
+            aria-current={selected ? "true" : undefined}
+            className="min-w-0 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <span className="block truncate text-base font-semibold">{row.caseTitle || row.documentTitle}</span>
+            <span className="mt-0.5 block text-sm text-muted-foreground">{statusSentence(row)}</span>
+          </button>
+          {row.actionable ? (
+            <Button asChild size="sm" className="shrink-0">
+              <Link href={`/documents/${row.documentId}/firmar`}>Revisar y firmar</Link>
+            </Button>
+          ) : null}
+        </div>
+        {row.signers && row.signers.length > 0 ? (
+          <div className="mt-4">
+            <SignerRail signers={row.signers} currentSignerId={row.currentSignerId} />
+          </div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function CompactItem({ row, selected, onSelect }: { row: EnvelopeRow; selected: boolean; onSelect: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={selected ? "true" : undefined}
+        className={cn(
+          "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          selected ? "border-foreground bg-muted/60" : "border-border bg-background hover:bg-muted/40",
+        )}
+      >
+        <span className="min-w-0 truncate text-sm font-medium">{row.caseTitle || row.documentTitle}</span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{statusSentence(row)}</span>
+      </button>
+    </li>
+  );
 }
 
 export default function InboxPage() {
-  const { signerId, name, email } = useSession();
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const demoMutation = useMutation({
-    mutationFn: () => createSelfSignDemo({ signerId, name, email }),
-    onSuccess: (result) => {
-      toast.success("Prueba lista para firmar.");
-      queryClient.invalidateQueries({ queryKey: ["inbox", signerId] });
-      router.push(`/documents/${result.document.id}`);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "No se pudo crear la prueba.");
-    },
-  });
-  const { data: items, isLoading } = useQuery({
-    queryKey: ["inbox", signerId],
-    queryFn: () => fetchInbox(signerId),
-  });
-  const pendingCount = items?.filter((item) => item.myStatus === "PENDIENTE").length ?? 0;
+  const { signerId, name, tenantId } = useSession();
+  const [criterion, setCriterion] = useState("");
+  const inbox = usePagedInbox("inbox", tenantId, signerId, criterion);
+  const sent = usePagedInbox("sent", tenantId, signerId, criterion);
+  const scope = `${tenantId}:${signerId}:${criterion}`;
+  const [picked, setPicked] = useState<{ scope: string; id: string } | null>(null);
+  const pickedId = picked?.scope === scope ? picked.id : null;
+
+  const groups = useMemo(() => groupEnvelopes(
+    filterInboxItems(mergeInboxPages(inbox.data?.pages), criterion),
+    filterInboxItems(mergeInboxPages(sent.data?.pages), criterion),
+  ), [inbox.data, sent.data, criterion]);
+  const all = useMemo(
+    () => [...groups.action, ...groups.inProgress, ...groups.closed],
+    [groups],
+  );
+  // El seleccionado es el que el usuario eligió, o el primero que requiere acción.
+  const selected = all.find((r) => r.signatureRequestId === pickedId) ?? all[0] ?? null;
+  const isLoading = inbox.isLoading || sent.isLoading;
   const firstName = name.split(" ")[0];
+
+  const select = (r: EnvelopeRow) => () => setPicked({ scope, id: r.signatureRequestId });
 
   return (
     <AppShell
       title="Bandeja"
       actions={
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => demoMutation.mutate()}
-            disabled={demoMutation.isPending}
-          >
-            <FlaskConical className="size-4" />
-            {demoMutation.isPending ? "Generando…" : "Prueba para firmar"}
-          </Button>
-          <Button asChild variant="secondary" size="sm">
-            <Link href="/new">
-              <Plus className="size-4" /> Nuevo envío
-            </Link>
-          </Button>
-        </div>
+        <Button asChild variant="secondary" size="sm">
+          <Link href="/new">
+            <Plus className="size-4" /> Nuevo envío
+          </Link>
+        </Button>
       }
     >
-      <div className="mx-auto max-w-5xl">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: [0.215, 0.61, 0.355, 1] }}
-          className="mb-10"
-        >
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Bandeja de firma</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Hola, {firstName}.{" "}
-            {pendingCount > 0 ? (
-              <>
-                Tienes <span className="text-primary">{pendingCount}</span> por firmar.
-              </>
-            ) : (
-              "Nada pendiente."
-            )}
-          </h1>
-        </motion.div>
+      <div className="mx-auto max-w-6xl">
+        <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+          {groups.action.length > 0
+            ? `${firstName}, ${groups.action.length === 1 ? "tienes 1 sobre que requiere" : `tienes ${groups.action.length} sobres que requieren`} tu acción`
+            : `${firstName}, no hay nada que requiera tu acción`}
+        </h1>
+        <div className="mt-5 max-w-xl">
+          <label htmlFor="inbox-search" className="text-sm font-medium">Buscar en los sobres cargados</label>
+          <input id="inbox-search" type="search" value={criterion} onChange={event => setCriterion(event.target.value)}
+            placeholder="Documento, expediente, persona o estado"
+            className="mt-2 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          <p className="mt-2 text-xs text-muted-foreground">Los resultados se amplían al cargar más sobres.</p>
+        </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            {[0, 1].map((i) => (
-              <div key={i} className="h-48 animate-pulse rounded-lg border border-border bg-muted/60" />
+          <div className="mt-8 grid gap-4" aria-busy="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-28 animate-pulse rounded-lg border border-border bg-muted/60" />
             ))}
           </div>
-        ) : items && items.length > 0 ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            {items.map((item, index) => (
-              <motion.div
-                key={item.signatureRequestId}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: index * 0.05, ease: [0.215, 0.61, 0.355, 1] }}
-              >
-                <Card className="glass h-full p-6 transition-transform duration-150 hover:-translate-y-0.5">
-                  <div className="flex items-start justify-between">
-                    <div className="flex size-11 items-center justify-center rounded-md bg-muted">
-                      <FileText className="size-5" strokeWidth={1.75} />
-                    </div>
-                    <StatusBadge status={item.myStatus} />
-                  </div>
-                  <h2 className="mt-5 text-lg font-semibold">{item.caseTitle || item.documentTitle}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{item.documentTitle}</p>
-                  <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Avatar className="size-6">
-                      <AvatarFallback className="text-[10px]">{initialsOf(item.requestedByName)}</AvatarFallback>
-                    </Avatar>
-                    {item.requestedByName}
-                  </div>
-                  <div className="mt-6 flex gap-2">
-                    <Button asChild className="flex-1">
-                      <Link href={`/documents/${item.documentId}`}>
-                        {item.myStatus === "PENDIENTE" ? "Revisar y firmar" : "Ver expediente"}
-                      </Link>
-                    </Button>
-                    <Sheet>
-                      <SheetTrigger className="inline-flex h-11 items-center rounded-md border border-border px-3 text-sm hover:bg-muted">
-                        Vista
-                      </SheetTrigger>
-                      <SheetContent title={item.documentTitle} className="p-6">
-                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Inspección</p>
-                        <h2 className="mt-2 text-xl font-semibold">{item.caseTitle || item.documentTitle}</h2>
-                        <p className="mt-2 text-sm text-muted-foreground">{item.documentTitle}</p>
-                        <p className="mt-4 text-sm">De {item.requestedByName}</p>
-                        <p className="text-xs text-muted-foreground">Estado {item.myStatus}</p>
-                        <Button asChild className="mt-6 w-full">
-                          <Link href={`/documents/${item.documentId}`}>Abrir expediente</Link>
-                        </Button>
-                      </SheetContent>
-                    </Sheet>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        ) : (
-          <Card className="glass overflow-hidden p-0">
+        ) : (inbox.isError && !inbox.data) || (sent.isError && !sent.data) ? (
+          <Card className="mt-8 p-6">
+            <p className="font-medium">No pudimos cargar tus sobres.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Revisa tu conexión e inténtalo de nuevo.</p>
+            <Button
+              className="mt-4"
+              variant="secondary"
+              onClick={() => {
+                void inbox.refetch();
+                void sent.refetch();
+              }}
+            >
+              Reintentar
+            </Button>
+          </Card>
+        ) : all.length === 0 ? (
+          <Card className="mt-8 overflow-hidden p-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/empty-inbox.jpg" alt="" className="h-48 w-full object-cover" />
             <div className="px-6 py-8 text-center">
-              <p className="text-base font-medium">No hay documentos por firmar</p>
+              <p className="text-base font-medium">{criterion ? "Sin coincidencias en los sobres cargados" : "Todavía no hay sobres"}</p>
               <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-                Cuando alguien te envíe un contrato, aparecerá aquí. También puedes generar una prueba para firmarte a ti mismo.
+                {criterion ? "Prueba otra búsqueda o carga más sobres para revisar registros anteriores." : "Envía un documento a firma o espera a que alguien te envíe uno; aparecerá aquí con su estado y su evidencia."}
               </p>
-              <Button className="mt-4" onClick={() => demoMutation.mutate()} disabled={demoMutation.isPending}>
-                Generar prueba para firmar
+              <Button asChild className="mt-4">
+                <Link href="/new">Enviar un documento a firma</Link>
               </Button>
             </div>
           </Card>
+        ) : (
+          <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <div className="space-y-8">
+              {groups.action.length > 0 ? (
+                <section aria-labelledby="g-action">
+                  <h2 id="g-action" className="mb-3 text-sm font-semibold">
+                    Requieren tu acción
+                  </h2>
+                  <ul className="space-y-3">
+                    {groups.action.map((r) => (
+                      <EnvelopeItem
+                        key={r.signatureRequestId}
+                        row={r}
+                        selected={selected?.signatureRequestId === r.signatureRequestId}
+                        onSelect={select(r)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {groups.inProgress.length > 0 ? (
+                <section aria-labelledby="g-progress">
+                  <h2 id="g-progress" className="mb-3 text-sm font-semibold">
+                    En curso ({groups.inProgress.length})
+                  </h2>
+                  <ul className="space-y-3">
+                    {groups.inProgress.map((r) => (
+                      <EnvelopeItem
+                        key={r.signatureRequestId}
+                        row={r}
+                        selected={selected?.signatureRequestId === r.signatureRequestId}
+                        onSelect={select(r)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {groups.closed.length > 0 ? (
+                <section aria-labelledby="g-closed">
+                  <h2 id="g-closed" className="mb-3 text-sm font-semibold">
+                    Cerrados ({groups.closed.length})
+                  </h2>
+                  <ul className="space-y-2">
+                    {groups.closed.map((r) => (
+                      <CompactItem
+                        key={r.signatureRequestId}
+                        row={r}
+                        selected={selected?.signatureRequestId === r.signatureRequestId}
+                        onSelect={select(r)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </div>
+
+            {selected ? (
+              <aside className="rounded-lg bg-muted/60 p-5 lg:sticky lg:top-6 lg:self-start">
+                <EvidencePanel key={selected.signatureRequestId} row={selected} />
+              </aside>
+            ) : null}
+          </div>
         )}
+        {!isLoading && (inbox.hasNextPage || sent.hasNextPage) ? (
+          <div className="mt-8 flex flex-col items-center gap-3" aria-live="polite">
+            {inbox.isFetchNextPageError || sent.isFetchNextPageError ? <p role="alert" className="text-sm text-destructive">No se pudieron cargar más sobres. Los anteriores siguen disponibles.</p> : null}
+            <Button variant="outline" disabled={inbox.isFetching || sent.isFetching} onClick={() => {
+              if (inbox.hasNextPage) void inbox.fetchNextPage();
+              if (sent.hasNextPage) void sent.fetchNextPage();
+            }}>{inbox.isFetchingNextPage || sent.isFetchingNextPage ? "Cargando…" : "Cargar más sobres"}</Button>
+          </div>
+        ) : null}
       </div>
     </AppShell>
   );

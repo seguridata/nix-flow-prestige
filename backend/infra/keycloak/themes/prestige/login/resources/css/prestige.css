@@ -1,0 +1,211 @@
+/*
+ * Tema de login de Prestige (opción A: panel carbón + formulario).
+ * Marca SeguriData: carbón #191919 dominante, verde #84BD00 sólo como acento,
+ * blanco y gris niebla para respirar. Siempre claro (no sigue el modo oscuro
+ * del sistema). Se apila sobre keycloak.v2 / PatternFly 5.
+ */
+:root {
+  --p-carbon: #191919;
+  --p-green: #84BD00;
+  --p-slate: #5B6770;
+  --p-mist: #F3F3F3;
+  --p-line: #8a949b;
+  --p-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --p-mono: 'IBM Plex Mono', Consolas, monospace;
+}
+
+html.login-pf body#keycloak-bg {
+  margin: 0;
+  min-height: 100vh;
+  height: auto;
+  display: flex;
+  flex-wrap: wrap;
+  background: #fff;
+  background-image: none;
+  color: var(--p-carbon);
+  font-family: var(--p-sans);
+}
+
+/* ---------- Panel de marca ---------- */
+.prestige-brand {
+  flex: 1 1 560px;
+  min-width: 0;
+  min-height: 520px;
+  box-sizing: border-box;
+  background: var(--p-carbon);
+  color: #fff;
+  padding: 64px 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 56px;
+}
+.prestige-brand__top { display: flex; flex-direction: column; gap: 6px; }
+.prestige-brand__mark { font-size: 22px; font-weight: 300; letter-spacing: .34em; }
+.prestige-brand__by { font-size: 12px; color: #9aa3a9; letter-spacing: .08em; }
+.prestige-brand__body { display: flex; flex-direction: column; gap: 32px; max-width: 520px; }
+.prestige-brand__rule { width: 40px; height: 2px; background: var(--p-green); }
+.prestige-brand__headline {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.prestige-brand__lead { margin: 0; max-width: 440px; font-size: 16px; line-height: 1.6; color: #c9c9c9; }
+.prestige-brand__list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.prestige-brand__list li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #333;
+  color: var(--p-green);
+}
+.prestige-brand__list span {
+  font-family: var(--p-mono);
+  font-size: 13px;
+  letter-spacing: .02em;
+  color: #fff;
+}
+.prestige-brand__foot { font-size: 12px; color: #9aa3a9; }
+
+/* ---------- Lado del formulario ---------- */
+.pf-v5-c-login {
+  flex: 1 1 520px;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  background: #fff;
+}
+.pf-v5-c-login__container {
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: none;
+}
+/* El nombre del realm ya no va arriba: la marca vive en el panel. */
+.pf-v5-c-login__header { display: none; }
+.pf-v5-c-login__main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.pf-v5-c-login__main-header {
+  display: block;
+  padding: 0;
+  border: 0;
+}
+.pf-v5-c-login__main-header .pf-v5-c-title {
+  margin: 0 0 8px;
+  font-family: var(--p-sans);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+  color: var(--p-carbon);
+}
+.pf-v5-c-login__main-body { padding: 0; }
+.pf-v5-c-login__main-footer { padding: 0; }
+
+.prestige-sub { margin: 0 0 32px; font-size: 15px; line-height: 1.5; color: var(--p-slate); }
+
+/* Etiquetas y campos */
+.pf-v5-c-form { --pf-v5-c-form--GridGap: 20px; }
+.pf-v5-c-form__group { display: flex; flex-direction: column; gap: 8px; }
+.pf-v5-c-form__label-text { font-size: 13px; font-weight: 500; color: var(--p-carbon); }
+
+.pf-v5-c-form-control {
+  height: 48px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid var(--p-line);
+  border-radius: 4px;
+}
+.pf-v5-c-form-control::before,
+.pf-v5-c-form-control::after { display: none; }
+.pf-v5-c-form-control:focus-within { outline: 2px solid var(--p-carbon); outline-offset: 2px; }
+.pf-v5-c-form-control input {
+  height: 100%;
+  padding: 0 14px;
+  font-family: var(--p-sans);
+  font-size: 16px;
+  color: var(--p-carbon);
+  background: transparent;
+}
+.pf-v5-c-form-control input:focus { outline: none; } /* el aro lo dibuja el contenedor */
+.pf-v5-c-form-control.pf-m-readonly { background: var(--p-mist); }
+
+/* Contraseña: campo + botón de ojo comparten borde */
+.pf-v5-c-input-group { gap: 0; }
+.pf-v5-c-input-group .pf-v5-c-form-control { border-right: 0; border-radius: 4px 0 0 4px; }
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: #fff;
+  color: var(--p-slate);
+  border: 1px solid var(--p-line);
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after { display: none; }
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control:focus-visible { outline: 2px solid var(--p-carbon); outline-offset: 2px; }
+
+/* Acción principal */
+.pf-v5-c-button.pf-m-primary {
+  height: 48px;
+  background-color: var(--p-carbon);
+  color: #fff;
+  border-radius: 4px;
+  font-family: var(--p-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus { background-color: #2c2c2c; }
+.pf-v5-c-button:focus-visible { outline: 2px solid var(--p-carbon); outline-offset: 2px; }
+
+/* Enlaces en carbón (no el azul de PatternFly) */
+.pf-v5-c-login a:not(.pf-v5-c-button) {
+  color: var(--p-carbon);
+  text-underline-offset: 3px;
+}
+.pf-v5-c-login a:not(.pf-v5-c-button):hover { color: #000; }
+
+/* Selector de idioma (sólo si hay más de uno) */
+.pf-v5-c-login__main-header-utilities { margin-top: 8px; }
+
+/* Aviso para firmantes externos */
+.prestige-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 32px;
+  padding: 16px 18px;
+  background: var(--p-mist);
+  border-radius: 6px;
+  color: var(--p-slate);
+}
+.prestige-note svg { flex: none; margin-top: 2px; }
+.prestige-note p { margin: 0; font-size: 13px; line-height: 1.55; color: #3b444b; }
+
+/* ---------- Móvil: formulario primero y panel compacto ---------- */
+@media (max-width: 760px) {
+  .prestige-brand { flex-basis: 100%; min-height: 0; padding: 32px 24px; gap: 24px; }
+  .prestige-brand__headline { font-size: 28px; }
+  .prestige-brand__lead,
+  .prestige-brand__list,
+  .prestige-brand__foot { display: none; }
+  .pf-v5-c-login { flex-basis: 100%; padding: 32px 24px; }
+}

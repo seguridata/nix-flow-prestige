@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Prestige — expediente de evidencia",
+    "quality_profile": "showcase",
+    "viewBox": [1068, 540],
+    "views": [
+      { "id": "binario", "label": "Binario", "focus": ["pdf", "objeto", "pades"], "note": "El PDF nunca se guarda en claro en PostgreSQL." },
+      { "id": "sellos", "label": "Sellos", "focus": ["pades", "tsa", "manifiesto"], "note": "PAdES, sello RFC 3161 y firma Ed25519 del manifiesto son tres pruebas distintas." },
+      { "id": "lectura", "label": "Lectura", "focus": ["manifiesto", "cadena", "verificador", "zip"], "note": "El verificador offline no necesita el BFF ni la base." }
+    ]
+  },
+  "stages": [
+    { "label": "Origen" },
+    { "label": "Custodia" },
+    { "label": "Firma" },
+    { "label": "Prueba" },
+    { "label": "Lectura" }
+  ],
+  "nodes": [
+    { "id": "pdf", "type": "frontend", "label": "PDF original", "sublabel": "hasta 25 MB", "stage": 0, "row": 1 },
+    { "id": "objeto", "type": "cloud", "label": "Objeto", "sublabel": "AES-256-GCM", "stage": 1, "row": 1, "tag": "objectKey" },
+    { "id": "pades", "type": "security", "label": "PAdES", "sublabel": "PKCS#7 detached", "stage": 2, "row": 0 },
+    { "id": "tsa", "type": "external", "label": "Sello", "sublabel": "RFC 3161", "stage": 2, "row": 2 },
+    { "id": "manifiesto", "type": "database", "label": "Manifiesto", "sublabel": "Ed25519", "stage": 3, "row": 1, "tag": "append-only" },
+    { "id": "cadena", "type": "security", "label": "Cadena", "sublabel": "AuditAnchor", "stage": 3, "row": 0 },
+    { "id": "verificador", "type": "backend", "label": "Verificador", "sublabel": "verify.mjs", "stage": 4, "row": 0, "tag": "offline" },
+    { "id": "zip", "type": "external", "label": "ZIP", "sublabel": "/dossier", "stage": 4, "row": 2 }
+  ],
+  "flows": [
+    { "id": "pdf-objeto", "from": "pdf", "to": "objeto", "label": "SHA-256 + sobre", "classification": "binario", "variant": "emphasis" },
+    { "id": "objeto-pades", "from": "objeto", "to": "pades", "label": "PDF en claro", "classification": "solo al firmar", "variant": "security" },
+    { "id": "pades-tsa", "from": "pades", "to": "tsa", "label": "hash", "classification": "tiempo", "variant": "security", "labelDy": 24 },
+    { "id": "pades-manifiesto", "from": "pades", "to": "manifiesto", "label": "hashes", "classification": "prueba", "variant": "emphasis" },
+    { "id": "tsa-manifiesto", "from": "tsa", "to": "manifiesto", "label": "token", "classification": "sello", "variant": "default" },
+    { "id": "cadena-manifiesto", "from": "cadena", "to": "manifiesto", "label": "eventos", "classification": "cadena", "variant": "dashed", "labelDy": 24 },
+    { "id": "manifiesto-verificador", "from": "manifiesto", "to": "verificador", "label": "JSON canónico", "classification": "offline", "variant": "emphasis" },
+    { "id": "manifiesto-zip", "from": "manifiesto", "to": "zip", "label": "dossier", "classification": "export", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Tres pruebas", "items": ["El hash dice que el PDF no cambió", "PAdES dice quién firmó con qué certificado", "El sello dice que eso existía en un instante"] },
+    { "dot": "rose", "title": "Límite actual", "items": ["trustedChain queda en falso: no hay raíz de un PSC empaquetada", "No hay constancia NOM-151", "No hay OCSP ni CRL incrustados"] },
+    { "dot": "cyan", "title": "Cómo se lee", "items": ["GET /evidence/:id/verify recalcula", "El ZIP incluye el verificador", "Alterar un evento rompe la cadena en firstBreakSeq"] }
+  ]
+}

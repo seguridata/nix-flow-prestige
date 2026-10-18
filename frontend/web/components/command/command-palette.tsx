@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
-import { FilePlus2, FileText, GitBranch, Inbox, LayoutDashboard, ListChecks, Send, ShieldCheck, UserPlus } from "lucide-react";
+import { FilePlus2, Files, FileText, GitBranch, Inbox, LayoutDashboard, ListChecks, Send, ShieldCheck, UserPlus } from "lucide-react";
 import { apiClient } from "@/services/api-client";
 
 interface SearchHit {
@@ -36,29 +37,30 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit | null>(null);
+  // Resultado asociado a la consulta que lo originó: si la consulta actual es
+  // corta o distinta, no se muestra (derivado en render, sin setState en el efecto).
+  const [result, setResult] = useState<{ q: string; data: SearchHit } | null>(null);
+  const trimmed = query.trim();
+  const hits = trimmed.length >= 2 && result?.q === trimmed ? result.data : null;
 
   useEffect(() => {
     if (!open) return;
-    if (query.trim().length < 2) {
-      setHits(null);
-      return;
-    }
+    if (trimmed.length < 2) return;
     const handle = window.setTimeout(() => {
       apiClient
-        .get<SearchHit>(`/operations/search?q=${encodeURIComponent(query.trim())}`)
-        .then(setHits)
-        .catch(() => setHits(null));
+        .get<SearchHit>(`/operations/search?q=${encodeURIComponent(trimmed)}`)
+        .then((data) => setResult({ q: trimmed, data }))
+        .catch(() => setResult(null));
     }, 180);
     return () => window.clearTimeout(handle);
-  }, [query, open]);
+  }, [trimmed, open]);
 
   if (!open) return null;
 
   function go(path: string) {
     onOpenChange(false);
     setQuery("");
-    router.push(path);
+    router.push(path as Route);
   }
 
   return (
@@ -111,6 +113,9 @@ export function CommandPalette({
           </Command.Item>
           <Command.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-muted" onSelect={() => go("/new")}>
             <FilePlus2 className="size-4" /> Nuevo envío
+          </Command.Item>
+          <Command.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-muted" onSelect={() => go("/plantillas")}>
+            <Files className="size-4" /> Plantillas
           </Command.Item>
           <Command.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm aria-selected:bg-muted" onSelect={() => go("/onboarding")}>
             <UserPlus className="size-4" /> Onboarding

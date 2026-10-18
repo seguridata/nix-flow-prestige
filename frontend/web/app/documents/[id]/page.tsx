@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -17,8 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/store/session-store";
+import { buildDelegatePayload } from "@/services/payloads";
+import { signerBlockedBy } from "@/libs/signing-turn";
 import { useDocumentRealtime } from "@/hooks/use-document-realtime";
-import { fetchDocument, fetchDocumentContent } from "@/services/documents-service";
+import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import {
   cancelRequest,
   delegateRequest,
@@ -26,6 +28,7 @@ import {
   fetchSignatureRequestsForDocument,
   fetchSigningCapabilities,
   signRequest,
+  verifyInternalPasskey,
 } from "@/services/signature-requests-service";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -55,11 +58,6 @@ export default function DocumentDetailPage({
     queryFn: () => fetchDocument(documentId),
   });
 
-  const contentQuery = useQuery({
-    queryKey: ["document-content", documentId],
-    queryFn: () => fetchDocumentContent(documentId),
-  });
-
   const requestsQuery = useQuery({
     queryKey: ["signature-requests", "document", documentId],
     queryFn: () => fetchSignatureRequestsForDocument(documentId),
@@ -69,11 +67,12 @@ export default function DocumentDetailPage({
 
   const request = requestsQuery.data?.[0];
   const me = request?.signers.find((s) => s.signerId === signerId);
+  // Secuencial: firmante anterior aún pendiente que bloquea mi turno (o null).
+  const blockedBy = request ? signerBlockedBy(request, signerId) : null;
+  const canSignNow = me?.status === "PENDIENTE" && !blockedBy;
 
-  const pdfDataUrl = useMemo(() => {
-    if (!contentQuery.data?.contentBase64) return null;
-    return `data:application/pdf;base64,${contentQuery.data.contentBase64}`;
-  }, [contentQuery.data]);
+  // URL same-origin al PDF; el navegador la abre con su visor nativo.
+  const pdfDataUrl = documentContentUrl(documentId);
 
   const [methodDialogOpen, setMethodDialogOpen] = useState(false);
   const [delegateTo, setDelegateTo] = useState("");
@@ -108,11 +107,20 @@ export default function DocumentDetailPage({
   const signMutation = useMutation({
     mutationFn: (payload: {
       method: SignatureMethod;
-      signatureImageBase64?: string;
+      autograph?: Blob;
       consentAccepted: boolean;
+      passkeyAssertionId?: string;
     }) => {
       if (!request) throw new Error("No hay solicitud de firma para este documento");
-      return signRequest(request.id, { signerId, ...payload });
+      return signRequest(
+        request.id,
+        {
+          method: payload.method,
+          consentAccepted: payload.consentAccepted,
+          passkeyAssertionId: payload.passkeyAssertionId,
+        },
+        payload.autograph,
+      );
     },
     onSuccess: () => {
       toast.success("Documento firmado. El trazo queda dentro del recuadro verde.");
@@ -139,11 +147,7 @@ export default function DocumentDetailPage({
   const delegateMutation = useMutation({
     mutationFn: () => {
       if (!request) throw new Error("No hay solicitud");
-      return delegateRequest(request.id, {
-        fromSignerId: signerId,
-        toSignerId: delegateTo.trim(),
-        toName: delegateName.trim() || undefined,
-      });
+      return delegateRequest(request.id, buildDelegatePayload(delegateTo, delegateName));
     },
     onSuccess: () => {
       toast.success("Firma delegada.");
@@ -272,7 +276,7 @@ export default function DocumentDetailPage({
               ))}
             </div>
 
-            {me?.status === "PENDIENTE" ? (
+            {canSignNow ? (
               <Button
                 className="mt-6 w-full"
                 size="lg"
@@ -281,6 +285,14 @@ export default function DocumentDetailPage({
               >
                 {signMutation.isPending ? "Firmando…" : "Firmar documento ahora"}
               </Button>
+            ) : blockedBy ? (
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Orden secuencial: te toca cuando firme{" "}
+                <span className="font-medium text-foreground">
+                  {blockedBy.name ?? blockedBy.signerId}
+                </span>
+                .
+              </p>
             ) : me?.status === "FIRMADO" ? (
               <p className="mt-6 text-center text-sm text-success">
                 Ya firmaste este documento
@@ -362,6 +374,8 @@ export default function DocumentDetailPage({
           onOpenChange={setMethodDialogOpen}
           allowedMethods={request.methods}
           consentText={consentQuery.data}
+          requirePasskey={request.requirePasskey}
+          onVerifyPasskey={() => verifyInternalPasskey(request.id)}
           biometricReady={capsQuery.data?.find((c) => c.method === "BIOMETRICA")?.configured}
           isSubmitting={signMutation.isPending}
           onConfirm={(payload) => signMutation.mutate(payload)}

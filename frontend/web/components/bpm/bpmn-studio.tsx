@@ -22,7 +22,9 @@ export function BpmnStudio({
   const ref = useRef<HTMLDivElement>(null);
   const modelerRef = useRef<ModelerHandle | null>(null);
   const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  });
 
   useEffect(() => {
     if (!xml || !ref.current) return;

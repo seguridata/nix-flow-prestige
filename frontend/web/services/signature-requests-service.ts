@@ -1,17 +1,41 @@
 import { apiClient, newIdempotencyKey } from "./api-client";
+import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
+import { buildSignPayload } from "./payloads";
+import type { EnvelopeTemplate, KycPolicy } from "@/libs/envelope-template";
 import type { SignatureRequest, SignatureMethod, SigningOrder } from "@/libs/types";
 
 export interface CreateSignatureRequestBody {
   documentId: string;
+  /** Si viene, el BFF rellena lo que este cuerpo no traiga. Un campo explícito gana. */
+  templateId?: string;
   methods: SignatureMethod[];
   order: SigningOrder;
-  requestedBy: string;
-  requestedByName: string;
+  slaHours?: number;
+  // requestedBy / tenant salen del token en el BFF.
   signers: { signerId: string; name?: string; email?: string; role?: "FIRMANTE" | "REVISOR" }[];
+  requirePasskey?: boolean;
+  kycPolicy?: KycPolicy;
+}
+
+export interface CreateEnvelopeTemplateBody {
+  name: string;
+  order?: SigningOrder;
+  kycPolicy?: KycPolicy;
+  allowedMethods: SignatureMethod[];
+  requirePasskey?: boolean;
+  slaHours?: number;
 }
 
 export function createSignatureRequest(body: CreateSignatureRequestBody) {
   return apiClient.post<SignatureRequest>("/signature-requests", body);
+}
+
+export function fetchEnvelopeTemplates() {
+  return apiClient.get<EnvelopeTemplate[]>("/signature-requests/templates");
+}
+
+export function createEnvelopeTemplate(body: CreateEnvelopeTemplateBody) {
+  return apiClient.post<EnvelopeTemplate>("/signature-requests/templates", body);
 }
 
 export function fetchSignatureRequestsForDocument(documentId: string) {
@@ -23,18 +47,26 @@ export function fetchSignatureRequestsForDocument(documentId: string) {
 export function signRequest(
   requestId: string,
   body: {
-    signerId: string;
     method: SignatureMethod;
-    signatureImageBase64?: string;
     consentAccepted?: boolean;
     biometricSessionId?: string;
+    passkeyAssertionId?: string;
   },
+  autograph?: Blob,
 ) {
-  return apiClient.post<SignatureRequest>(
-    `/signature-requests/${requestId}/actions/sign`,
-    body,
-    { idempotencyKey: newIdempotencyKey() },
-  );
+  body = buildSignPayload(body) as typeof body;
+  const path = `/signature-requests/${requestId}/actions/sign`;
+  const opts = { idempotencyKey: newIdempotencyKey() };
+  if (autograph) {
+    const form = new FormData();
+    form.append("file", autograph, "trazo.png");
+    form.append("method", body.method);
+    if (body.consentAccepted !== undefined) form.append("consentAccepted", String(body.consentAccepted));
+    if (body.biometricSessionId) form.append("biometricSessionId", body.biometricSessionId);
+    if (body.passkeyAssertionId) form.append("passkeyAssertionId", body.passkeyAssertionId);
+    return apiClient.post<SignatureRequest>(path, form, opts);
+  }
+  return apiClient.post<SignatureRequest>(path, body, opts);
 }
 
 export function fetchConsentText() {
@@ -57,7 +89,7 @@ export function cancelRequest(requestId: string, actorId?: string) {
 
 export function delegateRequest(
   requestId: string,
-  body: { fromSignerId: string; toSignerId: string; toName?: string },
+  body: { toSignerId: string; toName?: string },
 ) {
   return apiClient.post<SignatureRequest>(
     `/signature-requests/${requestId}/actions/delegate`,
@@ -66,9 +98,31 @@ export function delegateRequest(
   );
 }
 
-export function createSelfSignDemo(body: { signerId: string; name: string; email?: string }) {
-  return apiClient.post<{
-    document: { id: string };
-    request: SignatureRequest;
-  }>("/demo/self-sign", body);
+/**
+ * Ceremonia passkey del firmante INTERNO (sesión autenticada, vía proxy /api/bff).
+ * Rutas reales del backend (backend/bff/src/webauthn/passkey-authenticate.controller.ts):
+ *   POST /webauthn/authenticate/begin   body { signatureRequestId } -> { assertionId, options }
+ *   POST /webauthn/authenticate/finish  body { assertionId, response } -> { ok }
+ * El firmante sale del token. El assertionId verificado se manda como `passkeyAssertionId` en sign.
+ */
+export function beginInternalPasskey(signatureRequestId: string) {
+  return apiClient.post<{ assertionId: string; options: PublicKeyCredentialRequestOptionsJSON }>(
+    "/webauthn/authenticate/begin",
+    { signatureRequestId },
+  );
+}
+
+export function finishInternalPasskey(assertionId: string, response: unknown) {
+  return apiClient.post<{ ok: true }>("/webauthn/authenticate/finish", {
+    assertionId,
+    response,
+  });
+}
+
+/** Ejecuta begin -> WebAuthn del navegador -> finish; devuelve el assertionId verificado. */
+export async function verifyInternalPasskey(signatureRequestId: string): Promise<string> {
+  const { assertionId, options } = await beginInternalPasskey(signatureRequestId);
+  const response = await startAuthentication({ optionsJSON: options });
+  await finishInternalPasskey(assertionId, response);
+  return assertionId;
 }

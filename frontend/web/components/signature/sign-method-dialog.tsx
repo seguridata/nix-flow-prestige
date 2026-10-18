@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Fingerprint, PenTool, ShieldCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CheckCircle2, Fingerprint, KeyRound, PenTool, ShieldCheck } from "lucide-react";
 
 import {
   Dialog,
@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AutographPad } from "@/components/signature/autograph-pad";
 import { cn } from "@/libs/utils";
+import { HIDDEN_VISUAL_METHODS_NOTICE, resolveAllowedMethods } from "@/libs/allowed-methods";
 import type { SignatureMethod } from "@/libs/types";
 
 const METHOD_INFO: Record<
@@ -31,8 +32,18 @@ const METHOD_INFO: Record<
   },
   DIGITAL: {
     label: "Digital",
-    description: "Certificado / HSM. Hoy HMAC interno hasta conectar el PKI.",
+    description: "Certificado PAdES emitido por la CA interna, hasta conectar el HSM.",
     icon: ShieldCheck,
+  },
+  PASSKEY: {
+    label: "Passkey",
+    description: "Verificas tu identidad con la passkey de tu dispositivo.",
+    icon: KeyRound,
+  },
+  ACCEPT: {
+    label: "Acepto",
+    description: "Confirmas sobre el hash congelado. Sin trazo ni certificado.",
+    icon: CheckCircle2,
   },
 };
 
@@ -40,12 +51,19 @@ interface SignMethodDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   allowedMethods: SignatureMethod[];
+  /** Métodos usables hoy según el estado del PDF; si viene, oculta el resto. */
+  allowedMethodsNow?: SignatureMethod[];
   consentText?: { version: string; text: string };
   biometricReady?: boolean;
+  /** El sobre exige passkey para cualquier método. */
+  requirePasskey?: boolean;
+  /** Ejecuta la ceremonia passkey interna y devuelve el assertionId verificado. */
+  onVerifyPasskey?: () => Promise<string>;
   onConfirm: (payload: {
     method: SignatureMethod;
-    signatureImageBase64?: string;
+    autograph?: Blob;
     consentAccepted: boolean;
+    passkeyAssertionId?: string;
   }) => void;
   isSubmitting?: boolean;
 }
@@ -53,29 +71,60 @@ interface SignMethodDialogProps {
 export function SignMethodDialog({
   open,
   onOpenChange,
-  allowedMethods,
+  allowedMethods: allowedMethodsProp,
+  allowedMethodsNow,
   consentText,
   biometricReady = false,
+  requirePasskey = false,
+  onVerifyPasskey,
   onConfirm,
   isSubmitting,
 }: SignMethodDialogProps) {
+  const { methods: allowedMethods, hiddenSome } = useMemo(
+    () => resolveAllowedMethods(allowedMethodsProp, allowedMethodsNow),
+    [allowedMethodsProp, allowedMethodsNow],
+  );
   const [selected, setSelected] = useState<SignatureMethod | null>(null);
   const [accepted, setAccepted] = useState(false);
-  const [stroke, setStroke] = useState<string | null>(null);
+  const [stroke, setStroke] = useState<Blob | null>(null);
+  const [assertionId, setAssertionId] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    setStroke(null);
-    setAccepted(false);
-    if (allowedMethods.includes("AUTOGRAFA")) {
-      setSelected("AUTOGRAFA");
-    } else {
-      setSelected(allowedMethods[0] ?? null);
+  // Reinicia la ceremonia al abrir (o si cambian los métodos permitidos) derivando
+  // durante el render en lugar de setState dentro de un efecto.
+  const [prevKey, setPrevKey] = useState<{ open: boolean; methods: SignatureMethod[] | null }>({
+    open: false,
+    methods: null,
+  });
+  if (prevKey.open !== open || prevKey.methods !== allowedMethods) {
+    setPrevKey({ open, methods: allowedMethods });
+    if (open) {
+      setStroke(null);
+      setAccepted(false);
+      setAssertionId(null);
+      setPasskeyError(null);
+      setSelected(allowedMethods.includes("AUTOGRAFA") ? "AUTOGRAFA" : (allowedMethods[0] ?? null));
     }
-  }, [open, allowedMethods]);
+  }
 
   const blocked = selected === "BIOMETRICA" && !biometricReady;
   const needsStroke = selected === "AUTOGRAFA";
+  const needsPasskey = requirePasskey || selected === "PASSKEY";
+  const passkeyBlocked = needsPasskey && !assertionId;
+
+  async function verifyPasskey() {
+    if (!onVerifyPasskey) return;
+    setVerifying(true);
+    setPasskeyError(null);
+    try {
+      setAssertionId(await onVerifyPasskey());
+    } catch (e) {
+      setPasskeyError(e instanceof Error ? e.message : "No se pudo verificar la passkey.");
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,6 +135,12 @@ export function SignMethodDialog({
             Consentimiento versionado, método y —si aplica— trazo autógrafo. Nada se simula.
           </DialogDescription>
         </DialogHeader>
+
+        {hiddenSome ? (
+          <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+            {HIDDEN_VISUAL_METHODS_NOTICE}
+          </p>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {allowedMethods.map((method) => {
@@ -131,6 +186,32 @@ export function SignMethodDialog({
           </label>
         ) : null}
 
+        {needsPasskey ? (
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+            <p className="font-medium">
+              {requirePasskey ? "Esta firma exige verificación con passkey" : "Verifica con tu passkey"}
+            </p>
+            {onVerifyPasskey ? (
+              <Button
+                type="button"
+                size="sm"
+                className="mt-2"
+                variant={assertionId ? "outline" : "default"}
+                disabled={verifying || Boolean(assertionId)}
+                onClick={verifyPasskey}
+              >
+                {assertionId ? "Passkey verificada ✓" : verifying ? "Verificando…" : "Verificar con passkey"}
+              </Button>
+            ) : (
+              <p className="mt-1 text-xs text-warning">
+                La verificación con passkey no está disponible en este entorno. Contacta a quien envió el
+                documento.
+              </p>
+            )}
+            {passkeyError ? <p className="mt-1 text-xs text-destructive">{passkeyError}</p> : null}
+          </div>
+        ) : null}
+
         {blocked ? (
           <p className="text-xs text-warning">
             El entorno biométrico está listo. Falta BIOMETRIC_PROVIDER_URL del proveedor.
@@ -139,13 +220,14 @@ export function SignMethodDialog({
 
         <Button
           size="lg"
-          disabled={!selected || !accepted || isSubmitting || blocked || (needsStroke && !stroke)}
+          disabled={!selected || !accepted || isSubmitting || blocked || passkeyBlocked || (needsStroke && !stroke)}
           onClick={() =>
             selected &&
             onConfirm({
               method: selected,
-              signatureImageBase64: stroke ?? undefined,
+              autograph: stroke ?? undefined,
               consentAccepted: accepted,
+              passkeyAssertionId: assertionId ?? undefined,
             })
           }
         >

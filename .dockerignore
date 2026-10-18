@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/dist
+.git
+**/.env
+**/.env.*
+!**/.env.example
+backend/bff/pki
+**/*.p12
+**/*.pfx
+**/*.key
+**/*.key.pem
+**/coverage
+**/test-results
+**/playwright-report
+
