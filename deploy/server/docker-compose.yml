@@ -73,6 +73,21 @@ services:
     mem_limit: 96m
     networks: [internal]
 
+  # Receptor SMTP de captura: el BFF exige SMTP_HOST en producción. Mientras no haya un relay real,
+  # los correos (enlaces de firma incluidos) se QUEDAN aquí y NO llegan a nadie. Interfaz sin publicar:
+  # ssh -L 8025:127.0.0.1:8025 servidor + `docker exec` o `docker run` con red; ver README.
+  # Para enviar correo de verdad: definir SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS en el archivo de entorno
+  # y retirar este servicio.
+  mailpit:
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    mem_limit: 64m
+    networks: [internal]
+
   temporal:
     image: temporalio/auto-setup:1.27.2
     restart: unless-stopped

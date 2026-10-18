@@ -56,5 +56,7 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 
 - Supabase Storage no ofrece Object Lock ni versionado: se pierde el candado GOVERNANCE de 30 días que configura el compose de MinIO.
 - Temporal corre local con Postgres propio; Temporal Cloud cuesta desde ~$100 USD/mes y no se justifica con pocos usuarios.
-- Sin SMTP configurado, la bandeja de salida de correo se encola pero no se envía.
+- El BFF exige `SMTP_HOST` en producción. Mientras no haya un relay real, el compose incluye **Mailpit**, que recibe los correos (enlaces de firma incluidos) y **no los entrega a nadie**; su interfaz no está publicada. Para enviar correo de verdad hay que definir `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASS` en `prestige.env` y retirar ese servicio.
+- Keycloak 26 ignora los atributos que no están declarados en su perfil de usuario: el atributo `tenant` se declara en el perfil con permisos de vista y edición solo para administradores (un usuario no puede cambiarse de empresa).
+- Orden de comandos: `docker compose run -T` y `docker exec -i` leen la entrada estándar; dentro de scripts o bucles hay que redirigirles `< /dev/null` o se comen las líneas siguientes.
 - Sin swap en el servidor (requiere `sudo`): un pico de memoria fuera de los límites puede matar procesos.
