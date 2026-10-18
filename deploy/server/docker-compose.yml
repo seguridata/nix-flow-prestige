@@ -1,0 +1,162 @@
+name: prestige
+
+# Prestige en un servidor Docker pequeño (3-4 GB de RAM) que ya aloja otros sistemas detrás de un Caddy.
+# Qué corre aquí: BFF, worker de Temporal, Keycloak, Temporal, Postgres (solo para Keycloak y Temporal) y Redis.
+# Qué NO corre aquí: la base de Prestige y los documentos (Supabase), las sesiones de la web (Upstash) y la web (Vercel).
+# Detalle y pasos en deploy/server/README.md. Todos los secretos vienen del archivo `prestige.env` del servidor
+# (plantilla en .env.example); `${VAR:?}` hace fallar `docker compose` si falta alguno.
+#
+#   docker compose --env-file prestige.env up -d
+
+x-bff-env: &bff-env
+  NODE_ENV: production
+  PORT: "3000"
+  DATABASE_URL: ${DATABASE_URL:?}
+  KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:?}
+  MCP_ENABLED: "true"
+  MCP_RESOURCE_URL: ${API_PUBLIC_URL:?}/mcp
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE: prestige
+  S3_ENDPOINT: ${S3_ENDPOINT:?}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-prestige-docs}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?}
+  S3_FORCE_PATH_STYLE: "true"
+  STORAGE_MASTER_KEY: ${STORAGE_MASTER_KEY:?}
+  WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?}
+  REDIS_URL: redis://redis:6379
+  CORS_ORIGINS: ${WEB_PUBLIC_URL:?}
+  PUBLIC_WEB_URL: ${WEB_PUBLIC_URL:?}
+  KEY_CUSTODIAN: software
+  PKI_DIR: ./pki
+  PKI_PASSPHRASE: ${PKI_PASSPHRASE:?}
+  TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
+  MAIL_FROM: ${MAIL_FROM:-Prestige <no-reply@seguridata.site>}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  STEP_UP_ENFORCE: "false"
+  BIOMETRIC_ENGINE: noop
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-prestige}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_MULTIPLE_DATABASES: keycloak,temporal,temporal_visibility
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=60"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./create-multiple-dbs.sh:/docker-entrypoint-initdb.d/create-multiple-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prestige} -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 256m
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 96m
+    networks: [internal]
+
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-prestige}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_SEEDS: postgres
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 384m
+    networks: [internal]
+
+  keycloak:
+    image: prestige-keycloak:26.0
+    container_name: prestige-keycloak
+    restart: unless-stopped
+    command: ["start", "--optimized", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-prestige}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?}
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:?}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-kcadmin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?}
+      JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx512m"
+    volumes:
+      - ./prestige-realm.prod.json:/opt/keycloak/data/import/prestige-realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 768m
+    networks: [internal, edge]
+
+  bff:
+    image: prestige-bff:prod
+    container_name: prestige-bff
+    restart: unless-stopped
+    environment:
+      <<: *bff-env
+      RUN_MIGRATIONS: "true"
+    volumes:
+      - pki:/app/backend/bff/pki
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    mem_limit: 768m
+    networks: [internal, edge]
+
+  worker:
+    image: prestige-bff:prod
+    restart: unless-stopped
+    command: ["node", "dist/src/temporal/worker.js"]
+    environment:
+      <<: *bff-env
+      RUN_MIGRATIONS: "false"
+      BFF_INTERNAL_URL: http://bff:3000
+    volumes:
+      - pki:/app/backend/bff/pki
+    depends_on:
+      - bff
+    mem_limit: 512m
+    networks: [internal]
+
+volumes:
+  pgdata:
+  pki:
+
+networks:
+  internal:
+  # Red compartida con el Caddy del servidor (la crea otro compose): solo BFF y Keycloak entran.
+  edge:
+    external: true
+    name: zeus_zeus_internal
