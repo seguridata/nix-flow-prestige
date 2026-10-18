@@ -7,9 +7,8 @@
 ## Corte vigente
 17 oct 2026
 - Rama `develop`; trabajo directo con commits temáticos. `main` solo recibe el PR que apruebe el dueño.
-- Commits de esta tanda sobre `11584d6`: `d47da52` (retiro del collector OTel) y `3936800` (Notion como fuente de la verdad y retiro de documentos desfasados). Árbol limpio salvo una carpeta ajena sin seguimiento, `backend/infra/keycloak/themes/Tecate/`.
-- **Sin publicar:** `develop` va 27 commits por delante de la referencia local `origin/develop`, que no se refrescó. El push, el borrado de ramas remotas y el PR a main fueron bloqueados por el control de permisos de la sesión y esperan autorización. No afirmar que está en el remoto.
-- **Ramas:** todas las ramas locales y remotas, salvo `main` y `develop`, están contenidas en `develop` (verificado con `rev-list`); `claude/bpmn-adquisiciones-diagram-844231` tiene su contenido idéntico en `develop`. El borrado está pendiente de autorización; el worktree de esa rama ya se eliminó del disco.
+- **Publicado (18 oct):** el PR #13 (`develop` → `main`) está fusionado. `main` incluye todos los commits de `develop` hasta `e0d535c`, con el retiro del collector OTel, Notion como fuente de la verdad y la demo de Tecate; `develop` y `origin/develop` coinciden.
+- **Ramas:** solo existen `main` y `develop`, locales y remotas. Se borraron las 14 ramas ya fusionadas (verificado que todas estaban contenidas en `main`; `claude/bpmn-adquisiciones-diagram-844231` tenía un commit propio con su contenido idéntico ya presente) y los dos worktrees de `.claude/worktrees`.
 - Estado general: la plataforma está implementada en gran parte y probada en sandbox local. **No hay despliegue de producción ni staging validado.** Este corte no volvió a correr pruebas ni a levantar servicios; los números de abajo son los últimos registrados.
 - Contenedores del sandbox arriba al revisar: Keycloak, MinIO, Temporal, Redis, Mailpit y Postgres. BFF y web no se comprobaron.
 
@@ -63,7 +62,6 @@
 - [ ] **Paginación contra stack persistente** (formatos, inbox, sent): múltiples páginas, delegación, cambio de tenant/actor, reintento y navegador, sin crear envíos ni firmas de negocio.
 - [ ] **Suite completa posterior** al conjunto final de cambios.
 - [ ] **Grok en vivo:** chatbot, flujo y PDF a formato, con revisión humana; sin documentos sensibles sin aprobación de Legal.
-- [ ] **Publicar:** `push` de `develop`, borrar las ramas ya fusionadas (local y remoto), eliminar el worktree `claude/prestige-pending-tasks-2b5af0` y abrir un PR `develop` → `main` (solo abrir; la fusión la aprueba el dueño).
 
 ### P1 — Producción e infraestructura
 - [ ] Staging real con dos tenants; `TENANT_GUARD=enforce` en producción solo tras validar (hoy `log`).
