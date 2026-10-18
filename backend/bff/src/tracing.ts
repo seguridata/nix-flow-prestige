@@ -4,7 +4,7 @@
  *
  * Sin `OTEL_EXPORTER_OTLP_ENDPOINT` (ni `_TRACES_ENDPOINT`) el SDK no arranca:
  * cero overhead y cero ruido en local. En prod: apuntar al colector OTLP/HTTP
- * (ver `otel-collector` en docker-compose y D8).
+ * (ver D8; el compose del sandbox ya no incluye colector).
  */
 import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
