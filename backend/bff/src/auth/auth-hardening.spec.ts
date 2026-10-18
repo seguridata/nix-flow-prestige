@@ -86,6 +86,15 @@ describe('JwtAuthGuard — tenant y audiencia', () => {
     delete process.env.KEYCLOAK_AUDIENCE;
     expect(() => assertAudience({})).not.toThrow();
   });
+
+  it('assertAudience admite varias audiencias (un cliente OIDC por tenant)', () => {
+    process.env.KEYCLOAK_AUDIENCE = 'prestige-web, prestige-web-tecate';
+    expect(() => assertAudience({ azp: 'prestige-web' })).not.toThrow();
+    expect(() => assertAudience({ azp: 'prestige-web-tecate' })).not.toThrow();
+    expect(() => assertAudience({ aud: ['x', 'prestige-web-tecate'] })).not.toThrow();
+    expect(() => assertAudience({ azp: 'otro' })).toThrow(UnauthorizedException);
+    delete process.env.KEYCLOAK_AUDIENCE;
+  });
 });
 
 describe('TenantContextGuard — fail-closed', () => {

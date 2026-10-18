@@ -19,9 +19,37 @@ import { resolveTenant } from "./tenant-claim";
 export const SESSION_COOKIE = "prestige_session";
 export const PKCE_COOKIE = "prestige_pkce";
 export const STATE_COOKIE = "prestige_oauth_state";
+export const CLIENT_COOKIE = "prestige_oidc_client";
 
 const ISSUER = () => required("KEYCLOAK_ISSUER");
 const CLIENT_ID = () => process.env.OIDC_CLIENT_ID ?? "prestige-web";
+
+/**
+ * Clientes OIDC por tenant (demo de marca). Cada cliente de Keycloak puede
+ * llevar su propio tema de login. Formato: `tenant=clientId,tenant2=clientId2`.
+ * Es una lista cerrada: un tenant desconocido usa el cliente por defecto y el
+ * navegador nunca elige un `client_id` arbitrario.
+ */
+function tenantClients(): Record<string, string> {
+  const raw = process.env.OIDC_TENANT_CLIENTS ?? "tecate=prestige-web-tecate";
+  const map: Record<string, string> = {};
+  for (const pair of raw.split(",")) {
+    const [tenant, client] = pair.split("=").map((s) => s.trim());
+    if (tenant && client) map[tenant.toLowerCase()] = client;
+  }
+  return map;
+}
+
+/** Cliente OIDC que corresponde al tenant pedido en el login (o el por defecto). */
+export function clientForTenant(tenant?: string | null): string {
+  return (tenant && tenantClients()[tenant.trim().toLowerCase()]) || CLIENT_ID();
+}
+
+/** Valida un client id leído de una cookie contra la lista cerrada. */
+export function knownClient(clientId?: string | null): string {
+  const allowed = new Set([CLIENT_ID(), ...Object.values(tenantClients())]);
+  return clientId && allowed.has(clientId) ? clientId : CLIENT_ID();
+}
 const REDIRECT_URI = () =>
   process.env.OIDC_REDIRECT_URI ?? "http://localhost:3001/api/auth/callback";
 const POST_LOGOUT = () =>
@@ -51,9 +79,14 @@ export function newState() {
 
 // ---------- URLs de Keycloak ----------
 
-export function authorizeUrl(challenge: string, state: string, maxAge?: number): string {
+export function authorizeUrl(
+  challenge: string,
+  state: string,
+  maxAge?: number,
+  clientId: string = CLIENT_ID(),
+): string {
   const u = new URL(`${ISSUER()}/protocol/openid-connect/auth`);
-  u.searchParams.set("client_id", CLIENT_ID());
+  u.searchParams.set("client_id", clientId);
   u.searchParams.set("redirect_uri", REDIRECT_URI());
   u.searchParams.set("response_type", "code");
   u.searchParams.set("scope", "openid profile email");
@@ -66,10 +99,10 @@ export function authorizeUrl(challenge: string, state: string, maxAge?: number):
   return u.toString();
 }
 
-export function endSessionUrl(idToken?: string): string {
+export function endSessionUrl(idToken?: string, clientId: string = CLIENT_ID()): string {
   const u = new URL(`${ISSUER()}/protocol/openid-connect/logout`);
   u.searchParams.set("post_logout_redirect_uri", POST_LOGOUT());
-  u.searchParams.set("client_id", CLIENT_ID());
+  u.searchParams.set("client_id", clientId);
   if (idToken) u.searchParams.set("id_token_hint", idToken);
   return u.toString();
 }
@@ -83,11 +116,14 @@ interface TokenResponse {
   expires_in: number;
 }
 
-async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
+async function tokenRequest(
+  body: Record<string, string>,
+  clientId: string,
+): Promise<TokenResponse> {
   const res = await fetch(`${ISSUER()}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: CLIENT_ID(), ...body }),
+    body: new URLSearchParams({ client_id: clientId, ...body }),
     cache: "no-store",
   });
   if (!res.ok) {
@@ -96,17 +132,20 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
   return (await res.json()) as TokenResponse;
 }
 
-export function exchangeCode(code: string, verifier: string) {
-  return tokenRequest({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: REDIRECT_URI(),
-    code_verifier: verifier,
-  });
+export function exchangeCode(code: string, verifier: string, clientId: string = CLIENT_ID()) {
+  return tokenRequest(
+    {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: REDIRECT_URI(),
+      code_verifier: verifier,
+    },
+    clientId,
+  );
 }
 
-export function refresh(refreshToken: string) {
-  return tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken });
+export function refresh(refreshToken: string, clientId: string = CLIENT_ID()) {
+  return tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken }, clientId);
 }
 
 // ---------- Sesión (cookie firmada) ----------
@@ -122,6 +161,8 @@ export interface Session {
   refreshToken?: string;
   idToken?: string;
   accessExpiresAt: number; // epoch ms
+  /** Cliente OIDC que emitió los tokens; el refresh y el logout deben usar el mismo. */
+  clientId?: string;
 }
 
 interface AccessClaims {
@@ -140,7 +181,7 @@ function decodeJwt<T>(token: string): T {
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T;
 }
 
-export function sessionFromTokens(t: TokenResponse): Session {
+export function sessionFromTokens(t: TokenResponse, clientId?: string): Session {
   const c = decodeJwt<AccessClaims>(t.access_token);
   return {
     sub: c.sub ?? "",
@@ -153,6 +194,7 @@ export function sessionFromTokens(t: TokenResponse): Session {
     refreshToken: t.refresh_token,
     idToken: t.id_token,
     accessExpiresAt: Date.now() + (t.expires_in - 30) * 1000,
+    clientId,
   };
 }
 
@@ -232,7 +274,8 @@ export async function getValidSession(): Promise<Session | null> {
   if (Date.now() < session.accessExpiresAt) return session;
   if (!session.refreshToken) return null;
   try {
-    const renewed = sessionFromTokens(await refresh(session.refreshToken));
+    const clientId = knownClient(session.clientId);
+    const renewed = sessionFromTokens(await refresh(session.refreshToken, clientId), clientId);
     await writeSessionCookie(renewed);
     return renewed;
   } catch {

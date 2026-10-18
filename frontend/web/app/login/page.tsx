@@ -15,13 +15,16 @@ const ERRORS: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; returnTo?: string }>;
+  searchParams: Promise<{ error?: string; returnTo?: string; tenant?: string }>;
 }) {
-  const { error, returnTo = "/" } = await searchParams;
+  const { error, returnTo = "/", tenant } = await searchParams;
   const safeReturn = returnTo.startsWith("/") ? returnTo : "/";
   if (await getValidSession()) redirect(safeReturn as Route);
 
-  const loginHref = `/api/auth/login?returnTo=${encodeURIComponent(safeReturn)}`;
+  // `?tenant=<slug>` abre Keycloak con el cliente (y el tema) de ese tenant; la ruta de login
+  // lo valida contra una lista cerrada.
+  const tenantParam = tenant ? `&tenant=${encodeURIComponent(tenant)}` : "";
+  const loginHref = `/api/auth/login?returnTo=${encodeURIComponent(safeReturn)}${tenantParam}`;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-secondary px-6 text-secondary-foreground">

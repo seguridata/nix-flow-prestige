@@ -134,12 +134,17 @@ export class JwtAuthGuard implements CanActivate {
  * Validación opcional de audiencia: si `KEYCLOAK_AUDIENCE` está definida, el
  * token debe traerla en `aud` o como `azp` (Keycloak suele emitir el
  * client id como `azp` y solo agrega `aud` con un audience mapper).
+ * Admite varias audiencias separadas por coma (un cliente OIDC por tenant,
+ * p. ej. `prestige-web,prestige-web-tecate`).
  * Compartido con el gateway realtime.
  */
 export function assertAudience(payload: { aud?: string | string[]; azp?: string }): void {
-  const expected = process.env.KEYCLOAK_AUDIENCE?.trim();
-  if (!expected) return;
+  const expected = (process.env.KEYCLOAK_AUDIENCE ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (expected.length === 0) return;
   const aud = Array.isArray(payload.aud) ? payload.aud : payload.aud ? [payload.aud] : [];
-  if (aud.includes(expected) || payload.azp === expected) return;
+  if (expected.some(e => aud.includes(e) || payload.azp === e)) return;
   throw new UnauthorizedException('Token emitido para otra audiencia');
 }
