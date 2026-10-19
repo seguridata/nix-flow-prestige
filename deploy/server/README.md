@@ -19,7 +19,7 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 |---|---|
 | `docker-compose.yml` | Los seis servicios. El BFF y Keycloak se unen a la red del Caddy del servidor (`zeus_zeus_internal`). |
 | `.env.example` | Plantilla de variables. El archivo real (`prestige.env`) vive solo en el servidor. |
-| `Caddyfile.prestige` | Rutas a agregar al Caddy: `api-prestige` → BFF y `kc-prestige` → Keycloak. La consola de administración de Keycloak no se publica. |
+| `Caddyfile.prestige` | Rutas a agregar al Caddy: `api-prestige` → BFF y `prestige-auth` → Keycloak. La consola de administración de Keycloak no se publica. |
 | `create-multiple-dbs.sh` | Se copia de `backend/infra/`; crea las bases `keycloak`, `temporal` y `temporal_visibility`. |
 
 ## Pasos
@@ -49,7 +49,7 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 ## Verificación
 
 - `https://api-prestige.<dominio>/operations/health/ready` responde 200.
-- `https://kc-prestige.<dominio>/realms/prestige/.well-known/openid-configuration` responde 200 y `/admin/` responde 404.
+- `https://prestige-auth.<dominio>/realms/prestige/.well-known/openid-configuration` responde 200 y `/admin/` responde 404.
 - Inicio de sesión desde la web y una consulta autenticada al BFF.
 
 ## Límites conocidos
