@@ -67,11 +67,11 @@ export function CaseAttachments({ caseId }: { caseId: string | undefined }) {
                     <a
                       href={documentContentUrl(f.documentId)}
                       download={f.filename}
-                      aria-label={`Descargar ${f.filename}`}
+                      aria-label={`Guardar ${f.filename} en mis archivos`}
                       className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <Download className="size-4" />
-                      Descargar
+                      Guardar en mis archivos
                     </a>
                   </li>
                 );

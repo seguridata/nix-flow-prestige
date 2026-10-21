@@ -18,7 +18,8 @@ import {
 import { useSession } from "@/store/session-store";
 import { signerBlockedBy } from "@/libs/signing-turn";
 import { splitMethods } from "@/libs/allowed-methods";
-import { fetchDocument, documentContentUrl } from "@/services/documents-service";
+import { DocumentViewer } from "@/components/documents/document-viewer";
+import { fetchDocument } from "@/services/documents-service";
 import {
   fetchConsentText,
   fetchSignatureRequestsForDocument,
@@ -49,7 +50,6 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
 
   const doc = useQuery({ queryKey: ["document", documentId], queryFn: () => fetchDocument(documentId) });
   // URL same-origin: el navegador la sirve con su visor nativo, sin blob que revocar.
-  const pdfSrc = documentContentUrl(documentId);
   const requests = useQuery({
     queryKey: ["signature-requests", documentId],
     queryFn: () => fetchSignatureRequestsForDocument(documentId),
@@ -192,15 +192,9 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
         />
       ) : (
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_400px]">
-          {/* PDF */}
-          <div className="min-h-[40vh] border-b border-border bg-muted/40 lg:border-b-0 lg:border-r">
-            <object data={pdfSrc} type="application/pdf" aria-label="Documento por firmar" className="h-full min-h-[60vh] w-full">
-              <div className="p-6 text-sm">
-                <a href={pdfSrc} target="_blank" rel="noreferrer" className="underline">
-                  Abrir el PDF
-                </a>
-              </div>
-            </object>
+          {/* Solicitud y adjuntos */}
+          <div className="min-h-[40vh] border-b border-border lg:border-b-0 lg:border-r">
+            <DocumentViewer documentId={documentId} caseId={doc.data?.caseId} filename={doc.data?.filename ?? "Documento"} className="h-full" />
           </div>
 
           {/* Panel de pasos */}
