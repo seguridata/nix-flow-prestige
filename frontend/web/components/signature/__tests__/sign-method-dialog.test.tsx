@@ -4,6 +4,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { SignMethodDialog } from "@/components/signature/sign-method-dialog";
 import type { SignatureMethod } from "@/libs/types";
 
+// El primer render carga signature_pad en frío: con toda la suite en paralelo supera los 5 s por defecto.
+vi.setConfig({ testTimeout: 20_000 });
+
 function renderDialog(overrides?: {
   allowedMethods?: SignatureMethod[];
   allowedMethodsNow?: SignatureMethod[];
