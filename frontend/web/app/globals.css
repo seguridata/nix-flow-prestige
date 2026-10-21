@@ -160,6 +160,29 @@
 }
 .bpmn-studio .bts-toggle-mode {
   font-family: var(--font-sans), sans-serif;
+  top: 12px;
+  left: auto;
+  right: 12px;
+  z-index: 2;
+}
+/* La paleta vive en su propia columna: no tapa el diagrama ni choca con la simulación. */
+.bpmn-studio .bjs-container .djs-palette {
+  top: 12px;
+  left: 12px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+}
+.bpmn-studio .bjs-container .djs-container {
+  left: 124px !important;
+  width: calc(100% - 124px) !important;
+}
+.bpmn-studio .bjs-container.simulation .djs-container {
+  left: 0 !important;
+  width: 100% !important;
+}
+.bpmn-studio .bjs-breadcrumbs {
+  top: 12px;
+  left: 136px;
 }
 .dmn-studio .tjs-container {
   font-family: var(--font-sans), sans-serif;

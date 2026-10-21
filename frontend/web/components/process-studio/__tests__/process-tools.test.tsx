@@ -55,7 +55,7 @@ describe("real route evaluation client", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: /Monto/ }), {
       target: { value: "2500" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Evaluar recorrido" }));
+    fireEvent.click(screen.getByRole("button", { name: "Probar la ruta" }));
     expect(await screen.findByText("Javier Alarcón")).toBeInTheDocument();
     expect(post).toHaveBeenCalledWith(
       "/process-definitions/gastos/preview-flow",
@@ -67,7 +67,7 @@ describe("real route evaluation client", () => {
       new Error("La tabla de responsables no está activa."),
     );
     setup();
-    fireEvent.click(screen.getByRole("button", { name: "Evaluar recorrido" }));
+    fireEvent.click(screen.getByRole("button", { name: "Probar la ruta" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "La tabla de responsables no está activa.",
     );

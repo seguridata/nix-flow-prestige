@@ -4,7 +4,7 @@ import { use, useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { Eye, EyeOff, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { AttachmentsBlock, useAttachments } from "@/components/formats/attachments-block";
@@ -12,10 +12,14 @@ import { type Person } from "@/components/formats/person-picker";
 import { SendToSteps } from "@/components/formats/send-to-steps";
 import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { attachmentErrorsFrom, unmetSpecs } from "@/libs/attachments";
+import { Textarea } from "@/components/ui/textarea";
+import { attachmentErrorsFrom, attachmentStatus, unmetSpecs } from "@/libs/attachments";
 import { type FlowVariable } from "@/libs/flow";
 import { needsPerson } from "@/libs/format-steps";
 import { cn } from "@/libs/utils";
@@ -40,26 +44,29 @@ export default function UsarFormatoPage({ params }: { params: Promise<{ id: stri
   const format = useQuery({ queryKey: ["format", id], queryFn: () => fetchFormat(id), retry: false });
   const { roles } = useSession();
 
+  const canEdit = roles.includes("admin") && !!format.data;
+
   return (
-    <AppShell
-      title={format.data?.name ?? "Formato"}
-      actions={
-        roles.includes("admin") && format.data ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/formatos/${id}/editar` as never}>
-              <Pencil /> Editar formato
-            </Link>
-          </Button>
-        ) : undefined
-      }
-    >
-      <Link href={"/formatos" as never} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Todos los formatos
-      </Link>
+    <AppShell title="Formatos">
+      <PageHeader
+        back={{ href: "/formatos", label: "Todos los formatos" }}
+        title={format.data?.name ?? (format.isError ? "Formato no disponible" : "Formato")}
+        description={format.data ? (format.data.description ?? "Llena los datos y envía. El documento se completa solo y la ruta de firmas ya viene definida.") : undefined}
+        meta={format.data?.category ?? undefined}
+        actions={
+          canEdit ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/formatos/${id}/editar` as never}>
+                <Pencil /> Editar formato
+              </Link>
+            </Button>
+          ) : undefined
+        }
+      />
       {format.isLoading ? (
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <Skeleton className="h-96 rounded-lg" />
-          <Skeleton className="h-96 rounded-lg" />
+          <Skeleton className="h-64 rounded-lg" />
         </div>
       ) : format.isError || !format.data ? (
         <p role="alert" className="text-sm">
@@ -144,31 +151,90 @@ function UsarForm({ format }: { format: FormatDetail }) {
 
   const { ref, width } = useContainerWidth(560);
   const fontScale = width / 612;
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Qué falta, dicho tal cual: «Falta: 3 cotizaciones del proveedor, monto y elegir a 1 persona».
+  const blockers = [
+    ...pendingSpecs.map((x) => `${attachmentStatus(x, att.counts[x.key] ?? 0).missing} ${x.label.trim().toLowerCase() || "archivos"}`),
+    ...missing.map((m) => (m.label || m.key).toLowerCase()),
+    ...(missingPeople.length > 0 ? [missingPeople.length === 1 ? "elegir a 1 persona" : `elegir a ${missingPeople.length} personas`] : []),
+  ];
+  const blockedText = att.uploading
+    ? "Espera a que terminen de subirse los archivos."
+    : blockers.length > 0
+      ? `Falta: ${blockers.length > 1 ? `${blockers.slice(0, -1).join(", ")} y ${blockers[blockers.length - 1]}` : blockers[0]}.`
+      : "";
+
+  const groups = groupVariables(format.flow.variables);
+  const setValue = (key: string, val: string) => setValues((s) => ({ ...s, [key]: val }));
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-      <form
-        className="space-y-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (ready && !send.isPending) send.mutate();
-        }}
-      >
-        {format.description ? <p className="text-sm text-muted-foreground">{format.description}</p> : null}
-
-        <div className="space-y-4">
-          {format.flow.variables.map((v) => (
-            <Field key={v.key} variable={v} value={values[v.key] ?? ""} onChange={(val) => setValues((s) => ({ ...s, [v.key]: val }))} />
-          ))}
-          {format.flow.variables.length === 0 ? <p className="text-sm text-muted-foreground">Este formato no pide datos.</p> : null}
-        </div>
+    <form
+      className="grid gap-8 pb-28 lg:grid-cols-[minmax(0,1fr)_22rem] lg:pb-0 xl:gap-12"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (ready && !send.isPending) send.mutate();
+      }}
+    >
+      <div className="min-w-0 space-y-10">
+        {groups.length === 0 ? <p className="text-sm text-muted-foreground">Este formato no pide datos.</p> : null}
+        {groups.map((g) => (
+          <section key={g.id} aria-labelledby={`sec-${g.id}`} className="space-y-4">
+            <h2 id={`sec-${g.id}`} className="border-b border-border pb-2 text-lg font-semibold">
+              {groups.length > 1 ? g.title : "Datos del formato"}
+            </h2>
+            <div className="grid gap-x-5 gap-y-5 sm:grid-cols-2">
+              {g.items.map((v) => (
+                <VariableField key={v.key} variable={v} value={values[v.key] ?? ""} onChange={(val) => setValue(v.key, val)} />
+              ))}
+            </div>
+          </section>
+        ))}
 
         <AttachmentsBlock specs={specs} state={att} serverErrors={attachmentErrors} />
 
-        <section aria-labelledby="se-envia" className="rounded-lg border border-border p-4" aria-busy={preview.isFetching}>
-          <h2 id="se-envia" className="text-sm font-semibold">
-            Se enviará a
-          </h2>
+        <section aria-labelledby="vista-previa" className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+            <h2 id="vista-previa" className="text-lg font-semibold">
+              Vista previa del documento
+            </h2>
+            <Button type="button" variant="outline" size="sm" aria-expanded={showPreview} onClick={() => setShowPreview((v) => !v)}>
+              {showPreview ? <EyeOff /> : <Eye />} {showPreview ? "Ocultar vista previa" : "Ver cómo quedará"}
+            </Button>
+          </div>
+          {showPreview ? (
+            <div ref={ref} className="min-w-0">
+              <PdfSurface file={formatPdfUrl(format.id)} page={1} width={width}>
+                {format.fields
+                  .filter((f) => f.page === 1 && values[f.key])
+                  .map((f) => (
+                    <span
+                      key={f.key}
+                      className="pointer-events-none absolute flex items-center overflow-hidden whitespace-nowrap leading-none text-black"
+                      style={{
+                        left: `${f.x * 100}%`,
+                        top: `${f.y * 100}%`,
+                        width: `${f.w * 100}%`,
+                        height: `${f.h * 100}%`,
+                        fontSize: `${(f.fontSize ?? 11) * fontScale}px`,
+                        justifyContent: f.align === "center" ? "center" : "flex-start",
+                        fontFamily: "Helvetica, Arial, sans-serif",
+                      }}
+                    >
+                      {shown(f.type, values[f.key] ?? "")}
+                    </span>
+                  ))}
+              </PdfSurface>
+              {format.pageCount > 1 ? <p className="mt-2 text-xs text-muted-foreground">Se muestra la primera página; el documento final lleva las {format.pageCount}.</p> : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Mira cómo se van llenando los datos sobre el documento.</p>
+          )}
+        </section>
+      </div>
+
+      <aside className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <section aria-label="Se enviará a" aria-busy={preview.isFetching}>
           <SendToSteps
             steps={
               preview.data?.steps ??
@@ -191,51 +257,35 @@ function UsarForm({ format }: { format: FormatDetail }) {
           ) : null}
         </section>
 
-        <div className="space-y-2">
+        <div className="fixed inset-x-0 bottom-0 z-20 space-y-2 border-t border-border bg-background px-4 py-3 md:left-[248px] lg:static lg:z-auto lg:border-0 lg:bg-transparent lg:p-0">
+          {!ready ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {blockedText}
+            </p>
+          ) : null}
           <Button type="submit" size="lg" className="w-full" disabled={!ready || send.isPending}>
             {send.isPending ? "Enviando…" : "Enviar a firma"}
           </Button>
-          {!ready ? (
-            <p role="status" className="text-center text-sm text-muted-foreground">
-              {missing.length > 0
-                ? `Falta: ${missing.map((m) => m.label || m.key).join(", ")}.`
-                : pendingSpecs.length > 0
-                  ? `Faltan anexos: ${pendingSpecs.map((x) => x.label).join(", ")}.`
-                  : att.uploading
-                    ? "Espera a que terminen de subirse los archivos."
-                    : "Elige a quién se envía en los pasos de arriba."}
-            </p>
-          ) : null}
         </div>
-      </form>
-
-      <div ref={ref} className="min-w-0">
-        <p className="mb-2 text-sm font-medium">Así quedará el documento</p>
-        <PdfSurface file={formatPdfUrl(format.id)} page={1} width={width}>
-          {format.fields
-            .filter((f) => f.page === 1 && values[f.key])
-            .map((f) => (
-              <span
-                key={f.key}
-                className="pointer-events-none absolute flex items-center overflow-hidden whitespace-nowrap leading-none text-black"
-                style={{
-                  left: `${f.x * 100}%`,
-                  top: `${f.y * 100}%`,
-                  width: `${f.w * 100}%`,
-                  height: `${f.h * 100}%`,
-                  fontSize: `${(f.fontSize ?? 11) * fontScale}px`,
-                  justifyContent: f.align === "center" ? "center" : "flex-start",
-                  fontFamily: "Helvetica, Arial, sans-serif",
-                }}
-              >
-                {shown(f.type, values[f.key] ?? "")}
-              </span>
-            ))}
-        </PdfSurface>
-        {format.pageCount > 1 ? <p className="mt-2 text-xs text-muted-foreground">Se muestra la primera página; el documento final lleva las {format.pageCount}.</p> : null}
-      </div>
-    </div>
+      </aside>
+    </form>
   );
+}
+
+type Group = { id: string; title: string; items: FlowVariable[] };
+
+/** Texto largo por naturaleza: el contrato solo distingue texto, número, fecha y lista, así que se infiere de la etiqueta. */
+const LONG_TEXT = /descrip|justific|motivo|observ|comentari|necesidad|detalle|notas?\b|objetivo|alcance|antecedent|razon/;
+const isLongText = (v: FlowVariable) => v.type === "text" && LONG_TEXT.test(`${v.label} ${v.key}`.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase());
+
+/** Agrupa los datos en secciones cortas conservando el orden: lo que se solicita y, aparte, importes y fechas. */
+function groupVariables(vars: readonly FlowVariable[]): Group[] {
+  const what = vars.filter((v) => v.type === "select" || v.type === "text");
+  const amounts = vars.filter((v) => v.type === "number" || v.type === "date");
+  return [
+    { id: "que", title: "Qué se solicita", items: what },
+    { id: "importe", title: "Importe y fechas", items: amounts },
+  ].filter((g) => g.items.length > 0);
 }
 
 /** Con más opciones que esto, la lista se vuelve buscable en vez de un select enorme. */
@@ -278,33 +328,42 @@ function SearchableList({ id, value, options, onChange }: { id: string; value: s
   );
 }
 
-function Field({ variable: v, value, onChange }: { variable: FlowVariable; value: string; onChange: (v: string) => void }) {
+function VariableField({ variable: v, value, onChange }: { variable: FlowVariable; value: string; onChange: (v: string) => void }) {
   const id = `f-${v.key}`;
+  const label = v.label || v.key;
+  const searchable = v.type === "select" && (v.options?.length ?? 0) > SEARCHABLE_FROM;
+  const long = isLongText(v);
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
-        {v.label || v.key}
-        {v.required ? null : <span className="font-normal text-muted-foreground"> (opcional)</span>}
-      </label>
-      {v.type === "select" && (v.options?.length ?? 0) > SEARCHABLE_FROM ? (
+    <Field
+      label={label}
+      htmlFor={id}
+      optional={!v.required}
+      className={cn((long || searchable) && "sm:col-span-2")}
+      hint={long ? <span className="tabular-nums">{value.length}/500 caracteres</span> : undefined}
+    >
+      {searchable ? (
         <SearchableList id={id} value={value} options={v.options ?? []} onChange={onChange} />
       ) : v.type === "select" ? (
-        <select
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          <option value="">Elige…</option>
+        <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Elige una opción</option>
           {(v.options ?? []).map((o) => (
             <option key={o} value={o}>
               {o}
             </option>
           ))}
-        </select>
+        </Select>
+      ) : long ? (
+        <Textarea id={id} value={value} rows={4} maxLength={500} onChange={(e) => onChange(e.target.value)} />
       ) : (
-        <Input id={id} type={v.type === "number" ? "number" : v.type === "date" ? "date" : "text"} value={value} maxLength={500} onChange={(e) => onChange(e.target.value)} />
+        <Input
+          id={id}
+          type={v.type === "number" ? "number" : v.type === "date" ? "date" : "text"}
+          inputMode={v.type === "number" ? "decimal" : undefined}
+          value={value}
+          maxLength={500}
+          onChange={(e) => onChange(e.target.value)}
+        />
       )}
-    </div>
+    </Field>
   );
 }

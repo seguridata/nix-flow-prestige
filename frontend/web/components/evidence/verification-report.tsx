@@ -15,10 +15,10 @@ function StateMark({ state }: { state: CheckRow["state"] }) {
     <span
       aria-hidden
       className={cn(
-        "flex size-7 shrink-0 items-center justify-center rounded-full border",
-        state === "pass" && "border-primary bg-primary text-primary-foreground",
-        state === "fail" && "border-foreground bg-foreground text-background",
-        state === "absent" && "border-border text-muted-foreground",
+        "flex size-7 shrink-0 items-center justify-center",
+        state === "pass" && "text-primary",
+        state === "fail" && "text-foreground",
+        state === "absent" && "text-muted-foreground",
       )}
     >
       {state === "pass" ? <Check className="size-4" strokeWidth={3} /> : null}
@@ -39,10 +39,13 @@ export function VerificationReport({
   result,
   checkedAt,
   detail = {},
+  between,
 }: {
   result: VerificationResult | null | undefined;
   checkedAt?: Date;
   detail?: Partial<Record<CheckRow["id"], React.ReactNode>>;
+  /** Contenido que va justo debajo del veredicto y antes del desglose (p. ej. la cadena de custodia). */
+  between?: React.ReactNode;
 }) {
   const verdict = verdictOf(result);
   const rows = checkRows(result?.checks);
@@ -63,13 +66,13 @@ export function VerificationReport({
         <span
           aria-hidden
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full",
-            intact && "bg-primary text-primary-foreground",
-            failed && "bg-foreground text-background",
-            verdict.kind === "checking" && "bg-muted text-muted-foreground",
+            "flex shrink-0 items-center justify-center",
+            intact && "text-primary",
+            failed && "text-foreground",
+            verdict.kind === "checking" && "text-muted-foreground",
           )}
         >
-          {intact ? <Check className="size-6" strokeWidth={3} /> : failed ? <ShieldAlert className="size-6" /> : <Info className="size-5" />}
+          {intact ? <Check className="size-9" strokeWidth={2.5} /> : failed ? <ShieldAlert className="size-9" strokeWidth={1.75} /> : <Info className="size-8" strokeWidth={1.5} />}
         </span>
         <div className="min-w-0">
           <h2 className="text-xl font-semibold leading-tight text-balance">{verdict.title}</h2>
@@ -91,7 +94,11 @@ export function VerificationReport({
         </div>
       ) : null}
 
+      {between}
+
       {rows.length > 0 ? (
+        <section aria-label="Comprobaciones del servidor">
+        <h2 className="mb-3 text-lg font-semibold">Qué comprobó el servidor</h2>
         <ul aria-label="Comprobaciones" className="divide-y divide-border rounded-lg border border-border">
           {rows.map((row) => (
             <li key={row.id} className="flex items-start gap-3.5 p-4">
@@ -108,11 +115,15 @@ export function VerificationReport({
             </li>
           ))}
         </ul>
+        </section>
       ) : null}
 
       <p className="flex items-start gap-3 rounded-lg bg-muted/60 p-4 text-sm text-muted-foreground">
         <Info className="mt-0.5 size-4 shrink-0 text-foreground" aria-hidden />
-        <span>{TRUST_NOTE}</span>
+        <span>
+          <span className="font-medium text-foreground">Lo que este expediente no es. </span>
+          {TRUST_NOTE}
+        </span>
       </p>
     </div>
   );

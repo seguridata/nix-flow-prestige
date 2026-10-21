@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
-import { Activity, Database, Fingerprint, HardDrive, Workflow } from "lucide-react";
+import { ChevronRight, CircleAlert, CircleCheck, CircleX, ExternalLink } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/layout/page-header";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/services/api-client";
 
 interface Health {
@@ -33,6 +34,17 @@ interface WorkflowRun {
   createdAt: string;
 }
 
+/** Un flujo con error registrado o en un estado de fallo es un problema; el resto, no. */
+const isBroken = (r: WorkflowRun) => Boolean(r.lastError) || /FALL|ERROR/i.test(r.status);
+
+const when = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+interface Problem {
+  id: string;
+  title: string;
+  detail: string;
+}
+
 export default function OperationsPage() {
   const health = useQuery({ queryKey: ["ops-health"], queryFn: () => apiClient.get<Health>("/operations/health") });
   const summary = useQuery({ queryKey: ["ops-summary"], queryFn: () => apiClient.get<Summary>("/operations/summary") });
@@ -41,112 +53,216 @@ export default function OperationsPage() {
     queryFn: () => apiClient.get<WorkflowRun[]>("/workflows"),
   });
 
-  const tiles = [
-    { label: "Solicitudes", value: summary.data?.requests ?? "—", icon: Activity },
-    { label: "Completadas", value: summary.data?.completed ?? "—", icon: Workflow },
-    { label: "Tareas abiertas", value: summary.data?.pendingTasks ?? "—", icon: Fingerprint },
-    { label: "Flujos Temporal", value: summary.data?.runs ?? "—", icon: Database },
-  ];
+  const runList = runs.data ?? [];
+  const loading = health.isLoading || runs.isLoading;
+  const loadFailed = health.isError || runs.isError;
+
+  // Problemas primero: servicios caídos y flujos detenidos. Lo demás queda colapsado abajo.
+  const problems: Problem[] = [];
+  if (health.data && !health.data.postgres) {
+    problems.push({ id: "pg", title: "Postgres no responde", detail: "Sin la base de datos no se pueden guardar ni consultar solicitudes." });
+  }
+  if (health.data && !health.data.objectStorage) {
+    problems.push({ id: "minio", title: "MinIO no está conectado", detail: "Los documentos y expedientes no se pueden guardar ni leer." });
+  }
+  for (const run of runList.filter(isBroken)) {
+    problems.push({
+      id: run.id,
+      title: "Un flujo se detuvo",
+      detail: `${run.workflowId}${run.lastError ? `: ${run.lastError}` : ` (${run.status})`}`,
+    });
+  }
+
+  const counts = runList.reduce<{ name: string; n: number }[]>((acc, run) => {
+    const row = acc.find((r) => r.name === run.status);
+    if (row) row.n += 1;
+    else acc.push({ name: run.status, n: 1 });
+    return acc;
+  }, []);
+
+  const description = loading
+    ? "Revisando el sistema…"
+    : loadFailed
+      ? "No pudimos revisar todo el sistema. Reintenta antes de dar por buena la salud."
+      : problems.length > 0
+        ? `${problems.length === 1 ? "Hay 1 problema" : `Hay ${problems.length} problemas`} que atender. Aparecen primero.`
+        : "Todo en orden. Aquí puedes revisar el detalle del sistema cuando lo necesites.";
 
   return (
-    <AppShell title="Centro de operación">
-      <div className="mx-auto max-w-6xl">
-        <h1 className="text-3xl font-semibold tracking-tight">Centro de operación</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Salud del BFF, Temporal, MinIO y adaptadores. La biometría espera proveedor; el resto es real.
-        </p>
+    <AppShell title="Operación">
+      <div className="mx-auto max-w-5xl">
+        <PageHeader title="Operación" description={description} />
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {tiles.map((tile, i) => (
-            <motion.div
-              key={tile.label}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.2 }}
-            >
-              <Card className="glass p-5">
-                <tile.icon className="size-4 text-primary" />
-                <p className="mt-4 font-mono text-2xl font-semibold tabular-nums">{tile.value}</p>
-                <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{tile.label}</p>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-
-        <Card className="glass mt-6 p-6">
-          <h2 className="text-sm font-semibold">Carga de instancias</h2>
-          <div className="mt-4 h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={(runs.data ?? []).reduce<{ name: string; n: number }[]>((acc, run) => {
-                  const row = acc.find((r) => r.name === run.status);
-                  if (row) row.n += 1;
-                  else acc.push({ name: run.status, n: 1 });
-                  return acc;
-                }, [])}
+        <section aria-labelledby="atencion">
+          <h2 id="atencion" className="mb-3 text-xl font-semibold tracking-tight">
+            Requiere atención
+          </h2>
+          {loading ? (
+            <div className="space-y-2" aria-busy>
+              <Skeleton className="h-16 rounded-lg" />
+              <Skeleton className="h-16 rounded-lg" />
+            </div>
+          ) : loadFailed ? (
+            <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border-2 border-foreground p-4 text-sm">
+              <CircleAlert className="size-5 shrink-0 text-destructive" aria-hidden />
+              <span>No pudimos consultar el estado del sistema.</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void health.refetch();
+                  void runs.refetch();
+                }}
               >
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} width={28} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="n" fill="#84BD00" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <Card className="glass p-6">
-            <h2 className="text-sm font-semibold">Infraestructura</h2>
-            <ul className="mt-4 space-y-3 text-sm">
-              <li className="flex justify-between">
-                Postgres <span className="font-mono">{health.data?.postgres ? "ok" : "—"}</span>
-              </li>
-              <li className="flex justify-between">
-                MinIO <span className="font-mono">{health.data?.objectStorage ? "conectado" : "local"}</span>
-              </li>
-              <li className="flex justify-between gap-4">
-                Temporal
-                <span className="truncate font-mono text-xs">{health.data?.temporalAddress}</span>
-              </li>
-              <li>
-                <a className="text-primary underline-offset-2 hover:underline" href="http://localhost:8088" target="_blank" rel="noreferrer">
-                  Abrir Temporal UI
-                </a>
-              </li>
-            </ul>
-          </Card>
-          <Card className="glass p-6">
-            <h2 className="text-sm font-semibold">Adaptadores de firma</h2>
-            <ul className="mt-4 space-y-3 text-sm">
-              {health.data?.adapters.map((a) => (
-                <li key={a.method}>
-                  <span className="font-medium">{a.method}</span>
-                  <span className="ml-2 text-muted-foreground">{a.configured ? "listo" : a.reason}</span>
+                Reintentar
+              </Button>
+            </div>
+          ) : problems.length === 0 ? (
+            <p className="flex items-center gap-2.5 rounded-lg border border-border bg-background p-4 text-sm">
+              <CircleCheck className="size-5 shrink-0" aria-hidden />
+              <span>
+                <span className="font-medium">Sin problemas.</span> Los servicios responden y no hay flujos detenidos.
+              </span>
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {problems.map((p) => (
+                <li key={p.id} className="flex items-start gap-3 rounded-lg border-2 border-foreground bg-background p-4">
+                  <CircleX className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden />
+                  <div className="min-w-0">
+                    <p className="font-semibold">{p.title}</p>
+                    <p className="mt-0.5 break-words text-sm text-muted-foreground">{p.detail}</p>
+                  </div>
                 </li>
-              )) ?? <li className="text-muted-foreground">Cargando…</li>}
+              ))}
             </ul>
-          </Card>
-        </div>
+          )}
+        </section>
 
-        <Card className="glass mt-6 overflow-hidden p-0">
-          <div className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm font-semibold">
-            <HardDrive className="size-4" /> Instancias de proceso
-          </div>
-          <div className="divide-y divide-border">
-            {(runs.data ?? []).length === 0 ? (
-              <p className="px-5 py-8 text-sm text-muted-foreground">Aún no hay flujos. Envía un contrato para crear uno.</p>
+        <div className="mt-10 space-y-3">
+          <h2 className="text-xl font-semibold tracking-tight">Detalle del sistema</h2>
+
+          <Collapsible title="Servicios" hint={health.data ? "Postgres, MinIO y Temporal" : undefined}>
+            <ul className="divide-y divide-border text-sm">
+              <ServiceRow name="Postgres" ok={health.data?.postgres} okText="En orden" badText="Sin conexión" />
+              <ServiceRow name="MinIO" ok={health.data?.objectStorage} okText="Conectado" badText="No conectado" />
+              <li className="flex flex-wrap items-center justify-between gap-2 py-3">
+                <span>Temporal</span>
+                <span className="break-all font-mono text-xs text-muted-foreground">{health.data?.temporalAddress ?? "—"}</span>
+              </li>
+            </ul>
+            <a
+              className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href="http://localhost:8088"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Abrir la interfaz de Temporal <ExternalLink className="size-3.5" aria-hidden />
+            </a>
+          </Collapsible>
+
+          <Collapsible title="Métodos de firma disponibles" hint="La biometría espera proveedor; el resto es real.">
+            {health.data ? (
+              <ul className="divide-y divide-border text-sm">
+                {health.data.adapters.map((a) => (
+                  <li key={a.method} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                    <span className="font-medium">{a.method}</span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      {a.configured ? <CircleCheck className="size-4" aria-hidden /> : <CircleAlert className="size-4" aria-hidden />}
+                      {a.configured ? "Listo" : (a.reason ?? "Sin configurar")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             ) : (
-              (runs.data ?? []).map((run) => (
-                <div key={run.id} className="grid grid-cols-1 gap-1 px-5 py-3 text-sm sm:grid-cols-[1fr_140px_120px]">
-                  <span className="font-mono text-xs">{run.workflowId}</span>
-                  <span>{run.status}</span>
-                  <span className="text-muted-foreground">{new Date(run.createdAt).toLocaleString("es-MX")}</span>
-                </div>
-              ))
+              <p className="text-sm text-muted-foreground">Cargando…</p>
             )}
-          </div>
-        </Card>
+          </Collapsible>
+
+          <Collapsible title="Totales" hint="Solicitudes, tareas y flujos">
+            <dl className="grid gap-4 sm:grid-cols-4">
+              <Total label="Solicitudes" value={summary.data?.requests} />
+              <Total label="Completadas" value={summary.data?.completed} />
+              <Total label="Tareas abiertas" value={summary.data?.pendingTasks} />
+              <Total label="Flujos en Temporal" value={summary.data?.runs} />
+            </dl>
+          </Collapsible>
+
+          <Collapsible title="Instancias de proceso" hint={runs.data ? `${runList.length} en total` : undefined}>
+            {runList.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aún no hay flujos. Envía un documento a firma para crear uno.</p>
+            ) : (
+              <>
+                <div className="mb-4 h-44" role="img" aria-label={`Instancias por estado: ${counts.map((c) => `${c.name} ${c.n}`).join(", ")}`}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={counts}>
+                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                      <YAxis allowDecimals={false} width={28} tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Bar dataKey="n" fill="#84BD00" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <ul className="divide-y divide-border text-sm">
+                  {runList.map((run) => (
+                    <li key={run.id} className="grid gap-1 py-3 sm:grid-cols-[1fr_9rem_9rem]">
+                      <span className="break-all font-mono text-xs">{run.workflowId}</span>
+                      <span className="flex items-center gap-1.5">
+                        {isBroken(run) ? <CircleX className="size-4 text-destructive" aria-hidden /> : null}
+                        {run.status}
+                      </span>
+                      <span className="text-muted-foreground">{when.format(new Date(run.createdAt))}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Collapsible>
+        </div>
       </div>
     </AppShell>
+  );
+}
+
+function Collapsible({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-lg border border-border bg-background">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
+        <span className="font-medium">{title}</span>
+        {hint ? <span className="hidden text-sm text-muted-foreground sm:inline">{hint}</span> : null}
+      </summary>
+      <div className="border-t border-border px-4 py-4">{children}</div>
+    </details>
+  );
+}
+
+function ServiceRow({ name, ok, okText, badText }: { name: string; ok: boolean | undefined; okText: string; badText: string }) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-3">
+      <span>{name}</span>
+      <span className="flex items-center gap-1.5">
+        {ok === undefined ? (
+          <span className="text-muted-foreground">—</span>
+        ) : ok ? (
+          <>
+            <CircleCheck className="size-4" aria-hidden /> {okText}
+          </>
+        ) : (
+          <>
+            <CircleX className="size-4 text-destructive" aria-hidden /> <span className="font-medium text-destructive">{badText}</span>
+          </>
+        )}
+      </span>
+    </li>
+  );
+}
+
+function Total({ label, value }: { label: string; value: number | undefined }) {
+  return (
+    <div>
+      <dd className="text-2xl font-semibold tabular-nums">{value ?? "—"}</dd>
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+    </div>
   );
 }

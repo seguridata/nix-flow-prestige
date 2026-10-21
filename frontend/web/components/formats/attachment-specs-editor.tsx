@@ -66,7 +66,7 @@ export function AttachmentSpecsEditor({ value, onChange }: { value: AttachmentSp
                 <Input
                   className="h-10"
                   maxLength={200}
-                  placeholder="Ej. Adjunta tres cotizaciones de proveedores distintos."
+                  placeholder="Ej. Cotizaciones de proveedores distintos."
                   value={s.help ?? ""}
                   onChange={(e) => set(i, { help: e.target.value || undefined })}
                 />

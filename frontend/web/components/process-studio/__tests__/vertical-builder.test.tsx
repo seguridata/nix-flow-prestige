@@ -33,7 +33,7 @@ describe("vertical builder", () => {
   it("reorders complete steps while preserving their identities and participants", () => {
     const onChange = vi.fn();
     render(<VerticalBuilder value={flow} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Bajar etapa 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bajar paso 1" }));
     expect(onChange).toHaveBeenCalledWith({
       ...flow,
       steps: [flow.steps[1], flow.steps[0]],
@@ -42,7 +42,7 @@ describe("vertical builder", () => {
   it("adds a real editable reviewer with a stable id and participant question", () => {
     const onChange = vi.fn();
     render(<VerticalBuilder value={flow} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Agregar etapa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agregar otro paso" }));
     expect(onChange.mock.calls[0]![0].steps[2]).toMatchObject({
       role: "REVISOR",
       who: { type: "ask" },
@@ -52,10 +52,10 @@ describe("vertical builder", () => {
   it("does not expose destructive controls to read-only viewers", () => {
     render(<VerticalBuilder value={flow} onChange={vi.fn()} readOnly />);
     expect(
-      screen.queryByRole("button", { name: "Agregar etapa" }),
+      screen.queryByRole("button", { name: "Agregar paso" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Eliminar etapa 1" }),
+      screen.queryByRole("button", { name: "Eliminar paso 1" }),
     ).not.toBeInTheDocument();
   });
 });

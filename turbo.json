@@ -7,7 +7,17 @@
     },
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "passThroughEnv": [
+        "BFF_URL",
+        "KEYCLOAK_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_REDIRECT_URI",
+        "OIDC_POST_LOGOUT_REDIRECT",
+        "PUBLIC_TRUSTED_PROXY_HOPS",
+        "SESSION_SECRET",
+        "REDIS_URL"
+      ]
     },
     "lint": {
       "dependsOn": ["^build"]

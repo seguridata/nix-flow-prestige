@@ -76,8 +76,8 @@ export function BpmnStudio({ xml, visible, onReady, onDirtyChange }: {
     if (visible) modeler.current?.get("canvas").zoom?.("fit-viewport");
   }, [visible]);
 
-  return <div className="relative h-full min-h-96">
+  return <div className="relative h-full min-h-[480px]">
     {error && <p role="alert" className="absolute inset-x-4 top-4 z-10 rounded-md bg-background p-3 text-sm text-destructive">No se pudo cargar el BPMN: {error}</p>}
-    <div ref={host} className="bpmn-studio h-full min-h-96 w-full overflow-hidden bg-white"/>
+    <div ref={host} className="bpmn-studio h-full min-h-[480px] w-full overflow-hidden bg-white"/>
   </div>;
 }

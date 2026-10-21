@@ -1,32 +1,95 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Check, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CircleAlert,
+  CircleCheck,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { FlowEditor } from "@/components/formats/flow-editor";
 import { PersonPicker } from "@/components/formats/person-picker";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  describeWhen,
-  describeWho,
+  RoutePanel,
+  SentenceChip,
+  SentenceRow,
+  type RouteStop,
+} from "@/components/flow/sentence";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import {
+  allVariables,
   flowProblems,
   newId,
+  opsFor,
+  type Condition,
   type Flow,
   type FlowStep,
+  type Op,
 } from "@/libs/flow";
 
-const select =
-  "h-10 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-primary";
+/** Operadores dichos como se leen dentro de una frase. */
+const OP_SENTENCE: Record<Op, string> = {
+  ">": "supera",
+  ">=": "es al menos",
+  "<": "es menor que",
+  "<=": "es como máximo",
+  "==": "es igual a",
+  "!=": "es distinto de",
+};
+
+const actionVerb = (role: FlowStep["role"]) =>
+  role === "REVISOR" ? "revisa y aprueba" : "firma";
+
+const actionSub = (role: FlowStep["role"]) =>
+  role === "REVISOR" ? "Revisa y aprueba" : "Firma el documento";
+
+const iconButton = "size-11";
+
+/** Texto + icono (no solo color) para lo que todavía no se ha elegido. */
+function Missing({ children }: { children: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-destructive">
+      <CircleAlert aria-hidden className="size-4 shrink-0" />
+      {children}
+    </span>
+  );
+}
+
+const whoLabel = (step: FlowStep) => {
+  const who = step.who;
+  if (who.type === "initiator") return "Quien solicita";
+  if (who.type === "fixed") {
+    const name = who.name || who.email;
+    return who.signerId && name ? name : <Missing>falta elegir</Missing>;
+  }
+  return step.label.trim() ? step.label : <Missing>falta elegir</Missing>;
+};
+
+const whoSub = (who: FlowStep["who"]) => {
+  if (who.type === "initiator") return "Quien solicita";
+  if (who.type === "fixed") return who.name || who.email || "Persona sin elegir";
+  if (who.type === "lookup") return "Según una tabla de consulta";
+  return "Se elige al enviar";
+};
 
 export function VerticalBuilder({
   value,
   onChange,
   readOnly = false,
+  onTest,
 }: {
   value: Flow;
   onChange: (flow: Flow) => void;
   readOnly?: boolean;
+  /** Si se da, el panel de la ruta muestra «Probar antes de usar». */
+  onTest?: () => void;
 }) {
   const problems = flowProblems(value);
+  const variables = allVariables(value);
   const update = (i: number, changes: Partial<FlowStep>) =>
     onChange({
       ...value,
@@ -39,87 +102,342 @@ export function VerticalBuilder({
     [next[i], next[target]] = [next[target]!, next[i]!];
     onChange({ ...value, steps: next });
   };
+  const addStep = () =>
+    onChange({
+      ...value,
+      steps: [
+        ...value.steps,
+        {
+          id: newId("etapa"),
+          label: "Nuevo paso",
+          role: "REVISOR",
+          who: { type: "ask", prompt: "¿Quién revisa esta solicitud?" },
+        },
+      ],
+    });
+  const setCondition = (i: number, ci: number, c: Condition) =>
+    update(i, {
+      when: (value.steps[i]!.when ?? []).map((x, j) => (j === ci ? c : x)),
+    });
+  const addCondition = (i: number) => {
+    const first = variables[0];
+    if (!first) return;
+    update(i, {
+      when: [
+        ...(value.steps[i]!.when ?? []),
+        { variable: first.key, op: opsFor(first.type)[0]!, value: "" },
+      ],
+    });
+  };
+  const removeCondition = (i: number, ci: number) =>
+    update(i, {
+      when: (value.steps[i]!.when ?? []).filter((_, j) => j !== ci),
+    });
+
+  const stops: RouteStop[] = [
+    { title: "Inicio", sub: "Alguien envía la solicitud" },
+    ...value.steps.map((s, i) => ({
+      title: `${i + 1} · ${s.label.trim() || "Paso sin nombre"}`,
+      sub: `${actionSub(s.role)} · ${whoSub(s.who)}`,
+    })),
+    { title: "Fin", sub: "Se guarda el documento con su expediente" },
+  ];
+
+  const renderCondition = (
+    step: FlowStep,
+    i: number,
+    c: Condition,
+    ci: number,
+  ) => {
+    const v = variables.find((x) => x.key === c.variable);
+    const ops = opsFor(v?.type ?? "text");
+    const valueText = String(c.value);
+    return (
+      <span key={ci}>
+        {ci > 0 ? " y además " : null}
+        <SentenceChip
+          title="¿Qué dato se revisa?"
+          readOnly={readOnly}
+          label={v?.label || c.variable}
+        >
+          <Select
+            aria-label="Dato de la condición"
+            value={c.variable}
+            onChange={(e) => {
+              const nv = variables.find((x) => x.key === e.target.value);
+              setCondition(i, ci, {
+                variable: e.target.value,
+                op: opsFor(nv?.type ?? "text")[0]!,
+                value: "",
+              });
+            }}
+          >
+            {variables.map((x) => (
+              <option key={x.key} value={x.key}>
+                {x.label || x.key}
+              </option>
+            ))}
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full"
+            onClick={() => removeCondition(i, ci)}
+          >
+            <Trash2 /> Quitar esta condición
+          </Button>
+        </SentenceChip>{" "}
+        <SentenceChip
+          title="¿Cómo se compara?"
+          readOnly={readOnly}
+          label={OP_SENTENCE[c.op]}
+        >
+          <Select
+            aria-label="Comparación"
+            value={c.op}
+            onChange={(e) =>
+              setCondition(i, ci, { ...c, op: e.target.value as Op })
+            }
+          >
+            {ops.map((o) => (
+              <option key={o} value={o}>
+                {OP_SENTENCE[o]}
+              </option>
+            ))}
+          </Select>
+        </SentenceChip>{" "}
+        <SentenceChip
+          title="¿Con qué valor?"
+          readOnly={readOnly}
+          label={valueText === "" ? <Missing>falta elegir</Missing> : valueText}
+        >
+          {v?.type === "select" ? (
+            <Select
+              aria-label="Valor"
+              value={valueText}
+              onChange={(e) =>
+                setCondition(i, ci, { ...c, value: e.target.value })
+              }
+            >
+              <option value="">Elige…</option>
+              {(v.options ?? []).map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input
+              aria-label="Valor"
+              type={
+                v?.type === "number"
+                  ? "number"
+                  : v?.type === "date"
+                    ? "date"
+                    : "text"
+              }
+              value={valueText}
+              onChange={(e) =>
+                setCondition(i, ci, {
+                  ...c,
+                  value:
+                    v?.type === "number" && e.target.value !== ""
+                      ? Number(e.target.value)
+                      : e.target.value,
+                })
+              }
+            />
+          )}
+        </SentenceChip>
+      </span>
+    );
+  };
+
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_260px]">
-      <div>
-        <div className="mb-6 flex items-center gap-3 rounded-xl bg-muted/60 px-5 py-4">
-          <Check className="size-5" aria-hidden />
-          <div>
-            <h2 className="font-semibold">
-              Inicio: una persona envía su solicitud
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Los datos del formato determinan la ruta de aprobación.
-            </p>
-          </div>
-        </div>
-        <ol className="ml-4 space-y-0 border-l border-border pl-6 sm:pl-8">
-          {value.steps.map((step, i) => (
-            <li key={step.id} className="relative pb-6">
-              <span className="absolute -left-[37px] flex size-6 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold sm:-left-[45px]">
-                {i + 1}
-              </span>
-              <section
-                className="rounded-xl border border-border p-4 sm:p-5"
-                aria-label={`Etapa ${i + 1}: ${step.label}`}
-              >
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-muted-foreground">
-                    {step.role === "REVISOR" ? "Revisión" : "Firma"}
-                  </span>
-                  {!readOnly && (
-                    <div className="flex gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Subir etapa ${i + 1}`}
-                        disabled={i === 0}
-                        onClick={() => move(i, -1)}
+    <div>
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold">Así funciona este proceso</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Léelo como una receta.{" "}
+            {readOnly
+              ? "Aquí ves cada paso, en orden."
+              : "Toca cualquier recuadro gris para cambiarlo."}
+          </p>
+          {value.steps.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+              <p className="font-medium">Todavía no hay pasos</p>
+              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                Un paso es una persona que revisa, aprueba o firma. Empieza
+                agregando el primero.
+              </p>
+              {!readOnly && (
+                <Button className="mt-4" onClick={addStep}>
+                  <Plus /> Agregar el primer paso
+                </Button>
+              )}
+            </div>
+          ) : (
+            <ol className="mt-5 space-y-3">
+              {value.steps.map((step, i) => {
+                const panelId = `etapa-panel-${step.id}`;
+                const conditions = step.when ?? [];
+                return (
+                  <SentenceRow
+                    key={step.id}
+                    n={i + 1}
+                    actions={
+                      readOnly ? null : (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={iconButton}
+                            aria-label={`Subir paso ${i + 1}`}
+                            disabled={i === 0}
+                            onClick={() => move(i, -1)}
+                          >
+                            <ArrowUp />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={iconButton}
+                            aria-label={`Bajar paso ${i + 1}`}
+                            disabled={i === value.steps.length - 1}
+                            onClick={() => move(i, 1)}
+                          >
+                            <ArrowDown />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={iconButton}
+                            aria-label={`Eliminar paso ${i + 1}`}
+                            onClick={() =>
+                              onChange({
+                                ...value,
+                                steps: value.steps.filter((_, j) => j !== i),
+                              })
+                            }
+                          >
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )
+                    }
+                  >
+                    {conditions.length > 0 ? (
+                      <>
+                        Solo si{" "}
+                        {conditions.map((c, ci) =>
+                          renderCondition(step, i, c, ci),
+                        )}
+                        ,{" "}
+                      </>
+                    ) : i === 0 ? (
+                      "Cuando alguien envíe la solicitud, "
+                    ) : (
+                      "Después, "
+                    )}
+                    <SentenceChip
+                      title="¿Quién lo hace?"
+                      hideTitle
+                      readOnly={readOnly}
+                      label={whoLabel(step)}
+                    >
+                      <Field
+                        label="Nombre del paso"
+                        htmlFor={`${panelId}-nombre`}
                       >
-                        <ArrowUp className="size-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Bajar etapa ${i + 1}`}
-                        disabled={i === value.steps.length - 1}
-                        onClick={() => move(i, 1)}
+                        <Input
+                          id={`${panelId}-nombre`}
+                          value={step.label}
+                          onChange={(e) => update(i, { label: e.target.value })}
+                        />
+                      </Field>
+                      <Field
+                        label="¿Quién lo hace?"
+                        htmlFor={`${panelId}-responsable`}
                       >
-                        <ArrowDown className="size-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Eliminar etapa ${i + 1}`}
-                        onClick={() =>
-                          onChange({
-                            ...value,
-                            steps: value.steps.filter((_, j) => j !== i),
-                          })
-                        }
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <fieldset
-                  disabled={readOnly}
-                  className="space-y-4 disabled:opacity-80"
-                >
-                  <label className="block text-sm font-medium">
-                    Nombre de la etapa
-                    <Input
-                      className="mt-1"
-                      value={step.label}
-                      onChange={(e) => update(i, { label: e.target.value })}
-                    />
-                  </label>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="text-sm">
-                      Acción
-                      <select
-                        className={`${select} mt-1`}
+                        <Select
+                          id={`${panelId}-responsable`}
+                          value={step.who.type}
+                          onChange={(e) => {
+                            const type = e.target.value;
+                            if (type === "initiator")
+                              update(i, { who: { type } });
+                            if (type === "ask")
+                              update(i, {
+                                who: {
+                                  type,
+                                  prompt: "¿Quién atiende este paso?",
+                                },
+                              });
+                            if (type === "fixed")
+                              update(i, { who: { type, signerId: "" } });
+                          }}
+                        >
+                          <option value="initiator">Quien solicita</option>
+                          <option value="fixed">
+                            Una persona en específico
+                          </option>
+                          <option value="ask">
+                            Se elige al enviar la solicitud
+                          </option>
+                          {step.who.type === "lookup" && (
+                            <option value="lookup">
+                              Según una tabla de consulta
+                            </option>
+                          )}
+                        </Select>
+                      </Field>
+                      {step.who.type === "fixed" && (
+                        <PersonPicker
+                          value={step.who.signerId ? step.who : null}
+                          onChange={(person) =>
+                            update(i, {
+                              who: {
+                                type: "fixed",
+                                signerId: person?.signerId ?? "",
+                                name: person?.name,
+                                email: person?.email,
+                              },
+                            })
+                          }
+                        />
+                      )}
+                      {step.who.type === "ask" && (
+                        <Field
+                          label="Pregunta para el solicitante"
+                          htmlFor={`${panelId}-pregunta`}
+                          hint="Es lo que verá quien crea la solicitud al elegir responsable."
+                        >
+                          <Input
+                            id={`${panelId}-pregunta`}
+                            value={step.who.prompt}
+                            onChange={(e) =>
+                              update(i, {
+                                who: { type: "ask", prompt: e.target.value },
+                              })
+                            }
+                          />
+                        </Field>
+                      )}
+                      {step.who.type === "lookup" && (
+                        <p className="text-sm text-muted-foreground">
+                          La tabla se define en «Datos y reglas (avanzado)»,
+                          debajo de los pasos.
+                        </p>
+                      )}
+                    </SentenceChip>{" "}
+                    <SentenceChip
+                      title="¿Qué hace?"
+                      readOnly={readOnly}
+                      label={actionVerb(step.role)}
+                    >
+                      <Select
+                        aria-label="Acción del paso"
                         value={step.role}
                         onChange={(e) =>
                           update(i, {
@@ -129,175 +447,148 @@ export function VerticalBuilder({
                       >
                         <option value="REVISOR">Revisar y aprobar</option>
                         <option value="FIRMANTE">Firmar documento</option>
-                      </select>
-                    </label>
-                    <label className="text-sm">
-                      Responsable
-                      <select
-                        className={`${select} mt-1`}
-                        value={step.who.type}
-                        onChange={(e) => {
-                          const type = e.target.value;
-                          if (type === "initiator")
-                            update(i, { who: { type } });
-                          if (type === "ask")
-                            update(i, {
-                              who: {
-                                type,
-                                prompt: "¿Quién atiende esta etapa?",
-                              },
-                            });
-                          if (type === "fixed")
-                            update(i, { who: { type, signerId: "" } });
-                        }}
-                      >
-                        <option value="initiator">Quien solicita</option>
-                        <option value="fixed">
-                          Una persona del directorio
-                        </option>
-                        <option value="ask">
-                          Elegir al crear la solicitud
-                        </option>
-                        {step.who.type === "lookup" && (
-                          <option value="lookup">
-                            Asignación por tabla de consulta
-                          </option>
-                        )}
-                      </select>
-                    </label>
-                  </div>
-                  {step.who.type === "fixed" && (
-                    <PersonPicker
-                      value={step.who.signerId ? step.who : null}
-                      onChange={(person) =>
-                        update(i, {
-                          who: {
-                            type: "fixed",
-                            signerId: person?.signerId ?? "",
-                            name: person?.name,
-                            email: person?.email,
-                          },
-                        })
-                      }
-                    />
-                  )}
-                  {step.who.type === "ask" && (
-                    <label className="block text-sm">
-                      Pregunta para el solicitante
-                      <Input
-                        className="mt-1"
-                        value={step.who.prompt}
-                        onChange={(e) =>
-                          update(i, {
-                            who: { type: "ask", prompt: e.target.value },
-                          })
-                        }
-                      />
-                    </label>
-                  )}
-                </fieldset>
-                <p className="mt-4 break-words text-sm text-muted-foreground">
-                  {describeWho(step.who)} ·{" "}
-                  {describeWhen(step.when, [
-                    ...value.variables,
-                    ...(value.derived ?? []).map((v) => ({
-                      ...v,
-                      required: false,
-                    })),
-                  ])}
-                </p>
-              </section>
-            </li>
-          ))}
-        </ol>
-        {!readOnly && (
-          <Button
-            variant="outline"
-            className="ml-10"
-            onClick={() =>
-              onChange({
-                ...value,
-                steps: [
-                  ...value.steps,
-                  {
-                    id: newId("etapa"),
-                    label: "Nueva revisión",
-                    role: "REVISOR",
-                    who: {
-                      type: "ask",
-                      prompt: "¿Quién revisa esta solicitud?",
-                    },
-                  },
-                ],
-              })
-            }
-          >
-            <Plus className="size-4" /> Agregar etapa
-          </Button>
-        )}
-        <p className="mt-6 text-sm text-muted-foreground">
-          Fin: se conserva el documento y su expediente verificable.
-        </p>
-        {!readOnly && (
-          <details className="mt-8 border-t border-border pt-5">
-            <summary className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-primary">
-              Datos, condiciones y asignación automática
-            </summary>
-            <p className="my-4 text-sm text-muted-foreground">
-              Configura qué se pide, las consultas a tablas y cuándo participa
-              cada responsable. Los cambios se reflejan en las etapas.
-            </p>
-            <FlowEditor value={value} onChange={onChange} />
-          </details>
-        )}
-      </div>
-      <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-        <h2 className="text-base font-semibold">Reglas de ejecución</h2>
-        <label className="block text-sm">
-          Orden
-          <select
-            disabled={readOnly}
-            className={`${select} mt-2`}
-            value={value.order}
-            onChange={(e) =>
-              onChange({ ...value, order: e.target.value as Flow["order"] })
-            }
-          >
-            <option value="SECUENCIAL">Una etapa a la vez</option>
-            <option value="PARALELO">Todas al mismo tiempo</option>
-          </select>
-        </label>
-        <label className="block text-sm">
-          Plazo total, en horas
-          <Input
-            disabled={readOnly}
-            className="mt-2"
-            type="number"
-            min="1"
-            value={value.slaHours}
-            onChange={(e) =>
-              onChange({ ...value, slaHours: Number(e.target.value) })
-            }
-          />
-        </label>
-        <div className="border-t border-border pt-4" aria-live="polite">
-          <h3 className="text-sm font-medium">
-            {problems.length ? "Antes de guardar" : "Estructura completa"}
-          </h3>
-          {problems.length ? (
-            <ul className="mt-2 list-disc space-y-2 pl-4 text-sm text-destructive">
-              {problems.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm text-muted-foreground">
-              {value.steps.length} etapas · {value.variables.length} datos. Al
-              publicar se comprueban también las tablas y el directorio.
-            </p>
+                      </Select>
+                    </SentenceChip>
+                    {step.role === "FIRMANTE" ? <span className="whitespace-nowrap"> el documento.</span> : "."}
+                    {step.who.type === "ask" && (
+                      <span className="block text-sm leading-normal text-muted-foreground">
+                        La persona se elige al enviar la solicitud.
+                      </span>
+                    )}
+                    {step.who.type === "lookup" && (
+                      <span className="block text-sm leading-normal text-muted-foreground">
+                        La persona se asigna según una tabla de consulta.
+                      </span>
+                    )}
+                    {!step.label.trim() && (
+                      <>
+                        {" "}
+                        <Missing>falta elegir el nombre del paso</Missing>
+                      </>
+                    )}
+                    {!readOnly && variables.length > 0 && (
+                      <>
+                        {" "}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-11 text-sm"
+                          onClick={() => addCondition(i)}
+                        >
+                          <Plus />{" "}
+                          {conditions.length
+                            ? "Agregar otra condición"
+                            : "Solo en algunos casos"}
+                        </Button>
+                      </>
+                    )}
+                  </SentenceRow>
+                );
+              })}
+            </ol>
           )}
+          {!readOnly && value.steps.length > 0 && (
+            <Button
+              variant="outline"
+              className="mt-3 min-h-11 w-full border-dashed"
+              onClick={addStep}
+            >
+              <Plus /> Agregar otro paso
+            </Button>
+          )}
+          <p className="mt-4 rounded-2xl bg-muted px-4 py-3 text-base leading-[2.25]">
+            Cada paso se avisa{" "}
+            <SentenceChip
+              title="¿En qué orden?"
+              readOnly={readOnly}
+              label={
+                value.order === "PARALELO" ? "todos a la vez" : "uno tras otro"
+              }
+            >
+              <Select
+                aria-label="Orden de los pasos"
+                value={value.order}
+                onChange={(e) =>
+                  onChange({ ...value, order: e.target.value as Flow["order"] })
+                }
+              >
+                <option value="SECUENCIAL">Un paso a la vez</option>
+                <option value="PARALELO">Todos al mismo tiempo</option>
+              </Select>
+            </SentenceChip>
+            . En total, el proceso debe terminar en{" "}
+            <SentenceChip
+              title="Tiempo máximo para completar (en horas)"
+              readOnly={readOnly}
+              label={String(value.slaHours)}
+            >
+              <Input
+                aria-label="Horas para completar"
+                type="number"
+                min="1"
+                value={value.slaHours}
+                onChange={(e) =>
+                  onChange({ ...value, slaHours: Number(e.target.value) })
+                }
+              />
+            </SentenceChip>{" "}
+            horas.
+          </p>
         </div>
-      </aside>
+        <RoutePanel
+          className="h-fit lg:sticky lg:top-20"
+          stops={stops}
+          footer={
+            <>
+              <div aria-live="polite">
+                {problems.length ? (
+                  <>
+                    <p className="flex items-center gap-2 text-sm font-semibold">
+                      <CircleAlert aria-hidden className="size-4 shrink-0" />
+                      Falta completar
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-6 text-sm text-white/80">
+                      {problems.map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <CircleCheck aria-hidden className="size-4 shrink-0" />
+                    Todo completo: {value.steps.length}{" "}
+                    {value.steps.length === 1 ? "paso" : "pasos"} con
+                    responsable
+                  </p>
+                )}
+              </div>
+              {onTest && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 w-full border-white/40 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                  onClick={onTest}
+                >
+                  Probar antes de usar
+                </Button>
+              )}
+            </>
+          }
+        />
+      </div>
+      {!readOnly && (
+        <details className="mt-8 border-t border-border pt-5">
+          <summary className="flex min-h-11 cursor-pointer items-center font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Datos y reglas (avanzado)
+          </summary>
+          <p className="my-4 text-sm text-muted-foreground">
+            Para casos especiales: qué datos se piden, consultas a tablas y
+            cuándo participa cada persona. No hace falta para un proceso
+            sencillo.
+          </p>
+          <FlowEditor value={value} onChange={onChange} />
+        </details>
+      )}
     </div>
   );
 }

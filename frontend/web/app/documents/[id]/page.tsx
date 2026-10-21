@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBadge } from "@/components/documents/status-badge";
 import { PresenceIndicator } from "@/components/documents/presence-indicator";
+import { CaseAttachments } from "@/components/documents/case-attachments";
 import { CommentThread } from "@/components/documents/comment-thread";
 import { SignMethodDialog } from "@/components/signature/sign-method-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -194,6 +195,9 @@ export default function DocumentDetailPage({
               )}
             </div>
           </Card>
+          <div className="mt-6">
+            <CaseAttachments caseId={documentQuery.data?.caseId} />
+          </div>
         </motion.div>
 
         <motion.div
@@ -294,7 +298,7 @@ export default function DocumentDetailPage({
                 .
               </p>
             ) : me?.status === "FIRMADO" ? (
-              <p className="mt-6 text-center text-sm text-success">
+              <p className="mt-6 text-center text-sm font-medium text-foreground">
                 Ya firmaste este documento
                 {me.usedMethod ? ` · método: ${me.usedMethod.toLowerCase()}` : ""}.
               </p>

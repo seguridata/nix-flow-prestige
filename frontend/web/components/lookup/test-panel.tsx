@@ -36,13 +36,15 @@ export function TestPanel({ table }: { table: LookupTable }) {
   const summary: LookupTableSummary[] = [table];
 
   return (
-    <section aria-labelledby={`${uid}-h`} className="space-y-3 rounded-lg border border-border p-4">
-      <div>
+    <section aria-labelledby={`${uid}-h`} className="max-w-4xl space-y-4">
+      <div className="space-y-1">
         <h2 id={`${uid}-h`} className="flex items-center gap-2 text-base font-semibold">
-          <FlaskConical className="size-4" aria-hidden /> Probar consulta
+          <FlaskConical className="size-4" aria-hidden /> Probar una consulta
         </h2>
         <p className="text-sm text-muted-foreground">
-          Elige las condiciones con valores de ejemplo, como si fueran los datos de una solicitud. Verás qué filas coinciden, cuál gana y por qué las demás no.
+          Escribe la condición con valores de ejemplo, como si fueran los datos de una solicitud.
+          <br />
+          Verás qué fila gana, cuáles más coinciden y por qué las demás no.
         </p>
       </div>
 
@@ -59,7 +61,7 @@ export function TestPanel({ table }: { table: LookupTable }) {
         }}
       />
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" disabled={problems.length > 0 || run.isPending} onClick={() => run.mutate()}>
+        <Button type="button" className="min-w-28" disabled={problems.length > 0 || run.isPending} onClick={() => run.mutate()}>
           {run.isPending ? "Probando…" : "Probar"}
         </Button>
         {problems.length > 0 && query.match.length > 0 ? (
@@ -104,7 +106,13 @@ function TestResult({
         <>
           <p role="status" className="flex items-start gap-2 rounded-md bg-[#eaf3d6] p-3 text-sm text-[#3f5900]">
             <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {matches.length === 1 ? "Coincide 1 fila." : `Coinciden ${matches.length} filas.`} Gana la primera, de arriba hacia abajo.
+            <span>
+              Con estos datos gana la fila {matches[0]!.order ?? matches[0]!.position + 1}.{" "}
+              {matches.length === 1
+                ? "Es la única que coincide."
+                : `Coinciden ${matches.length} filas, pero gana la primera, de arriba hacia abajo.`}
+              {failed.length > 0 ? " Las demás no coinciden porque no cumplen alguna condición; abajo ves cuál." : ""}
+            </span>
           </p>
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full min-w-[32rem] text-left text-sm">

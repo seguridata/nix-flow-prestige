@@ -45,7 +45,12 @@ describe("Template drafts review", () => {
     const name = screen.getByDisplayValue("Vacaciones");
     fireEvent.change(name, { target: { value: "Vacaciones revisadas" } });
     expect(mocks.save).not.toHaveBeenCalled();
-    const button = screen.getByRole("button", { name: /crear formato digital/i });
+    // El asistente por pasos deja «Crear formato digital» en el último paso (Revisar y guardar).
+    for (let i = 0; i < 4; i++) {
+      fireEvent.click(await screen.findByRole("button", { name: /^siguiente/i }));
+      expect(mocks.save).not.toHaveBeenCalled();
+    }
+    const button = await screen.findByRole("button", { name: /crear formato digital/i });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ name: "Vacaciones revisadas", flow: proposal.flow, methods: ["AUTOGRAFA"] }), undefined));

@@ -2,6 +2,7 @@
 
 import { Plus, Trash2 } from "lucide-react";
 
+import { SentenceChip, SentenceRow } from "@/components/flow/sentence";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -53,7 +54,7 @@ export function QueryBuilder({ name, query, onChange, tables, sources, fixedOnly
   const useVars = !fixedOnly && sources.length > 0;
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-3">
       {!tableLocked ? (
         <label className="block space-y-1.5 text-sm">
           <span className="font-medium">Tabla de consulta</span>
@@ -81,94 +82,44 @@ export function QueryBuilder({ name, query, onChange, tables, sources, fixedOnly
       {query.table ? (
         <>
           {query.match.length > 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Se busca la primera fila de la tabla que cumpla <strong className="font-semibold">todas</strong> las condiciones.
             </p>
           ) : null}
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {query.match.map((c, i) => {
               const col = columns.find((x) => x.key === c.column);
               const ops = col ? opsForColumn(col.type) : (Object.keys(LOOKUP_OP_LABEL) as (keyof typeof LOOKUP_OP_LABEL)[]);
               const needs = opNeedsSource(c.op);
               const kind: "var" | "value" = c.source && "var" in c.source ? "var" : "value";
               const n = `${name}, condición ${i + 1}`;
-              return (
-                <li key={i} className="flex flex-wrap items-center gap-2 rounded-md bg-muted/60 p-2 text-sm">
-                  <span className="w-16 shrink-0 font-medium">{i === 0 ? "Cuando" : "y además"}</span>
+              const srcs = useVars ? sources : [];
 
+              const varKey = c.source && "var" in c.source ? c.source.var : "";
+              const fixed = c.source && "value" in c.source ? String(c.source.value).trim() : "";
+              const sourceLabel =
+                kind === "var" && useVars
+                  ? varKey
+                    ? (sources.find((s) => s.key === varKey)?.label || varKey)
+                    : "elige el dato"
+                  : fixed || "escribe un valor";
+
+              const opChip = (
+                <SentenceChip label={LOOKUP_OP_LABEL[c.op]} title={`Condición ${i + 1}: cómo se compara`}>
+                  <select
+                    className={cn(selectClass, "block w-full")}
+                    aria-label={`${n}: operador`}
+                    value={c.op}
+                    onChange={(e) => setCond(i, withOp(c, e.target.value as LookupCondition["op"], srcs))}
+                  >
+                    {ops.map((o) => (
+                      <option key={o} value={o}>
+                        {LOOKUP_OP_LABEL[o]}
+                      </option>
+                    ))}
+                  </select>
                   {needs ? (
-                    <>
-                      {kind === "var" && useVars ? (
-                        <select
-                          className={selectClass}
-                          aria-label={`${n}: dato del formulario`}
-                          value={c.source && "var" in c.source ? c.source.var : ""}
-                          aria-invalid={!(c.source && "var" in c.source && c.source.var)}
-                          onChange={(e) => setCond(i, { ...c, source: { var: e.target.value } })}
-                        >
-                          <option value="">Elige el dato…</option>
-                          {sources.map((s) => (
-                            <option key={s.key} value={s.key}>
-                              {s.label || s.key}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <ValueInput
-                          label={`${n}: valor fijo`}
-                          column={col}
-                          value={c.source && "value" in c.source ? c.source.value : ""}
-                          onChange={(v) => setCond(i, { ...c, source: { value: v } })}
-                        />
-                      )}
-                      <select
-                        className={selectClass}
-                        aria-label={`${n}: operador`}
-                        value={c.op}
-                        onChange={(e) => setCond(i, withOp(c, e.target.value as LookupCondition["op"], useVars ? sources : []))}
-                      >
-                        {ops.map((o) => (
-                          <option key={o} value={o}>
-                            {LOOKUP_OP_LABEL[o]}
-                          </option>
-                        ))}
-                      </select>
-                      <ColumnSelect name={n} columns={columns} value={c.column} onChange={(col2) => setCond(i, retarget(c, col2, columns, useVars ? sources : []))} />
-                    </>
-                  ) : (
-                    <>
-                      <ColumnSelect name={n} columns={columns} value={c.column} onChange={(col2) => setCond(i, retarget(c, col2, columns, useVars ? sources : []))} />
-                      <select
-                        className={selectClass}
-                        aria-label={`${n}: operador`}
-                        value={c.op}
-                        onChange={(e) => setCond(i, withOp(c, e.target.value as LookupCondition["op"], useVars ? sources : []))}
-                      >
-                        {ops.map((o) => (
-                          <option key={o} value={o}>
-                            {LOOKUP_OP_LABEL[o]}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  )}
-
-                  {needs && useVars ? (
-                    <select
-                      className={selectClass}
-                      aria-label={`${n}: de dónde sale el valor`}
-                      value={kind}
-                      onChange={(e) =>
-                        setCond(i, { ...c, source: e.target.value === "var" ? { var: sources[0]?.key ?? "" } : { value: "" } })
-                      }
-                    >
-                      <option value="var">Dato del formulario</option>
-                      <option value="value">Valor fijo</option>
-                    </select>
-                  ) : null}
-
-                  {needs ? (
-                    <label className="flex items-center gap-1.5">
+                    <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
                         className="size-4 accent-[#84bd00]"
@@ -178,29 +129,92 @@ export function QueryBuilder({ name, query, onChange, tables, sources, fixedOnly
                       Celda vacía = cualquiera
                     </label>
                   ) : null}
+                </SentenceChip>
+              );
+              const columnChip = (
+                <SentenceChip label={col ? col.label : c.column ? `${c.column} (ya no existe)` : "elige la columna"} title={`Condición ${i + 1}: columna de la tabla`}>
+                  <ColumnSelect name={n} columns={columns} value={c.column} onChange={(col2) => setCond(i, retarget(c, col2, columns, srcs))} />
+                </SentenceChip>
+              );
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="ml-auto"
-                    aria-label={`Quitar ${n}`}
-                    onClick={() => onChange({ ...query, match: query.match.filter((_, j) => j !== i) })}
-                  >
-                    <Trash2 />
-                  </Button>
-                </li>
+              return (
+                <SentenceRow
+                  key={i}
+                  n={i + 1}
+                  actions={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11"
+                      aria-label={`Quitar ${n}`}
+                      onClick={() => onChange({ ...query, match: query.match.filter((_, j) => j !== i) })}
+                    >
+                      <Trash2 />
+                    </Button>
+                  }
+                >
+                  {i === 0 ? "Cuando" : "y"}{" "}
+                  {needs ? (
+                    <>
+                      <SentenceChip label={sourceLabel} title={`Condición ${i + 1}: con qué se compara`}>
+                        {useVars ? (
+                          <select
+                            className={cn(selectClass, "block w-full")}
+                            aria-label={`${n}: de dónde sale el valor`}
+                            value={kind}
+                            onChange={(e) =>
+                              setCond(i, { ...c, source: e.target.value === "var" ? { var: sources[0]?.key ?? "" } : { value: "" } })
+                            }
+                          >
+                            <option value="var">Dato del formulario</option>
+                            <option value="value">Valor fijo</option>
+                          </select>
+                        ) : null}
+                        {kind === "var" && useVars ? (
+                          <select
+                            className={cn(selectClass, "block w-full")}
+                            aria-label={`${n}: dato del formulario`}
+                            value={varKey}
+                            aria-invalid={!varKey}
+                            onChange={(e) => setCond(i, { ...c, source: { var: e.target.value } })}
+                          >
+                            <option value="">Elige el dato…</option>
+                            {sources.map((s) => (
+                              <option key={s.key} value={s.key}>
+                                {s.label || s.key}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <ValueInput
+                            label={`${n}: valor fijo`}
+                            column={col}
+                            value={c.source && "value" in c.source ? c.source.value : ""}
+                            onChange={(v) => setCond(i, { ...c, source: { value: v } })}
+                          />
+                        )}
+                      </SentenceChip>{" "}
+                      {opChip} {columnChip}
+                    </>
+                  ) : (
+                    <>
+                      {columnChip} {opChip}
+                    </>
+                  )}
+                </SentenceRow>
               );
             })}
           </ul>
           <Button
             type="button"
-            variant="link"
-            className="text-sm"
+            variant="outline"
+            size="sm"
             disabled={!table}
+            aria-label={query.match.length ? "Agregar otra condición" : undefined}
             onClick={() => onChange({ ...query, match: [...query.match, newCondition(columns[0], useVars ? sources : [])] })}
           >
-            <Plus /> {query.match.length ? "Agregar otra condición" : "Agregar condición"}
+            <Plus /> {query.match.length ? "Y también…" : "Agregar condición"}
           </Button>
         </>
       ) : null}
@@ -231,7 +245,7 @@ function retarget(c: LookupCondition, key: string, columns: readonly LookupColum
 
 function ColumnSelect({ name, columns, value, onChange }: { name: string; columns: readonly LookupColumn[]; value: string; onChange: (k: string) => void }) {
   return (
-    <select className={selectClass} aria-label={`${name}: columna de la tabla`} value={value} aria-invalid={!value || !columns.some((c) => c.key === value)} onChange={(e) => onChange(e.target.value)}>
+    <select className={cn(selectClass, "block w-full")} aria-label={`${name}: columna de la tabla`} value={value} aria-invalid={!value || !columns.some((c) => c.key === value)} onChange={(e) => onChange(e.target.value)}>
       <option value="">Columna…</option>
       {value && !columns.some((c) => c.key === value) ? <option value={value}>{value} (ya no existe)</option> : null}
       {columns.map((c) => (
@@ -256,7 +270,7 @@ function ValueInput({
 }) {
   if (column?.type === "select" && (column.options?.length ?? 0) > 0) {
     return (
-      <select className={selectClass} aria-label={label} value={String(value)} aria-invalid={String(value).trim() === ""} onChange={(e) => onChange(e.target.value)}>
+      <select className={cn(selectClass, "block w-full")} aria-label={label} value={String(value)} aria-invalid={String(value).trim() === ""} onChange={(e) => onChange(e.target.value)}>
         <option value="">Elige…</option>
         {column.options!.map((o) => (
           <option key={o} value={o}>
@@ -268,7 +282,7 @@ function ValueInput({
   }
   return (
     <Input
-      className="h-10 w-40"
+      className="h-10 w-full"
       aria-label={label}
       aria-invalid={String(value).trim() === ""}
       type={column?.type === "number" ? "number" : column?.type === "date" ? "date" : "text"}

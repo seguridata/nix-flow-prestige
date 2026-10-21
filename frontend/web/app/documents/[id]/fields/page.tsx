@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import {
-  ArrowLeft,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
+  CircleDot,
   PenTool,
   Save,
   Type,
@@ -19,6 +20,7 @@ import {
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -205,20 +207,81 @@ export default function SignatureFieldsPage({
   const fieldsOnPage = draftFields.filter((f) => f.page === pageNumber);
   const canPlace = Boolean(selectedSignerId && documentQuery.data);
 
+  // ¿Lo que se ve coincide con lo guardado en el servidor? (comparación visual, no cambia lo que se envía)
+  const dirty = useMemo(() => {
+    if (!seeded || !fieldsQuery.data) return false;
+    const sig = (f: {
+      signerId: string;
+      type: string;
+      page: number;
+      xPct: number;
+      yPct: number;
+      widthPct: number;
+      heightPct: number;
+      required: boolean;
+    }) => [f.signerId, f.type, f.page, f.xPct, f.yPct, f.widthPct, f.heightPct, f.required].join("|");
+    const a = draftFields.map(sig).sort().join(";");
+    const b = fieldsQuery.data.map(sig).sort().join(";");
+    return a !== b;
+  }, [draftFields, fieldsQuery.data, seeded]);
+
+  const saveState = saveMutation.isPending ? "saving" : dirty ? "dirty" : "saved";
+
   return (
     <AppShell title={`Campos · ${documentQuery.data?.filename ?? "Documento"}`}>
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="mx-auto max-w-6xl">
+        <PageHeader
+          back={{ href: `/documents/${documentId}`, label: "Volver al documento" }}
+          title="Campos de firma"
+          description="Marca en el documento dónde firma cada persona. Los campos no se aplican hasta que los guardes."
+          meta={
+            seeded ? (
+              <span role="status" className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                {saveState === "saved" ? (
+                  <>
+                    <Check className="size-4" aria-hidden /> Todo guardado
+                  </>
+                ) : saveState === "saving" ? (
+                  <>Guardando…</>
+                ) : (
+                  <>
+                    <CircleDot className="size-4" aria-hidden /> Cambios sin guardar
+                  </>
+                )}
+              </span>
+            ) : null
+          }
+          actions={
+            request ? (
+              <Button size="lg" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                <Save className="size-4" strokeWidth={1.75} />
+                {saveMutation.isPending ? "Guardando…" : "Guardar campos"}
+              </Button>
+            ) : null
+          }
+        />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
           <Card className="flex h-[80vh] flex-col overflow-hidden p-0">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <Button variant="ghost" size="sm" onClick={() => router.push(`/documents/${documentId}`)}>
-                <ArrowLeft className="size-4" strokeWidth={1.75} />
-                Volver al documento
-              </Button>
+            <div
+              role="toolbar"
+              aria-label="Herramientas del visor"
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3"
+            >
+              <p className="min-w-0 text-sm text-muted-foreground">
+                {canPlace && selectedSignerId ? (
+                  <>
+                    Colocando <span className="font-medium text-foreground">{LABELS[selectedType].toLowerCase()}</span> para{" "}
+                    <span className="font-medium text-foreground">{nameFor(selectedSignerId)}</span>
+                  </>
+                ) : (
+                  "Elige un firmante para empezar a colocar campos"
+                )}
+              </p>
 
               <div className="flex items-center gap-3">
                 {numPages ? (
@@ -418,7 +481,8 @@ export default function SignatureFieldsPage({
                           <button
                             type="button"
                             onClick={() => handleRemoveField(field.key)}
-                            className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                            aria-label={`Quitar ${LABELS[field.type].toLowerCase()} de ${nameFor(field.signerId)}, página ${field.page}`}
+                            className="-my-1 shrink-0 rounded px-2 py-2 text-sm text-muted-foreground outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             Quitar
                           </button>
@@ -428,19 +492,18 @@ export default function SignatureFieldsPage({
                   </div>
                 )}
 
-                <Button
-                  className="mt-6 w-full"
-                  size="lg"
-                  onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending}
-                >
-                  <Save className="size-4" strokeWidth={1.75} />
-                  {saveMutation.isPending ? "Guardando…" : "Guardar campos"}
-                </Button>
+                <p className="mt-4 text-xs text-muted-foreground">
+                  {saveState === "dirty"
+                    ? "Tienes cambios sin guardar. Usa «Guardar campos» arriba para aplicarlos."
+                    : saveState === "saving"
+                      ? "Guardando los campos…"
+                      : "Los campos coinciden con lo guardado."}
+                </p>
               </Card>
             </>
           )}
         </motion.div>
+      </div>
       </div>
     </AppShell>
   );

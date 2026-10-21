@@ -9,15 +9,18 @@ import { ChevronRight, FolderPlus, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { CaseIcon, DocumentIcon, FolderIcon } from "@/components/drive/drive-icons";
-import { DriveTile, DropCrumb, dragId, type TileActions } from "@/components/drive/drive-tile";
+import { DriveListHeader, DriveTile, DropCrumb, dragId, type TileActions } from "@/components/drive/drive-tile";
 import { UploadDialog } from "@/components/drive/upload-dialog";
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { buildEntries, type DriveEntry } from "@/libs/drive";
+import { buildEntries, plural, type DriveEntry } from "@/libs/drive";
 import { fetchCase } from "@/services/cases-service";
 import { fetchCaseDocuments } from "@/services/documents-service";
 import {
@@ -171,7 +174,39 @@ function Drive() {
           setUpload({ key: Date.now(), files: Array.from(e.dataTransfer.files) });
         }}
       >
-        <div className="mb-5 flex flex-wrap items-center gap-3">
+        <PageHeader
+          title={caseId ? (openCase.data?.title ?? "Expediente") : (path[path.length - 1]?.name ?? "Mis documentos")}
+          description={
+            caseId
+              ? "Documentos de este expediente. Ábrelos para ver su estado o enviarlos a firma."
+              : "Tus carpetas, expedientes y documentos. Sube un PDF o arrástralo aquí para empezar."
+          }
+          back={
+            caseId
+              ? { href: "/documentos", label: "Mis documentos" }
+              : folderId
+                ? {
+                    href: parentOfCurrent ? `/documentos?carpeta=${parentOfCurrent}` : "/documentos",
+                    label: parentOfCurrent ? (path[path.length - 2]?.name ?? "Atrás") : "Mis documentos",
+                  }
+                : undefined
+          }
+          actions={
+            <>
+              {caseId ? null : (
+                <Button variant="outline" onClick={() => setNameDialog({ mode: "create" })}>
+                  <FolderPlus /> Nueva carpeta
+                </Button>
+              )}
+              <Button onClick={() => setUpload({ key: Date.now(), files: [] })}>
+                <Upload /> Subir documento
+              </Button>
+            </>
+          }
+          className="mb-6"
+        />
+
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-3">
           <nav aria-label="Ruta" className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
             <DropCrumb folderId={null} current={!folderId && !caseId} onGo={() => go({})}>
               Mis documentos
@@ -187,43 +222,48 @@ function Drive() {
             {caseId ? (
               <>
                 <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-                <span className="px-2 py-1 text-sm font-semibold">{openCase.data?.title ?? "Expediente"}</span>
+                <span aria-current="page" className="px-2.5 text-sm font-semibold">
+                  {openCase.data?.title ?? "Expediente"}
+                </span>
               </>
             ) : null}
           </nav>
 
           {caseId ? null : (
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="h-9 w-56 pl-9"
-                aria-label="Buscar en esta carpeta"
-                placeholder="Buscar en esta carpeta"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
+            <Field label="Buscar en esta carpeta" htmlFor="drive-search" className="w-full sm:w-64">
+              <div className="relative">
+                <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="drive-search"
+                  type="search"
+                  className="pl-9"
+                  placeholder="Nombre del elemento"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+            </Field>
           )}
-          {caseId ? null : (
-            <Button variant="outline" size="sm" onClick={() => setNameDialog({ mode: "create" })}>
-              <FolderPlus /> Nueva carpeta
-            </Button>
-          )}
-          <Button size="sm" onClick={() => setUpload({ key: Date.now(), files: [] })}>
-            <Upload /> Subir
-          </Button>
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2" aria-busy>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-36 rounded-lg" />
+          <div className="divide-y divide-border rounded-lg border border-border" aria-busy aria-label="Cargando contenido">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-3">
+                <Skeleton className="size-10 shrink-0 rounded-md" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-2/5" />
+                  <Skeleton className="h-3 w-1/4" />
+                </div>
+                <Skeleton className="hidden h-4 w-24 md:block" />
+                <Skeleton className="h-11 w-16" />
+              </div>
             ))}
           </div>
         ) : failed ? (
-          <div role="alert" className="rounded-lg border border-border p-6 text-sm">
-            No se pudo cargar esta vista.{" "}
-            <Button variant="link" onClick={() => (caseId ? openCase.refetch() : contents.refetch())}>
+          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-5 text-sm">
+            <span>No se pudo cargar esta vista.</span>
+            <Button size="sm" variant="outline" onClick={() => (caseId ? openCase.refetch() : contents.refetch())}>
               Reintentar
             </Button>
           </div>
@@ -236,8 +276,10 @@ function Drive() {
         ) : entries.length === 0 ? (
           <Empty searching={!!query} onUpload={() => setUpload({ key: Date.now(), files: [] })} onFolder={() => setNameDialog({ mode: "create" })} />
         ) : (
-          <div role="listbox" aria-label="Contenido" className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
-            {entries.map((entry) => (
+          <div className="overflow-hidden rounded-lg border border-border bg-background">
+            <DriveListHeader />
+            <div role="listbox" aria-label="Contenido">
+              {entries.map((entry) => (
               <DriveTile
                 key={dragId(entry)}
                 entry={entry}
@@ -246,13 +288,14 @@ function Drive() {
                 onSelect={() => setSelected(dragId(entry))}
                 actions={actions}
               />
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
         {hoverFiles ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-foreground bg-background/85">
-            <p className="text-base font-medium">Suelta tus PDF para subirlos</p>
+            <p className="text-lg font-medium">Suelta tus PDF para subirlos</p>
           </div>
         ) : null}
       </div>
@@ -320,54 +363,61 @@ function CaseView({
 }) {
   if (docs.length === 0) {
     return (
-      <div className="flex flex-col items-center py-16 text-center">
-        <CaseIcon className="size-20" />
-        <p className="mt-4 text-base font-medium">Este expediente aún no tiene documentos</p>
-        <Button className="mt-4" onClick={onAdd}>
-          <Upload /> Agregar documento
-        </Button>
-      </div>
+      <EmptyState
+        icon={<Upload />}
+        title="Este expediente aún no tiene documentos"
+        description="Agrega el primer PDF. Después podrás enviarlo a firma desde aquí."
+        action={
+          <Button onClick={onAdd}>
+            <Upload /> Agregar documento
+          </Button>
+        }
+      />
     );
   }
   return (
-    <div role="listbox" aria-label="Documentos del expediente" className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
-      {docs.map((d) => (
-        <button
-          key={d.id}
-          type="button"
-          onClick={() => onOpen(d.id)}
-          className="flex flex-col items-center rounded-lg border border-transparent px-2 pb-3 pt-4 text-center outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <DocumentIcon />
-          <span className="mt-2 line-clamp-2 w-full break-words text-sm font-medium leading-snug">{d.filename}</span>
-          <span className="mt-0.5 text-xs text-muted-foreground">{d.locked ? "Congelado" : `Versión ${d.version}`}</span>
-        </button>
-      ))}
+    <div className="overflow-hidden rounded-lg border border-border bg-background">
+      <p className="px-3 py-2 text-sm text-muted-foreground">{plural(docs.length, "documento", "documentos")}</p>
+      <ul aria-label="Documentos del expediente" className="border-t border-border">
+        {docs.map((d) => (
+          <li key={d.id} className="flex min-h-16 items-center gap-3 border-b border-border px-3 py-2 last:border-b-0">
+            <DocumentIcon className="size-10 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-base font-medium">{d.filename}</span>
+              <span className="block text-sm text-muted-foreground">
+                {d.locked ? "Congelado: ya no admite cambios" : `Versión ${d.version}`}
+              </span>
+            </span>
+            <Button variant="outline" onClick={() => onOpen(d.id)} aria-label={`Abrir ${d.filename}`}>
+              Abrir
+            </Button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function Empty({ searching, onUpload, onFolder }: { searching: boolean; onUpload: () => void; onFolder: () => void }) {
+  if (searching) {
+    return <EmptyState icon={<Search />} title="Nada coincide con tu búsqueda" description="Prueba con otra parte del nombre." />;
+  }
   return (
-    <div className="flex flex-col items-center py-16 text-center">
-      <FolderIcon className="size-20" />
-      <p className="mt-4 text-base font-medium">{searching ? "Nada coincide con tu búsqueda" : "Esta carpeta está vacía"}</p>
-      {searching ? null : (
-        <>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Sube un PDF, o arrástralo aquí, y elige si va en un expediente nuevo o en uno que ya tengas.
-          </p>
-          <div className="mt-4 flex gap-2">
-            <Button onClick={onUpload}>
-              <Upload /> Subir documento
-            </Button>
-            <Button variant="outline" onClick={onFolder}>
-              <FolderPlus /> Nueva carpeta
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
+    <EmptyState
+      icon={<FolderPlus />}
+      title="Esta carpeta está vacía"
+      description="Sube un PDF, o arrástralo aquí, y elige si va en un expediente nuevo o en uno que ya tengas."
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onUpload}>
+            <Upload /> Subir documento
+          </Button>
+          <Button variant="outline" onClick={onFolder}>
+            <FolderPlus /> Nueva carpeta
+          </Button>
+        </div>
+      }
+    />
   );
 }
 
@@ -404,7 +454,9 @@ function NameDialog({
             if (valid && !pending) onSave(name);
           }}
         >
-          <Input autoFocus aria-label="Nombre" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.currentTarget.select()} />
+          <Field label="Nombre" htmlFor="drive-name">
+            <Input id="drive-name" autoFocus value={name} maxLength={120} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.currentTarget.select()} />
+          </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
               Cancelar

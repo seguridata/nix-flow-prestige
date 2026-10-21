@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileDown, X } from "lucide-react";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,14 +12,15 @@ const nf = new Intl.NumberFormat("es-MX");
 
 /**
  * Exporta TODAS las filas a CSV. El BFF solo entrega 200 por página, así que se recorre por cursor en bucle
- * mostrando el avance; se puede cancelar entre páginas.
+ * mostrando el avance; se puede cancelar entre páginas. La acción vive en el menú «Más acciones»; el avance
+ * se muestra con `ExportStatus`.
  */
-export function ExportRowsButton({ table }: { table: LookupTable }) {
+export function useExportRows(table: LookupTable | undefined) {
   const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const running = progress !== null;
 
   async function run() {
+    if (!table) return;
     const ctl = new AbortController();
     abort.current = ctl;
     setProgress({ loaded: 0, total: table.rowCount });
@@ -42,27 +43,27 @@ export function ExportRowsButton({ table }: { table: LookupTable }) {
     }
   }
 
+  return { run, progress, running: progress !== null, cancel: () => abort.current?.abort() };
+}
+
+export function ExportStatus({ exporter }: { exporter: ReturnType<typeof useExportRows> }) {
+  const { progress, cancel } = exporter;
   return (
     <div className="flex items-center gap-2">
-      <Button variant="outline" size="sm" disabled={running || table.rowCount === 0} onClick={() => void run()}>
-        <FileDown /> Exportar CSV
-      </Button>
-      {running ? (
+      {progress ? (
         <>
           <progress className="h-2 w-28" max={Math.max(progress.total, 1)} value={progress.loaded} aria-label="Avance de la exportación" />
-          <Button variant="ghost" size="sm" onClick={() => abort.current?.abort()} aria-label="Cancelar la exportación">
+          <span aria-hidden className="text-xs text-muted-foreground tabular-nums">
+            {nf.format(progress.loaded)} de {nf.format(progress.total)}
+          </span>
+          <Button variant="ghost" size="sm" onClick={cancel} aria-label="Cancelar la exportación">
             <X /> Cancelar
           </Button>
         </>
       ) : null}
       <span role="status" aria-live="polite" className="sr-only">
-        {running ? `Exportando… ${nf.format(progress.loaded)} de ${nf.format(progress.total)} filas` : ""}
+        {progress ? `Exportando… ${nf.format(progress.loaded)} de ${nf.format(progress.total)} filas` : ""}
       </span>
-      {running ? (
-        <span aria-hidden className="text-xs text-muted-foreground tabular-nums">
-          {nf.format(progress.loaded)} de {nf.format(progress.total)}
-        </span>
-      ) : null}
     </div>
   );
 }

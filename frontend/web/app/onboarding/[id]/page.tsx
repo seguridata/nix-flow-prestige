@@ -1,18 +1,20 @@
 "use client";
 
 import { use, useRef, useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, Camera, Check, CircleDashed, FileImage, UserCheck, X } from "lucide-react";
+import { Ban, Camera, Check, CircleDashed, FileImage, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/documents/status-badge";
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { StepRail } from "@/components/onboarding/step-rail";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { shortHash } from "@/libs/envelope-status";
 import {
   REVIEW_MODE_TEXT,
@@ -184,11 +186,14 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   if (query.isError) {
     return (
       <AppShell title="Alta de identidad">
-        <div role="alert" className="mx-auto max-w-xl rounded-lg border border-border p-6 text-sm">
-          No se pudo cargar esta alta.{" "}
-          <Button variant="link" onClick={() => query.refetch()}>
-            Reintentar
-          </Button>
+        <div className="mx-auto max-w-5xl">
+          <PageHeader title="Alta de identidad" back={{ href: "/onboarding", label: "Altas de identidad" }} />
+          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-5 text-sm">
+            <span>No se pudo cargar esta alta.</span>
+            <Button size="sm" variant="outline" onClick={() => query.refetch()}>
+              Reintentar
+            </Button>
+          </div>
         </div>
       </AppShell>
     );
@@ -196,10 +201,13 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   if (!row) {
     return (
       <AppShell title="Alta de identidad">
-        <div className="mx-auto max-w-5xl space-y-4" aria-busy>
-          <Skeleton className="h-10 w-80" />
-          <Skeleton className="h-16" />
-          <Skeleton className="h-64" />
+        <div className="mx-auto max-w-5xl" aria-busy aria-label="Cargando el alta">
+          <PageHeader title={<Skeleton className="h-9 w-80 max-w-full" />} back={{ href: "/onboarding", label: "Altas de identidad" }} />
+          <Skeleton className="h-24" />
+          <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_340px]">
+            <Skeleton className="h-72" />
+            <Skeleton className="h-72" />
+          </div>
         </div>
       </AppShell>
     );
@@ -218,25 +226,20 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
   return (
     <AppShell title={row.fullName}>
       <div className="mx-auto max-w-5xl">
-        <Link
-          href="/onboarding"
-          className="mb-4 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ArrowLeft className="size-4" aria-hidden /> Altas de identidad
-        </Link>
-
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">Alta de identidad — {row.fullName}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+        <PageHeader
+          back={{ href: "/onboarding", label: "Altas de identidad" }}
+          title={`Alta de identidad: ${row.fullName}`}
+          description={<span className={cn(next.needsRh && "font-medium text-foreground")}>{next.sentence}</span>}
+          meta={
+            <>
               {KIND_TEXT[row.kind] ?? row.kind} · {row.email}
               {row.curp ? ` · CURP ${row.curp}` : ""}
               {row.rfc ? ` · RFC ${row.rfc}` : ""}
-            </p>
-            <p className={cn("mt-2 text-sm", next.needsRh ? "font-medium" : "text-muted-foreground")}>{next.sentence}</p>
-          </div>
-          <StatusBadge status={row.status} />
-        </header>
+            </>
+          }
+          actions={<StatusBadge status={row.status} />}
+          className="mb-6"
+        />
 
         <div className="mt-7 rounded-lg border border-border px-3 py-4 sm:px-6">
           <StepRail steps={steps} />
@@ -348,7 +351,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
               </ul>
             </Panel>
 
-            <Panel title="Decisión de RH">
+            <Panel title="Decisión de RH" emphasis note="Esta decisión la toma una persona y queda en la auditoría con su nombre.">
               {row.status === "HABILITADO" ? (
                 <div className="space-y-2 text-sm">
                   <p className="flex items-start gap-2 font-medium">
@@ -395,7 +398,7 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
                     </Button>
                   )}
                   {blockers.length > 0 ? <p className="text-sm text-muted-foreground">Falta {joinEs(blockers)}.</p> : null}
-                  <Button variant="ghost" className="w-full text-destructive hover:text-destructive" disabled={reject.isPending} onClick={() => setConfirmReject(true)}>
+                  <Button variant="outline" className="w-full text-destructive hover:text-destructive" disabled={reject.isPending} onClick={() => setConfirmReject(true)}>
                     <Ban /> Rechazar alta
                   </Button>
                   <p className="flex items-start gap-2 border-t border-border pt-3 text-sm text-muted-foreground">
@@ -468,16 +471,18 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
             <DialogTitle>La prueba biométrica no pasó</DialogTitle>
             <DialogDescription>{overrideMessage}</DialogDescription>
           </DialogHeader>
-          <label className="text-sm font-medium" htmlFor="override-notes">
-            Motivo de la anulación (mínimo 10 caracteres; queda en la auditoría con tu nombre)
-          </label>
-          <textarea
-            id="override-notes"
-            className="min-h-24 w-full rounded-md border border-border bg-background p-2 text-sm"
-            value={overrideNotes}
-            maxLength={2000}
-            onChange={(e) => setOverrideNotes(e.target.value)}
-          />
+          <Field
+            label="Motivo de la anulación"
+            htmlFor="override-notes"
+            hint={`Mínimo 10 caracteres (${overrideNotes.trim().length} de 10). Queda en la auditoría con tu nombre.`}
+          >
+            <Textarea
+              id="override-notes"
+              value={overrideNotes}
+              maxLength={2000}
+              onChange={(e) => setOverrideNotes(e.target.value)}
+            />
+          </Field>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOverrideMessage(null)} disabled={enable.isPending}>
               Cancelar
@@ -499,19 +504,25 @@ function Panel({
   title,
   aside,
   note,
+  emphasis = false,
   className,
   children,
 }: {
   title: string;
   aside?: React.ReactNode;
   note?: string;
+  /** Decisión humana: borde grueso y un icono de persona para distinguirla de los datos automáticos. */
+  emphasis?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn("rounded-lg border border-border bg-background p-5", className)}>
+    <section className={cn("rounded-lg border bg-background p-5", emphasis ? "border-2 border-foreground" : "border-border", className)}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">{title}</h2>
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          {emphasis ? <UserCheck className="size-4 shrink-0" aria-hidden /> : null}
+          {title}
+        </h2>
         {aside}
       </div>
       {note ? <p className="-mt-1 mb-3 text-sm text-muted-foreground">{note}</p> : null}
@@ -566,11 +577,11 @@ function IneSlot({
       <span
         aria-hidden
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-md",
-          loaded ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+          "flex shrink-0 items-center justify-center",
+          loaded ? "text-primary" : "text-muted-foreground",
         )}
       >
-        {loaded ? <Check className="size-5" strokeWidth={3} /> : <FileImage className="size-5" />}
+        {loaded ? <Check className="size-7" strokeWidth={2.5} /> : <FileImage className="size-7" strokeWidth={1.5} />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">INE, {label.toLowerCase()}</span>
@@ -588,7 +599,7 @@ function IneSlot({
           e.target.value = "";
         }}
       />
-      <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => input.current?.click()}>
+      <Button type="button" variant="outline" disabled={disabled} onClick={() => input.current?.click()}>
         {loaded ? "Reemplazar" : "Elegir imagen"}
       </Button>
     </div>

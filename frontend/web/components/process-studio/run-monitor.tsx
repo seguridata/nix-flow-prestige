@@ -19,6 +19,14 @@ interface Run {
   createdAt: string;
 }
 
+/** Estado en palabras de negocio; el estado técnico queda en el tooltip. */
+function runLabel(status: string) {
+  if (/FALL|FAIL|ERROR/.test(status)) return "Detenida: requiere atención";
+  if (/CANCEL/.test(status)) return "Cancelada";
+  if (/COMPLET/.test(status)) return "Terminada";
+  return "En curso";
+}
+
 export function RunMonitor({ definition }: { definition: ProcessDefinition }) {
   const { signerId } = useSession();
   const [status, setStatus] = useState("todos");
@@ -50,31 +58,32 @@ export function RunMonitor({ definition }: { definition: ProcessDefinition }) {
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Solicitudes de este proceso</h2>
+          <h2 className="text-lg font-semibold">Solicitudes en curso y terminadas</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Estados reales del motor. Actualización cada 30 segundos.
+            Aquí ves en qué punto va cada solicitud y si alguna se quedó
+            detenida. Se actualiza solo cada 30 segundos.
           </p>
         </div>
         <select
-          aria-label="Filtrar ejecuciones"
+          aria-label="Filtrar solicitudes"
           className="h-10 rounded-md border border-border bg-background px-3 text-sm"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
         >
           <option value="todos">Todos los estados</option>
-          <option value="atencion">Requieren atención</option>
-          <option value="activas">En curso</option>
+          <option value="atencion">Detenidas (requieren atención)</option>
+          <option value="activas">Solo las que van en curso</option>
         </select>
       </div>
       {runs.isError ? (
         <div role="alert">
-          No se pudieron consultar las ejecuciones.{" "}
+          No se pudieron consultar las solicitudes.{" "}
           <button className="underline" onClick={() => runs.refetch()}>
             Reintentar
           </button>
         </div>
       ) : runs.isPending ? (
-        <p role="status">Consultando ejecuciones…</p>
+        <p role="status">Consultando solicitudes…</p>
       ) : visible.length ? (
         <ul className="divide-y divide-border border-y border-border">
           {visible.map((r) => {
@@ -102,7 +111,9 @@ export function RunMonitor({ definition }: { definition: ProcessDefinition }) {
                         : "bg-muted",
                     )}
                   >
-                    {r.status.replaceAll("_", " ")}
+                    <span title={r.status.replaceAll("_", " ")}>
+                      {runLabel(r.status)}
+                    </span>
                   </span>
                   {request && (
                     <Button size="sm" variant="outline" asChild>
@@ -116,14 +127,14 @@ export function RunMonitor({ definition }: { definition: ProcessDefinition }) {
                 {r.lastError && (
                   <details className="mt-3 rounded-lg bg-muted/60 p-3 text-sm">
                     <summary className="cursor-pointer font-medium">
-                      Ver motivo y diagnóstico
+                      Ver qué pasó
                     </summary>
                     <p className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">
                       {r.lastError}
                     </p>
                     <p className="mt-3">
-                      Revisa las tareas y la configuración antes de iniciar una
-                      nueva solicitud.
+                      Revisa las tareas y los pasos antes de iniciar una nueva
+                      solicitud.
                     </p>
                   </details>
                 )}
@@ -135,12 +146,12 @@ export function RunMonitor({ definition }: { definition: ProcessDefinition }) {
         <div className="py-12">
           <h3 className="font-medium">
             {status === "todos"
-              ? "No hay solicitudes de este proceso en los registros cargados"
+              ? "Todavía no hay solicitudes de este proceso"
               : "No hay solicitudes con este estado"}
           </h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            Las solicitudes aparecerán cuando un formato con este flujo se envíe
-            a aprobación.
+            Aparecerán aquí cuando alguien envíe una solicitud con un formato
+            que use este proceso.
           </p>
           <Button asChild variant="outline" className="mt-4">
             <Link href={`/formatos?flow=${encodeURIComponent(definition.key)}`}>

@@ -1,0 +1,16 @@
+# Rutas de Prestige para agregar al Caddyfile del servidor (el Caddy ya existente de otro compose).
+# El Caddy y los contenedores prestige-bff / prestige-keycloak comparten la red zeus_zeus_internal.
+# Caddy obtiene y renueva los certificados TLS solo; los dominios deben apuntar al servidor.
+
+api-prestige.seguridata.site {
+    # Los WebSocket (Socket.IO de presencia) pasan por reverse_proxy sin configuración extra.
+    reverse_proxy prestige-bff:3000
+}
+
+kc-prestige.seguridata.site {
+    # La consola de administración y el realm master no se publican: se administran por
+    # `docker exec prestige-keycloak kcadm.sh ...` desde el servidor.
+    @admin path /admin /admin/* /realms/master /realms/master/*
+    respond @admin 404
+    reverse_proxy prestige-keycloak:8080
+}
