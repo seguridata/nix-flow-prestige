@@ -262,13 +262,14 @@ function NewSignatureRequest() {
 
   return (
     <AppShell title="Enviar documento">
+      <div className="mx-auto w-full max-w-5xl">
       <PageHeader
         back={{ href: "/sent", label: "Enviados" }}
         title="Enviar documento a firma"
         description="Cuatro pasos: el documento, quién firma, cómo y una última revisión."
       />
 
-      <div className="mx-auto mb-10 max-w-2xl">
+      <div className="mb-10">
         <ol aria-label="Pasos para enviar" className="flex items-center gap-3">
           {STEPS.map((label, index) => (
             <li key={label} className="flex flex-1 items-center gap-3 last:flex-none" aria-current={index === step ? "step" : undefined}>
@@ -581,6 +582,7 @@ function NewSignatureRequest() {
         ) : (
           <RoutePanel stops={routeStops} className="lg:sticky lg:top-20 lg:self-start" />
         )}
+      </div>
       </div>
     </AppShell>
   );
