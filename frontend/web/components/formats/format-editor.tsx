@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { FormatAiAssistant } from "@/components/ai/format-ai-assistant";
 import { AttachmentSpecsEditor } from "@/components/formats/attachment-specs-editor";
 import { FlowEditor } from "@/components/formats/flow-editor";
+import { FlowRoutePanel } from "@/components/formats/flow-route-panel";
 import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -328,7 +329,8 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
   );
 
   const flowStep = (
-    <div className="space-y-5">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+    <div className="min-w-0 max-w-3xl space-y-5">
       {baseFlows.length > 0 ? (
         <Field
           label="Partir de un flujo publicado"
@@ -364,6 +366,8 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
           setDirty(true);
         }}
       />
+    </div>
+    <FlowRoutePanel flow={flow} problems={flowStepProblems} className="lg:sticky lg:top-20" />
     </div>
   );
 
@@ -573,7 +577,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
     revisar: { title: "Revisar y guardar", text: "Revisa el resumen; con «Cambiar» vuelves al paso que quieras.", body: reviewStep },
   };
   const view = content[stepId ?? "info"] ?? content[stepDefs[0]?.id ?? "info"] ?? content.info!;
-  const wide = stepId === "ubicar";
+  const wide = stepId === "ubicar" || stepId === "flujo";
 
   return (
     <div className="flex flex-col gap-6">

@@ -234,10 +234,7 @@ function UsarForm({ format }: { format: FormatDetail }) {
       </div>
 
       <aside className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start">
-        <section aria-labelledby="se-envia" className="rounded-lg border border-border bg-background p-4" aria-busy={preview.isFetching}>
-          <h2 id="se-envia" className="mb-3 text-base font-semibold">
-            Se enviará a
-          </h2>
+        <section aria-label="Se enviará a" aria-busy={preview.isFetching}>
           <SendToSteps
             steps={
               preview.data?.steps ??
