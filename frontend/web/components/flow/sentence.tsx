@@ -44,6 +44,7 @@ export function SentenceChip({
   label,
   title,
   ariaLabel,
+  hideTitle,
   readOnly,
   children,
 }: {
@@ -52,6 +53,8 @@ export function SentenceChip({
   title: string;
   /** Nombre accesible cuando `label` no es texto plano (por ejemplo lleva un icono). */
   ariaLabel?: string;
+  /** Oculta el encabezado del popover cuando el campo de adentro ya dice lo mismo (sigue disponible para lectores de pantalla). */
+  hideTitle?: boolean;
   readOnly?: boolean;
   children?: React.ReactNode;
 }) {
@@ -81,7 +84,7 @@ export function SentenceChip({
           }
         }}
       >
-        <p className="text-sm font-semibold">{title}</p>
+        <p className={cn("text-sm font-semibold", hideTitle && "sr-only")}>{title}</p>
         {children}
       </PopoverContent>
     </Popover>

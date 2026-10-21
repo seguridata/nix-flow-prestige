@@ -342,6 +342,7 @@ export function VerticalBuilder({
                     )}
                     <SentenceChip
                       title="¿Quién lo hace?"
+                      hideTitle
                       readOnly={readOnly}
                       label={whoLabel(step)}
                     >
