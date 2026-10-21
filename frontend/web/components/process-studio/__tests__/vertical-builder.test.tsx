@@ -42,7 +42,7 @@ describe("vertical builder", () => {
   it("adds a real editable reviewer with a stable id and participant question", () => {
     const onChange = vi.fn();
     render(<VerticalBuilder value={flow} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Agregar paso" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agregar otro paso" }));
     expect(onChange.mock.calls[0]![0].steps[2]).toMatchObject({
       role: "REVISOR",
       who: { type: "ask" },

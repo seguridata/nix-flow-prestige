@@ -941,6 +941,7 @@ function ProcessDetail({
                     setPreflight(null);
                   }}
                   readOnly={!admin}
+                  onTest={admin ? () => setTab("probar") : undefined}
                 />
               </>
             ) : (
