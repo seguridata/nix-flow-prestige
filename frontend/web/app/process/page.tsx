@@ -511,7 +511,7 @@ function ProcessProgress({
     steps.findIndex((s) => s.state === "current"),
   );
   return (
-    <nav aria-label="Preparar el proceso" className="rounded-2xl border border-border bg-muted/50 px-3 py-3 sm:px-8 sm:py-4">
+    <nav aria-label="Preparar el proceso" className="py-2">
       <ol className="flex">
         {steps.map((step, i) => {
           const Icon = icons[i] ?? ListChecks;
@@ -557,7 +557,7 @@ function ProcessProgress({
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute left-[calc(50%+1.75rem)] top-3.5 h-1 w-[calc(100%-3.5rem)] -translate-y-1/2 rounded-full sm:left-[calc(50%+2rem)] sm:top-4 sm:w-[calc(100%-4rem)]",
+                    "pointer-events-none absolute left-[calc(50%+2.25rem)] top-3.5 h-[3px] w-[calc(100%-4.5rem)] -translate-y-1/2 rounded-full sm:left-[calc(50%+4.5rem)] sm:top-4 sm:w-[calc(100%-9rem)]",
                     i < currentIndex ? "bg-foreground" : "bg-foreground/25",
                   )}
                 />
