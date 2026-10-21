@@ -4,12 +4,20 @@ import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, ChevronLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CircleCheck, Clock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AutographPad } from "@/components/signature/autograph-pad";
+import {
+  ConsentCheck,
+  MethodOption,
+  PasskeyStep,
+  SIGNING_METHOD_TEXT,
+  SigningSteps,
+  unavailableReason,
+} from "@/components/signature/signing-parts";
 import { useSession } from "@/store/session-store";
 import { signerBlockedBy } from "@/libs/signing-turn";
-import { HIDDEN_VISUAL_METHODS_NOTICE, resolveAllowedMethods } from "@/libs/allowed-methods";
+import { splitMethods } from "@/libs/allowed-methods";
 import { fetchDocument, documentContentUrl } from "@/services/documents-service";
 import {
   fetchConsentText,
@@ -20,15 +28,7 @@ import {
 } from "@/services/signature-requests-service";
 import type { SignatureMethod } from "@/libs/types";
 
-type Step = "revisar" | "consentimiento" | "metodo" | "listo";
-
-const METHOD_LABEL: Record<string, string> = {
-  DIGITAL: "Firma digital (PAdES)",
-  AUTOGRAFA: "Firma autógrafa",
-  BIOMETRICA: "Firma biométrica",
-  ACCEPT: "Acepto",
-  PASSKEY: "Passkey",
-};
+type Step = "revisar" | "firmar" | "listo";
 
 /**
  * TP-16 — ceremonia de firma a pantalla completa (firmante interno). Sin chrome
@@ -40,7 +40,7 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
 
   const [step, setStep] = useState<Step>("revisar");
   const [consent, setConsent] = useState(false);
-  const [method, setMethod] = useState<SignatureMethod | null>(null);
+  const [pickedMethod, setMethod] = useState<SignatureMethod | null>(null);
   const [stroke, setStroke] = useState<Blob | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [assertionId, setAssertionId] = useState<string | null>(null);
@@ -73,14 +73,24 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
     return { request, signer, blockedBy: signerBlockedBy(request, signerId) };
   }, [requestsData, signerId]);
 
-  const { methods, hiddenSome } = useMemo(() => {
-    const resolved = resolveAllowedMethods(mine?.request.methods ?? [], mine?.request.allowedMethodsNow);
+  const { methods, unavailable } = useMemo(() => {
+    const split = splitMethods(mine?.request.methods ?? [], mine?.request.allowedMethodsNow);
     const configured = new Set((capsData ?? []).filter((c) => c.configured).map((c) => c.method));
     return {
-      methods: resolved.methods.filter((m) => configured.size === 0 || configured.has(m)),
-      hiddenSome: resolved.hiddenSome,
+      methods: split.usable.filter((m) => configured.size === 0 || configured.has(m)),
+      unavailable: split.unavailable,
     };
   }, [mine, capsData]);
+
+  // Firmantes anteriores que aún no firman (orden secuencial): a quién se espera antes de tu turno.
+  const waitingFor = useMemo(() => {
+    if (!mine?.blockedBy) return [];
+    const idx = mine.request.signers.findIndex((s) => s.signerId === signerId || s.delegatedTo === signerId);
+    return mine.request.signers.slice(0, Math.max(idx, 0)).filter((s) => s.status === "PENDIENTE");
+  }, [mine, signerId]);
+
+  // Con un solo método posible no hay nada que elegir: queda seleccionado.
+  const method = pickedMethod ?? (methods.length === 1 ? (methods[0] ?? null) : null);
 
   async function submit() {
     if (!mine || mine.blockedBy || !method) return;
@@ -117,52 +127,74 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   }
 
   const loading = doc.isLoading || requests.isLoading;
+  const canSubmit =
+    consent && !!method && !submitting && (!needsPasskey || Boolean(assertionId)) && (method !== "AUTOGRAFA" || !!stroke);
+  const missing = !method
+    ? "Elige cómo firmar."
+    : needsPasskey && !assertionId
+      ? "Verifica tu passkey para continuar."
+      : method === "AUTOGRAFA" && !stroke
+        ? "Traza tu firma para continuar."
+        : !consent
+          ? "Marca el consentimiento para poder firmar."
+          : null;
 
   return (
     <main className="flex min-h-dvh flex-col bg-background">
-      <header className="flex items-center justify-between border-b border-border px-5 py-3">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="sm">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button asChild variant="ghost" size="sm" className="-ml-2 shrink-0">
             <Link href="/inbox">
-              <ChevronLeft className="mr-1 size-4" /> Bandeja
+              <ArrowLeft /> Bandeja
             </Link>
           </Button>
-          <span className="text-sm font-bold tracking-wide">PRESTIGE</span>
-          <span className="text-xs text-muted-foreground">· Ceremonia de firma</span>
+          <span className="truncate text-sm text-muted-foreground">Prestige · Firma de documento</span>
         </div>
-        <span className="text-xs text-muted-foreground">{name}</span>
+        <span className="hidden shrink-0 text-sm text-muted-foreground sm:block">{name}</span>
       </header>
 
       {loading ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground" role="status">
           Cargando el documento…
         </div>
       ) : !mine && step !== "listo" ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-          <h1 className="text-lg font-semibold">No tienes una firma pendiente en este documento</h1>
-          <Button asChild variant="outline">
-            <Link href={`/documents/${documentId}`}>Ver el expediente</Link>
-          </Button>
-        </div>
+        <Notice
+          title="No tienes una firma pendiente en este documento"
+          body="Puede que ya hayas firmado o que la solicitud se haya cerrado."
+          action={
+            <Button asChild size="lg" variant="outline">
+              <Link href={`/documents/${documentId}`}>Ver el expediente</Link>
+            </Button>
+          }
+        />
       ) : mine?.blockedBy && step !== "listo" ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-          <h1 className="text-lg font-semibold">Aún no es tu turno de firmar</h1>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Este documento se firma en orden secuencial. Falta que firme{" "}
-            <span className="font-medium text-foreground">
-              {mine.blockedBy.name ?? mine.blockedBy.signerId}
-            </span>
-            . Te avisaremos en cuanto puedas firmar.
-          </p>
-          <Button asChild variant="outline">
-            <Link href={`/documents/${documentId}`}>Ver el expediente</Link>
-          </Button>
-        </div>
+        <Notice
+          icon={<Clock className="size-6" aria-hidden />}
+          title="Aún no es tu turno de firmar"
+          body={
+            <>
+              Este documento se firma en orden. Falta que firme{" "}
+              <span className="font-medium text-foreground">{mine.blockedBy.name ?? mine.blockedBy.signerId}</span>
+              {waitingFor.length > 1 ? (
+                <>
+                  {" "}
+                  (y {waitingFor.length - 1} {waitingFor.length - 1 === 1 ? "persona más" : "personas más"} antes que tú)
+                </>
+              ) : null}
+              . Te avisaremos en cuanto puedas firmar.
+            </>
+          }
+          action={
+            <Button asChild size="lg" variant="outline">
+              <Link href={`/documents/${documentId}`}>Ver el expediente</Link>
+            </Button>
+          }
+        />
       ) : (
-        <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_380px]">
+        <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_400px]">
           {/* PDF */}
           <div className="min-h-[40vh] border-b border-border bg-muted/40 lg:border-b-0 lg:border-r">
-            <object data={pdfSrc} type="application/pdf" className="h-full min-h-[60vh] w-full">
+            <object data={pdfSrc} type="application/pdf" aria-label="Documento por firmar" className="h-full min-h-[60vh] w-full">
               <div className="p-6 text-sm">
                 <a href={pdfSrc} target="_blank" rel="noreferrer" className="underline">
                   Abrir el PDF
@@ -172,138 +204,113 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
           </div>
 
           {/* Panel de pasos */}
-          <aside className="flex flex-col gap-4 p-6">
-            <h1 className="text-lg font-semibold">{doc.data?.filename ?? "Documento"}</h1>
-            <p className="text-sm text-muted-foreground">
-              Enviado por {mine?.request.requestedByName ?? "Prestige"}
-            </p>
+          <aside className="flex flex-col gap-5 p-5 sm:p-6">
+            <div>
+              <h1 className="break-words text-xl font-semibold leading-tight tracking-tight">
+                {doc.data?.filename ?? "Documento"}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Enviado por {mine?.request.requestedByName ?? "Prestige"}
+              </p>
+            </div>
+
+            <SigningSteps current={step === "revisar" ? 0 : step === "firmar" ? 1 : 2} />
 
             {step === "listo" ? (
-              <div className="mt-4 space-y-4">
-                <div className="flex items-center gap-2 text-primary">
-                  <CheckCircle2 className="size-5" />
-                  <span className="font-medium">Firma completada</span>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <CircleCheck className="size-6" aria-hidden />
+                  <h2 className="text-lg font-semibold">Firma completada</h2>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Tu firma quedó registrada en el expediente de evidencia (manifiesto firmado + sello
-                  de tiempo).
+                  Tu firma quedó registrada en el expediente de evidencia, con fecha y hora.
                 </p>
-                <div className="flex gap-2">
-                  <Button asChild className="flex-1">
+                <div className="flex flex-col gap-2">
+                  <Button asChild size="lg">
                     <Link href={`/documents/${documentId}/evidence`}>Ver evidencia</Link>
                   </Button>
-                  <Button asChild variant="outline">
-                    <Link href="/inbox">Bandeja</Link>
+                  <Button asChild size="lg" variant="outline">
+                    <Link href="/inbox">Volver a la bandeja</Link>
                   </Button>
                 </div>
               </div>
-            ) : (
-              <>
-                <Stepper step={step} />
+            ) : null}
 
-                {step === "revisar" && (
-                  <div className="mt-2 space-y-4 text-sm">
-                    <p>Revisa el documento completo antes de continuar.</p>
-                    <Button className="w-full" onClick={() => setStep("consentimiento")}>
-                      Ya lo revisé
-                    </Button>
-                  </div>
-                )}
+            {step === "revisar" ? (
+              <div className="space-y-4">
+                <p className="text-sm leading-relaxed">
+                  Lee el documento completo en el visor. Cuando termines, continúa para elegir cómo firmar.
+                </p>
+                <Button size="lg" className="w-full" onClick={() => setStep("firmar")}>
+                  Ya lo revisé, continuar
+                </Button>
+              </div>
+            ) : null}
 
-                {step === "consentimiento" && (
-                  <div className="mt-2 space-y-4">
-                    <div className="max-h-56 overflow-y-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed">
-                      {consentText.data?.text ?? "Cargando el consentimiento…"}
-                    </div>
-                    <label className="flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={consent}
-                        onChange={(e) => setConsent(e.target.checked)}
-                      />
-                      <span>
-                        Acepto firmar electrónicamente y que se registren fecha, hora y datos técnicos
-                        como evidencia (versión {consentText.data?.version ?? "—"}).
-                      </span>
-                    </label>
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setStep("revisar")}>
-                        Atrás
-                      </Button>
-                      <Button className="flex-1" disabled={!consent} onClick={() => setStep("metodo")}>
-                        Continuar
-                      </Button>
-                    </div>
+            {step === "firmar" ? (
+              <div className="space-y-5">
+                <fieldset>
+                  <legend className="mb-3 text-base font-semibold">
+                    {methods.length > 1 ? "Elige cómo firmar" : "Cómo vas a firmar"}
+                  </legend>
+                  <div className="space-y-2.5">
+                    {methods.map((m) => (
+                      <MethodOption key={m} selected={method === m} onSelect={() => setMethod(m)} {...SIGNING_METHOD_TEXT[m]}>
+                        {m === "AUTOGRAFA" && method === "AUTOGRAFA" ? (
+                          <div className="mt-3">
+                            <AutographPad onChange={setStroke} />
+                          </div>
+                        ) : null}
+                      </MethodOption>
+                    ))}
+                    {unavailable.map((m) => (
+                      <MethodOption key={m} disabled selected={false} label={SIGNING_METHOD_TEXT[m].label} hint={unavailableReason(m)} />
+                    ))}
                   </div>
-                )}
+                  {methods.length === 0 ? (
+                    <p role="alert" className="mt-3 text-sm text-destructive">
+                      Ningún método de firma está disponible ahora. Avisa a quien envió el documento.
+                    </p>
+                  ) : null}
+                </fieldset>
 
-                {step === "metodo" && (
-                  <div className="mt-2 space-y-4">
-                    <p className="text-sm font-medium">Método de firma</p>
-                    {hiddenSome && <p className="text-xs text-muted-foreground">{HIDDEN_VISUAL_METHODS_NOTICE}</p>}
-                    <div className="flex flex-wrap gap-2">
-                      {methods.map((m) => (
-                        <Button
-                          key={m}
-                          size="sm"
-                          variant={method === m ? "default" : "outline"}
-                          onClick={() => setMethod(m)}
-                        >
-                          {METHOD_LABEL[m] ?? m}
-                        </Button>
-                      ))}
-                    </div>
-                    {method === "AUTOGRAFA" && (
-                      <div>
-                        <p className="mb-2 text-sm font-medium">Traza tu firma</p>
-                        <div className="h-40 rounded-md border border-border">
-                          <AutographPad onChange={setStroke} />
-                        </div>
-                      </div>
-                    )}
-                    {needsPasskey && (
-                      <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-                        <p className="font-medium">
-                          {mine?.request.requirePasskey
-                            ? "Esta firma exige verificación con passkey"
-                            : "Verifica con tu passkey"}
-                        </p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="mt-2"
-                          variant={assertionId ? "outline" : "default"}
-                          disabled={verifying || Boolean(assertionId)}
-                          onClick={verifyPasskey}
-                        >
-                          {assertionId ? "Passkey verificada ✓" : verifying ? "Verificando…" : "Verificar con passkey"}
-                        </Button>
-                        {passkeyError ? <p className="mt-1 text-xs text-destructive">{passkeyError}</p> : null}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setStep("consentimiento")}>
-                        Atrás
-                      </Button>
-                      <Button
-                        className="flex-1"
-                        disabled={
-                          !method ||
-                          submitting ||
-                          (needsPasskey && !assertionId) ||
-                          (method === "AUTOGRAFA" && !stroke)
-                        }
-                        onClick={submit}
-                      >
-                        <ShieldCheck className="mr-1 size-4" />
-                        {submitting ? "Firmando…" : "Firmar documento"}
-                      </Button>
-                    </div>
+                {needsPasskey ? (
+                  <PasskeyStep
+                    required={Boolean(mine?.request.requirePasskey)}
+                    verified={Boolean(assertionId)}
+                    verifying={verifying}
+                    error={passkeyError}
+                    onVerify={verifyPasskey}
+                  />
+                ) : null}
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Consentimiento</p>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/40 p-3 text-xs leading-relaxed">
+                    {consentText.data?.text ?? "Cargando el consentimiento…"}
                   </div>
-                )}
-              </>
-            )}
+                  <ConsentCheck checked={consent} onChange={setConsent}>
+                    Acepto firmar electrónicamente y que se registren fecha, hora y datos técnicos como evidencia (versión{" "}
+                    {consentText.data?.version ?? "—"}).
+                  </ConsentCheck>
+                </div>
+
+                <div className="space-y-2">
+                  <Button size="lg" className="h-14 w-full text-base" disabled={!canSubmit} onClick={submit}>
+                    <ShieldCheck />
+                    {submitting ? "Firmando…" : method ? `Firmar con ${SIGNING_METHOD_TEXT[method].label}` : "Firmar documento"}
+                  </Button>
+                  {missing && !submitting ? (
+                    <p className="text-center text-sm text-muted-foreground" role="status">
+                      {missing}
+                    </p>
+                  ) : null}
+                  <Button variant="ghost" size="lg" className="w-full text-muted-foreground" onClick={() => setStep("revisar")}>
+                    Volver a revisar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </aside>
         </div>
       )}
@@ -311,28 +318,28 @@ export default function CeremoniaFirmaPage({ params }: { params: Promise<{ id: s
   );
 }
 
-function Stepper({ step }: { step: Step }) {
-  const steps: { key: Step; label: string }[] = [
-    { key: "revisar", label: "Revisar" },
-    { key: "consentimiento", label: "Consentimiento" },
-    { key: "metodo", label: "Firmar" },
-  ];
-  const idx = steps.findIndex((s) => s.key === step);
+/** Pantalla centrada para los casos en que no se puede firmar: qué pasa y a dónde ir. */
+function Notice({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  body: React.ReactNode;
+  action: React.ReactNode;
+}) {
   return (
-    <ol className="flex items-center gap-2 text-xs">
-      {steps.map((s, i) => (
-        <li key={s.key} className="flex items-center gap-2">
-          <span
-            className={`flex size-6 items-center justify-center rounded-full border ${
-              i <= idx ? "border-primary bg-primary text-primary-foreground" : "border-border"
-            }`}
-          >
-            {i + 1}
-          </span>
-          <span className={i === idx ? "font-medium" : "text-muted-foreground"}>{s.label}</span>
-          {i < steps.length - 1 && <span className="mx-1 h-px w-6 bg-border" />}
-        </li>
-      ))}
-    </ol>
+    <div className="flex flex-1 items-center justify-center px-4 py-12">
+      <section role="status" className="flex max-w-md flex-col items-start gap-3">
+        {icon ? (
+          <span className="flex size-12 items-center justify-center rounded-full border border-border bg-muted">{icon}</span>
+        ) : null}
+        <h1 className="text-balance text-xl font-semibold leading-tight">{title}</h1>
+        <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
+        <div className="mt-1">{action}</div>
+      </section>
+    </div>
   );
 }

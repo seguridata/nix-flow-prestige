@@ -62,16 +62,16 @@ export function AutographPad({
   return (
     <div className="flex flex-col gap-2 rounded-md border border-primary/40 bg-white p-3">
       <p className="text-sm font-medium text-foreground">Traza tu firma en el recuadro</p>
-      <p className="text-xs text-muted-foreground">Usá el mouse o el dedo. El trazo se incrusta en el PDF.</p>
+      <p className="text-xs text-muted-foreground">Usa el mouse o el dedo. El trazo se incrusta en el PDF.</p>
       <canvas
         ref={canvasRef}
-        className="h-40 w-full cursor-crosshair rounded-md border border-border bg-[#fafafa]"
+        className="h-40 w-full cursor-crosshair touch-none rounded-md border border-border bg-[#fafafa]"
         aria-label="Lienzo para trazar la firma autógrafa"
       />
       <Button
         type="button"
-        variant="ghost"
-        size="sm"
+        variant="outline"
+        className="h-12"
         onClick={() => {
           padRef.current?.clear();
           onChangeRef.current(null);

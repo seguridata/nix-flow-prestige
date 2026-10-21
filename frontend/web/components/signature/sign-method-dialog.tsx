@@ -132,7 +132,7 @@ export function SignMethodDialog({
         <DialogHeader>
           <DialogTitle>Ceremonia de firma</DialogTitle>
           <DialogDescription>
-            Consentimiento versionado, método y —si aplica— trazo autógrafo. Nada se simula.
+            Elige cómo firmar, acepta el consentimiento y confirma. Tu firma queda registrada con fecha y hora.
           </DialogDescription>
         </DialogHeader>
 
@@ -173,7 +173,7 @@ export function SignMethodDialog({
           <label className="flex items-start gap-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
             <input
               type="checkbox"
-              className="mt-1"
+              className="mt-0.5 size-6 shrink-0 accent-[var(--brand-carbon)]"
               checked={accepted}
               onChange={(e) => setAccepted(e.target.checked)}
             />
@@ -194,13 +194,12 @@ export function SignMethodDialog({
             {onVerifyPasskey ? (
               <Button
                 type="button"
-                size="sm"
-                className="mt-2"
+                className="mt-2 h-12 w-full"
                 variant={assertionId ? "outline" : "default"}
                 disabled={verifying || Boolean(assertionId)}
                 onClick={verifyPasskey}
               >
-                {assertionId ? "Passkey verificada ✓" : verifying ? "Verificando…" : "Verificar con passkey"}
+                {assertionId ? "Passkey verificada" : verifying ? "Verificando…" : "Verificar con passkey"}
               </Button>
             ) : (
               <p className="mt-1 text-xs text-warning">

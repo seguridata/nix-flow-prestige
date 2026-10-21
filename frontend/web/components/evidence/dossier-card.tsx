@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Check, Copy, Download } from "lucide-react";
 
+import { HashChip } from "@/components/evidence/hash-chip";
 import { Button } from "@/components/ui/button";
 import { OFFLINE_VERIFY_COMMAND, custodyLabel } from "@/libs/evidence-checks";
-import { shortHash } from "@/libs/envelope-status";
 import { evidenceDossierUrl } from "@/services/evidence-service";
 
 export interface CustodyEvent {
@@ -19,17 +19,9 @@ const when = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", 
 
 /**
  * "Comprueba sin confiar en Prestige": el expediente en ZIP lleva su propio verificador, que corre
- * sin conexión con Node. La cadena de custodia muestra el hash de cada eslabón para cotejarlo.
+ * sin conexión con Node.
  */
-export function DossierCard({
-  manifestId,
-  custody,
-  nameOf,
-}: {
-  manifestId: string;
-  custody: CustodyEvent[];
-  nameOf: (actorId: string) => string;
-}) {
+export function DossierCard({ manifestId }: { manifestId: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -51,11 +43,17 @@ export function DossierCard({
         </p>
       </div>
 
-      <Button asChild className="w-full">
-        <a href={evidenceDossierUrl(manifestId)} download>
-          <Download /> Descargar expediente (ZIP)
-        </a>
-      </Button>
+      <div>
+        <Button asChild size="lg" className="w-full">
+          <a href={evidenceDossierUrl(manifestId)} download>
+            <Download /> Descargar expediente (ZIP)
+          </a>
+        </Button>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Incluye el manifiesto firmado, el PDF congelado, la copia firmada, el sello de tiempo, los certificados y el
+          verificador.
+        </p>
+      </div>
 
       <div>
         <p className="mb-1.5 text-sm font-medium">Dentro del ZIP, en una terminal:</p>
@@ -65,38 +63,62 @@ export function DossierCard({
             type="button"
             onClick={copy}
             aria-label="Copiar comando"
-            className="shrink-0 rounded-md p-1.5 text-muted-foreground outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+            <span aria-live="polite">{copied ? "Copiado" : "Copiar"}</span>
           </button>
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">Requiere Node.js. El LEEME.txt del ZIP explica cada comprobación.</p>
       </div>
+    </section>
+  );
+}
 
-      {custody.length > 0 ? (
-        <div className="border-t border-border pt-4">
-          <h3 className="text-base font-semibold">Cadena de custodia</h3>
-          <ol className="mt-3">
-            {custody.map((e, i) => (
-              <li key={`${e.at}-${i}`} className="relative flex gap-3 pb-4 last:pb-0">
-                {i < custody.length - 1 ? <span aria-hidden className="absolute left-[8px] top-5 h-full w-px bg-border" /> : null}
-                <span aria-hidden className="relative z-10 mt-1 flex size-[17px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Check className="size-3" strokeWidth={3.5} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">
-                    {custodyLabel(e.action)} · {nameOf(e.actorId)}
-                  </p>
-                  <p className="text-xs tabular-nums text-muted-foreground">{when.format(new Date(e.at))}</p>
-                  <code className="mt-1 inline-block rounded bg-muted px-2 py-0.5 font-mono text-xs tabular-nums text-muted-foreground" title={e.hashAfter}>
-                    {shortHash(e.hashAfter, 6, 4)}
-                  </code>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
+/**
+ * Cadena de custodia en lenguaje llano: quién hizo qué y cuándo, con la huella del documento después de
+ * cada paso para poder cotejarla. Cada eslabón se apoya en el anterior.
+ */
+export function CustodyTimeline({
+  custody,
+  nameOf,
+}: {
+  custody: CustodyEvent[];
+  nameOf: (actorId: string) => string;
+}) {
+  if (custody.length === 0) return null;
+  return (
+    <section aria-label="Cadena de custodia">
+      <h2 className="text-lg font-semibold">Cadena de custodia</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Cada paso quedó encadenado con el anterior mediante la huella del documento.
+      </p>
+      <ol className="mt-4">
+        {custody.map((e, i) => {
+          const who = nameOf(e.actorId);
+          return (
+            <li key={`${e.at}-${i}`} className="relative flex gap-3 pb-5 last:pb-0">
+              {i < custody.length - 1 ? <span aria-hidden className="absolute left-[10px] top-6 h-full w-px bg-border" /> : null}
+              <span
+                aria-hidden
+                className="relative z-10 mt-0.5 flex size-[21px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+              >
+                <Check className="size-3.5" strokeWidth={3.5} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-base font-medium">
+                  {e.action === "SIGNATURE_APPLIED" ? `${who} firmó el documento` : `${custodyLabel(e.action)}: ${who}`}
+                </p>
+                <p className="text-sm tabular-nums text-muted-foreground">{when.format(new Date(e.at))}</p>
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                  Huella tras este paso
+                  <HashChip value={e.hashAfter} head={6} tail={4} label="huella de este paso" />
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
