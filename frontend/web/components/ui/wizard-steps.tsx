@@ -65,7 +65,7 @@ export function WizardSteps({
                 title={s.blocked}
                 className={cn(
                   "flex min-h-14 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
-                  isCurrent ? "border-foreground bg-muted/60" : "border-border hover:bg-muted/50",
+                  isCurrent ? "border-foreground bg-background shadow-elevated" : "border-transparent bg-muted hover:bg-muted/70",
                 )}
               >
                 <span

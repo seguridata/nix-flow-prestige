@@ -93,11 +93,11 @@ export function VerticalBuilder({
       <div className="min-w-0">
         <nav
           aria-label="Vista previa de la ruta de aprobación"
-          className="mb-5 rounded-lg bg-muted/60 px-4 py-3"
+          className="mb-5 rounded-lg border border-border bg-muted px-4 py-3"
         >
           <p className="text-sm font-semibold">Así viajará la solicitud</p>
           <ol className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
-            <li className="rounded-full border border-border bg-background px-3 py-1">
+            <li className="rounded-full bg-foreground px-3 py-1 font-medium text-background">
               Solicitante
             </li>
             {value.steps.map((step, i) => (
@@ -106,7 +106,7 @@ export function VerticalBuilder({
                   className="size-4 shrink-0 text-muted-foreground"
                   aria-hidden
                 />
-                <span className="max-w-48 truncate rounded-full border border-border bg-background px-3 py-1">
+                <span className="max-w-48 truncate rounded-full border border-foreground/15 bg-background px-3 py-1 shadow-subtle">
                   {i + 1} · {step.label || "Paso sin nombre"}
                 </span>
               </li>
@@ -116,7 +116,7 @@ export function VerticalBuilder({
                 className="size-4 shrink-0 text-muted-foreground"
                 aria-hidden
               />
-              <span className="rounded-full border border-border bg-background px-3 py-1">
+              <span className="rounded-full bg-foreground px-3 py-1 font-medium text-background">
                 Fin
               </span>
             </li>
@@ -140,7 +140,7 @@ export function VerticalBuilder({
             )}
           </div>
         )}
-        <ol className="ml-3 border-l border-border pl-5 sm:ml-4 sm:pl-7">
+        <ol className="ml-3 border-l-2 border-foreground/15 pl-5 sm:ml-4 sm:pl-7">
           {value.steps.map((step, i) => {
             const expanded = open.has(step.id);
             const panelId = `etapa-panel-${step.id}`;
@@ -155,12 +155,17 @@ export function VerticalBuilder({
               <li key={step.id} className="relative pb-3">
                 <span
                   aria-hidden
-                  className="absolute -left-[33px] top-4 flex size-6 items-center justify-center rounded-full border border-border bg-background font-mono text-xs font-semibold sm:-left-[45px]"
+                  className="absolute -left-[34px] top-4 flex size-7 items-center justify-center rounded-full bg-foreground font-mono text-xs font-semibold text-background ring-4 ring-background sm:-left-[46px]"
                 >
                   {i + 1}
                 </span>
                 <section
-                  className="rounded-lg border border-border bg-background"
+                  className={cn(
+                    "rounded-lg border transition-colors",
+                    expanded
+                      ? "border-foreground/30 bg-background shadow-elevated"
+                      : "border-border bg-muted/70 hover:bg-muted",
+                  )}
                   aria-label={`Paso ${i + 1}: ${step.label}`}
                 >
                   <div className="flex items-center gap-1 pr-1">

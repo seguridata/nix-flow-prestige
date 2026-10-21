@@ -334,7 +334,7 @@ export default function ProcessPage() {
                       <div className="flex shrink-0 items-center gap-2 px-4 pb-4 sm:px-5 sm:pb-0">
                         {d.publishedVersion != null &&
                         d.version <= d.publishedVersion ? (
-                          <Button asChild variant="outline">
+                          <Button asChild variant="outline" className="sm:w-48 sm:justify-between">
                             <Link
                               href={
                                 `/formatos?flow=${encodeURIComponent(d.key)}` as never
@@ -347,6 +347,7 @@ export default function ProcessPage() {
                         ) : (
                           <Button
                             variant="outline"
+                            className="sm:w-48 sm:justify-between"
                             onClick={() => setSelectedKey(d.key)}
                           >
                             {status.next}
@@ -843,11 +844,11 @@ function ProcessDetail({
         ]}
       />
       <div
-        className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/60 px-4 py-3"
+        className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-secondary px-4 py-3.5 text-secondary-foreground"
         data-tour="process-next"
       >
-        <p className="min-w-0 flex-1 basis-64 text-sm">
-          <span className="font-semibold">Qué sigue: </span>
+        <p className="min-w-0 flex-1 basis-64 text-sm text-white/80">
+          <span className="font-semibold text-white">Qué sigue: </span>
           {nextHelp}
         </p>
         {primary}
@@ -855,7 +856,7 @@ function ProcessDetail({
       <div
         role="tablist"
         aria-label="Vistas del proceso"
-        className="-mx-4 mt-6 flex overflow-x-auto border-b border-border px-4 [scrollbar-width:thin] sm:mx-0 sm:px-0"
+        className="mt-6 flex gap-1 overflow-x-auto rounded-lg bg-muted p-1 [scrollbar-width:thin]"
       >
         {tabs.map(([id, label]) => (
           <button
@@ -885,10 +886,10 @@ function ProcessDetail({
               document.getElementById(`tab-${next}`)?.focus();
             }}
             className={cn(
-              "min-h-11 shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "min-h-11 shrink-0 whitespace-nowrap rounded-md px-4 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               tab === id
-                ? "border-primary font-medium"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+                ? "bg-background font-semibold text-foreground shadow-subtle"
+                : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
             )}
           >
             {label}

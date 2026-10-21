@@ -318,7 +318,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
 
   const infoStep = (
     <div className="space-y-5">
-      <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
+      <p className="rounded-lg bg-muted p-3 text-sm text-foreground/80">
         No subes un PDF: el sistema genera la hoja base con el título, una caja por cada dato, la lista de anexos y una caja de firma por paso. Después se
         comporta como cualquier formato: se rellena, sigue el flujo y se firma.
       </p>
@@ -602,7 +602,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
         )}
       </section>
 
-      <div className="sticky bottom-0 z-10 -mx-1 border-t border-border bg-background px-1 pb-16 pt-3 md:pb-3 md:pr-36">
+      <div className="sticky bottom-0 z-10 -mx-1 border-t border-border bg-muted px-3 pb-16 pt-3 md:pb-3 md:pr-36">
         {stepBlock ? (
           <p role="status" className="mb-2 text-sm text-muted-foreground">
             {stepBlock.replace(/^Antes completa «[^»]+»: /, "Para seguir: ")}
