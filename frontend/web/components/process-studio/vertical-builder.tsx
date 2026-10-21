@@ -449,10 +449,16 @@ export function VerticalBuilder({
                       </Select>
                     </SentenceChip>
                     {step.role === "FIRMANTE" ? " el documento." : "."}
-                    {step.who.type === "ask" &&
-                      " La persona se elige al enviar."}
-                    {step.who.type === "lookup" &&
-                      " La persona se asigna según una tabla de consulta."}
+                    {step.who.type === "ask" && (
+                      <span className="block text-sm leading-normal text-muted-foreground">
+                        La persona se elige al enviar la solicitud.
+                      </span>
+                    )}
+                    {step.who.type === "lookup" && (
+                      <span className="block text-sm leading-normal text-muted-foreground">
+                        La persona se asigna según una tabla de consulta.
+                      </span>
+                    )}
                     {!step.label.trim() && (
                       <>
                         {" "}
