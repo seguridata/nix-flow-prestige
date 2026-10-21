@@ -148,3 +148,13 @@ El atributo `prestige:lookup` contiene un objeto JSON con el contrato `DerivedVa
 La importación agrega la definición a `Flow.derived` y aplica `validateFlow`: claves únicas, tipos válidos, operadores y fuentes existentes. La existencia de tabla y columnas se valida al guardar el formato con `assertTables`, en el tenant del administrador. No se infieren reglas DMN ni consultas a partir del nombre de la tarea. Extensión ausente o inválida bloquea la conversión. Al exportar de nuevo, las consultas se normalizan a `prestige:derived` del proceso, manteniendo su semántica.
 
 `solicitante` es una fuente integrada de texto reservada: el BFF la obtiene de `actorId` autenticado (`preferred_username`), tanto en la vista previa como al crear el expediente. No puede declararse como campo editable o variable derivada, y cualquier valor enviado por el cliente se sustituye antes de consultar.
+
+
+## 12. Listas dependientes (2026-10-21)
+
+Una variable `select` puede declarar `dependsOn: { variable, options: { [valorDelPadre]: string[] } }`: sus opciones salen del valor de otra variable `select` (el concepto de gasto según el tipo de gasto). `options` de la variable dependiente es la unión de todas, así que PDF, vistas previas y consumidores antiguos siguen funcionando.
+
+- `validateFlow` exige que el padre sea un `select` sin dependencia propia, que las claves sean opciones del padre y que cada lista sea subconjunto de `options`.
+- Al crear la solicitud el BFF rechaza un valor que no corresponda al del padre («elige una opción que corresponda a …»); la interfaz muestra solo las opciones vigentes, deshabilita el campo hasta elegir el padre y limpia el valor si el padre cambia.
+- El editor del flujo permite elegir «sus opciones dependen de» y marcar qué opciones se ofrecen por valor; al editar las listas se podan las entradas que ya no existen.
+- Adquisiciones: `CONCEPTOS_POR_TIPO` (en `adquisiciones.flows.ts`) agrupa los 68 conceptos de la matriz por tipo de gasto. Las filas de `responsables-gasto` no cambian: siguen consultando `tipoGasto` y `concepto` como texto.
