@@ -81,30 +81,36 @@ const path = (key: string) => `/process-definitions/${encodeURIComponent(key)}`;
 function processStatus(d: ProcessDefinition) {
   if (!d.flow)
     return {
-      badge: "Solo diagrama",
+      badge: "Sin pasos todavía",
       variant: "warning" as const,
       Icon: CircleAlert,
-      next: "Convertir en etapas",
+      next: "Crear los pasos",
+      hint: "Solo tiene un diagrama. Falta definir los pasos.",
     };
   if (d.publishedVersion == null)
     return {
       badge: "Borrador",
       variant: "neutral" as const,
       Icon: PencilLine,
-      next: d.flow.steps.length ? "Revisar y publicar" : "Agregar etapas",
+      next: d.flow.steps.length ? "Dejar listo" : "Agregar pasos",
+      hint: d.flow.steps.length
+        ? "Aún no se usa. Revísalo y déjalo listo."
+        : "Aún no tiene pasos.",
     };
   if (d.version > d.publishedVersion)
     return {
-      badge: "Publicado, con cambios sin publicar",
+      badge: "Tiene cambios sin publicar",
       variant: "warning" as const,
       Icon: AlertTriangle,
-      next: "Revisar y publicar",
+      next: "Dejar listo",
+      hint: "Se usa la versión anterior hasta que lo dejes listo de nuevo.",
     };
   return {
-    badge: "Publicado",
+    badge: "Listo para usar",
     variant: "success" as const,
     Icon: CheckCircle2,
-    next: "Usar en un formato",
+    next: "Usarlo en un formato",
+    hint: "Ya puedes usarlo en un formato.",
   };
 }
 
@@ -187,7 +193,7 @@ export default function ProcessPage() {
           <>
             <PageHeader
               title="Solicitudes y aprobaciones"
-              description="El administrador prepara los procesos y publica sus flujos. Para enviar una solicitud, elige un formato disponible: su ruta de aprobación ya está configurada."
+              description="El administrador prepara los procesos. Para enviar una solicitud, elige un formato disponible: su ruta de aprobación ya está lista."
               actions={
                 <Button asChild>
                   <Link href="/formatos">
@@ -223,7 +229,7 @@ export default function ProcessPage() {
           <>
             <PageHeader
               title="Procesos"
-              description="Diseña el proceso, publica su flujo y úsalo en una solicitud. Cada proceso aparece una sola vez; su historial vive dentro."
+              description="Un proceso es la ruta que sigue una solicitud hasta quedar aprobada. Define los pasos, déjalo listo y úsalo en un formato."
               actions={
                 <>
                   <input
@@ -259,7 +265,7 @@ export default function ProcessPage() {
                 <Input
                   aria-label="Buscar procesos"
                   className="pl-10"
-                  placeholder="Buscar proceso o subproceso…"
+                  placeholder="Buscar un proceso…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -271,7 +277,7 @@ export default function ProcessPage() {
                   onChange={(e) => setFilter(e.target.value)}
                 >
                   <option value="todos">Todos</option>
-                  <option value="publicados">Publicados</option>
+                  <option value="publicados">Listos para usar</option>
                   <option value="borradores">Borradores</option>
                 </Select>
               </div>
@@ -296,47 +302,76 @@ export default function ProcessPage() {
                 {visible.map((d) => {
                   const status = processStatus(d);
                   return (
-                    <li key={d.key}>
+                    <li
+                      key={d.key}
+                      className="flex flex-col gap-1 sm:flex-row sm:items-center"
+                    >
                       <button
                         type="button"
-                        className="group flex min-h-20 w-full items-center gap-4 px-4 py-4 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
+                        className="group flex min-h-20 w-full min-w-0 flex-1 items-center gap-4 px-4 py-4 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
                         onClick={() => setSelectedKey(d.key)}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                            <h2 className="break-words font-semibold">
-                              {d.name}
-                            </h2>
+                          <h2 className="break-words font-semibold">
+                            {d.name}
+                          </h2>
+                          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                             <Badge variant={status.variant}>
                               <status.Icon className="size-3.5" aria-hidden />
                               {status.badge}
                             </Badge>
-                          </div>
-                          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                            {d.description ||
-                              "Define las etapas, responsables y condiciones de este proceso."}
+                            <span>{status.hint}</span>
                           </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {d.flow?.steps.length ?? 0} etapas ·{" "}
-                            {d.versionCount ?? 1}{" "}
-                            {(d.versionCount ?? 1) === 1
-                              ? "versión"
-                              : "versiones"}
-                            {d.publishedVersion != null
-                              ? ` · en uso v${d.publishedVersion}`
-                              : ""}
+                          <p className="mt-1.5 text-sm text-muted-foreground">
+                            {d.flow?.steps.length ?? 0}{" "}
+                            {(d.flow?.steps.length ?? 0) === 1
+                              ? "paso"
+                              : "pasos"}
+                            {d.description ? ` · ${d.description}` : ""}
                           </p>
                         </div>
-                        <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium">
-                          <span className="hidden sm:inline">
-                            {status.next}
-                          </span>
-                          <ChevronRight
-                            className="size-5 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-                            aria-hidden
-                          />
-                        </span>
                       </button>
+                      <div className="flex shrink-0 items-center gap-2 px-4 pb-4 sm:px-5 sm:pb-0">
+                        {d.publishedVersion != null &&
+                        d.version <= d.publishedVersion ? (
+                          <Button asChild variant="outline">
+                            <Link
+                              href={
+                                `/formatos?flow=${encodeURIComponent(d.key)}` as never
+                              }
+                            >
+                              {status.next}
+                              <ArrowRight />
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            onClick={() => setSelectedKey(d.key)}
+                          >
+                            {status.next}
+                            <ChevronRight />
+                          </Button>
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="size-11 px-0"
+                              aria-label={`Más acciones para ${d.name}`}
+                            >
+                              <MoreHorizontal />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => setSelectedKey(d.key)}
+                            >
+                              <PencilLine /> Abrir y editar pasos
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </li>
                   );
                 })}
@@ -352,7 +387,7 @@ export default function ProcessPage() {
                 description={
                   rows.length
                     ? "Prueba otro nombre o cambia el filtro."
-                    : "Crea las etapas de una solicitud de gastos o un subproceso de adquisición."
+                    : "Crea los pasos de aprobación de una solicitud de gastos o de una adquisición."
                 }
                 action={
                   rows.length ? (
@@ -397,7 +432,7 @@ function NewProcess({
         flow: emptyFlow(),
       }),
     onSuccess: (d) => {
-      toast.success("Proceso creado. Ahora configura sus etapas.");
+      toast.success("Proceso creado. Ahora define sus pasos.");
       onCreated(d.key);
     },
     onError: failure,
@@ -407,7 +442,7 @@ function NewProcess({
       <BackButton onClick={onCancel}>Volver a procesos</BackButton>
       <PageHeader
         title="Crear proceso"
-        description="Empieza con un nombre claro. Después definirás los datos y las aprobaciones."
+        description="Empieza con un nombre claro. Después agregarás los pasos de aprobación."
         className="mb-6"
       />
       <form
@@ -442,7 +477,7 @@ function NewProcess({
             type="submit"
             disabled={create.isPending || name.trim().length < 3}
           >
-            {create.isPending ? "Creando…" : "Crear y configurar etapas"}
+            {create.isPending ? "Creando…" : "Crear y definir los pasos"}
           </Button>
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancelar
@@ -558,12 +593,11 @@ function ProcessDetail({
   const [name, setName] = useState(d.name);
   const [saveXml, setSaveXml] = useState<(() => Promise<string>) | null>(null);
   const [xmlDirty, setXmlDirty] = useState(false);
-  const [bpmnOpened, setBpmnOpened] = useState(false);
+  const [diagramOpen, setDiagramOpen] = useState(false);
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const flowDirty =
     JSON.stringify(draft) !== JSON.stringify(d.flow ?? null) || name !== d.name;
   const dirty = flowDirty || xmlDirty;
-  useEffect(() => { if (tab === "diagrama") setBpmnOpened(true); }, [tab]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("tab");
     if (
@@ -592,7 +626,7 @@ function ProcessDetail({
   const save = useMutation({
     mutationFn: () =>
       saveFlowDefinition(d.key, { name: name.trim(), flow: draft! }),
-    onSuccess: () => { setXmlDirty(false); saved("Borrador guardado como nueva versión."); },
+    onSuccess: () => { setXmlDirty(false); saved("Cambios guardados."); },
     onError: failure,
   });
   const validate = useMutation({
@@ -608,17 +642,17 @@ function ProcessDetail({
       );
       setPreflight(result);
       if (!result.ready)
-        throw new Error("Resuelve los puntos indicados antes de publicar.");
+        throw new Error("Resuelve los puntos indicados antes de dejarlo listo.");
       return setFlowPublished(d.key, d.version, true);
     },
     onSuccess: () =>
-      saved("Flujo publicado. Ya puedes asociarlo a un formato."),
+      saved("Listo para usar. Ya puedes usarlo en un formato."),
     onError: failure,
   });
   const remove = useMutation({
     mutationFn: () => apiClient.delete(path(d.key)),
     onSuccess: () => {
-      toast.success("Proceso retirado del catálogo. Su evidencia se conserva.");
+      toast.success("Proceso retirado. Sus solicitudes y su historial se conservan.");
       onArchived();
     },
     onError: failure,
@@ -628,13 +662,14 @@ function ProcessDetail({
       if (!saveXml) throw new Error("El diagrama todavía está cargando.");
       return apiClient.put(path(d.key), { bpmnXml: await saveXml() });
     },
-    onSuccess: () => { setXmlDirty(false); saved("Diagrama guardado en una nueva versión."); },
+    onSuccess: () => { setXmlDirty(false); saved("Diagrama guardado."); },
     onError: failure,
   });
   const convert = useMutation({
     mutationFn: async () => {
-      if (!saveXml) throw new Error("El diagrama todavía está cargando.");
-      return convertBpmnToFlow(await saveXml(), draft?.variables);
+      // Si el diagrama no se ha abierto, se usa el guardado: no hace falta montar el modelador.
+      const xml = saveXml ? await saveXml() : d.bpmnXml;
+      return convertBpmnToFlow(xml, draft?.variables);
     },
     onSuccess: (r) => {
       if (!r.flow) {
@@ -644,7 +679,7 @@ function ProcessDetail({
       setDraft(r.flow);
       setTab("constructor");
       toast.success(
-        "Etapas extraídas. Revisa los responsables y guarda el borrador.",
+        "Pasos creados. Revisa quién responde en cada uno y guarda los cambios.",
       );
       if (r.warnings.length) toast.info(r.warnings.join(" "));
     },
@@ -676,15 +711,12 @@ function ProcessDetail({
     if (dirty && !window.confirm("Tienes cambios sin guardar. ¿Ir a formatos?"))
       e.preventDefault();
   };
-  const tabs: [Tab, string][] = [
-    ["constructor", "Etapas y responsables"],
-    ["probar", "Probar recorrido"],
-    ["diagrama", "Diagrama avanzado"],
-    ["seguimiento", "Solicitudes en ejecución"],
-  ];
-  if (!admin) tabs.splice(1, 1);
+  const tabs: [Tab, string][] = [["constructor", "Pasos"]];
+  if (admin) tabs.push(["probar", "Probar antes de usar"]);
+  tabs.push(["seguimiento", "En curso"]);
   if (d.dmnXml && !d.dmnXml.includes("Determinar SLA y orden"))
     tabs.push(["decisiones", "Tabla de decisiones"]);
+  tabs.push(["diagrama", "Diagrama (solo si lo necesitas)"]);
 
   const hasSteps = (d.flow?.steps.length ?? 0) > 0;
   const isPublished =
@@ -694,12 +726,53 @@ function ProcessDetail({
     i < current ? "done" : i === current ? "current" : "pending";
   const formatsHref = `/formatos?flow=${encodeURIComponent(d.key)}`;
   const nextHelp = [
-    "Agrega las etapas y sus responsables, y guarda el borrador.",
+    draft
+      ? "Agrega los pasos por los que irá la solicitud y quién responde en cada uno."
+      : "Este proceso solo tiene un diagrama. Crea sus pasos para poder editarlo.",
     dirty
-      ? "Guarda tus cambios para poder publicar el flujo."
-      : "Comprueba y publica el flujo para habilitarlo en formatos.",
-    "El flujo está publicado. Asócialo a un formato para usarlo en solicitudes.",
+      ? "Guarda tus cambios y después déjalo listo para usar."
+      : "Revisamos que todo esté completo y queda disponible para tus formatos.",
+    "Ya está listo. Elige en qué formato se va a usar.",
   ][current];
+  const saveBlocked =
+    save.isPending ||
+    !flowDirty ||
+    !draft ||
+    name.trim().length < 3 ||
+    (draft ? flowProblems(draft).length > 0 : false);
+  const saveFlow = () => {
+    if (
+      xmlDirty &&
+      !window.confirm(
+        "Al guardar los pasos se vuelve a dibujar el diagrama y se pierden sus cambios sin guardar. ¿Continuar?",
+      )
+    )
+      return;
+    save.mutate();
+  };
+  /** Un solo botón con relleno: la acción que toca ahora. */
+  const primary = !admin ? null : current === 2 ? (
+    <Button asChild>
+      <Link href={formatsHref as never} onClick={confirmLeaveToFormats}>
+        Usarlo en un formato <ArrowRight />
+      </Link>
+    </Button>
+  ) : flowDirty ? (
+    <Button disabled={saveBlocked} onClick={saveFlow}>
+      {save.isPending ? "Guardando…" : "Guardar cambios"}
+    </Button>
+  ) : xmlDirty ? (
+    <Button
+      disabled={!saveXml || bpmn.isPending}
+      onClick={() => bpmn.mutate()}
+    >
+      {bpmn.isPending ? "Guardando…" : "Guardar el diagrama"}
+    </Button>
+  ) : current === 1 ? (
+    <Button disabled={publish.isPending} onClick={() => publish.mutate()}>
+      {publish.isPending ? "Revisando…" : "Dejar listo para usar"}
+    </Button>
+  ) : null;
 
   return (
     <>
@@ -708,37 +781,29 @@ function ProcessDetail({
         className="mb-6"
         title={<span className="break-words">{d.name}</span>}
         description={
-          d.description || "Configura la ruta que seguirá cada solicitud."
+          d.description || "Aquí defines el camino que sigue cada solicitud."
         }
         meta={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span>Editando v{d.version}</span>
             <Badge variant={dirty ? "warning" : "neutral"}>
               {dirty ? (
                 <AlertTriangle className="size-3.5" aria-hidden />
               ) : (
                 <Check className="size-3.5" aria-hidden />
               )}
-              {dirty ? "Cambios sin guardar" : "Guardada"}
+              {dirty ? "Cambios sin guardar" : "Todo guardado"}
             </Badge>
             <span>
               {d.publishedVersion
-                ? `En uso: v${d.publishedVersion}`
-                : "Aún sin publicar"}
+                ? `Se está usando la versión ${d.publishedVersion}`
+                : "Todavía no se usa"}
             </span>
           </span>
         }
         actions={
           <>
-            {current === 2 && admin ? (
-              <Button asChild>
-                <Link href={formatsHref as never} onClick={confirmLeaveToFormats}>
-                  Asociar a un formato <ArrowRight />
-                </Link>
-              </Button>
-            ) : null}
             <Button variant="outline" onClick={() => setHistory(true)}>
-              <History /> Historial
+              <History /> Historial de cambios
             </Button>
             {admin && (
               <DropdownMenu>
@@ -752,11 +817,11 @@ function ProcessDetail({
                     disabled={exportPackage.isPending}
                     onSelect={() => exportPackage.mutate()}
                   >
-                    <Download /> Exportar paquete verificable
+                    <Download /> Descargar una copia del proceso
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem destructive onSelect={() => setArchive(true)}>
-                    <Trash2 /> Eliminar del catálogo
+                    <Trash2 /> Eliminar proceso
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -766,21 +831,27 @@ function ProcessDetail({
       />
       <ProcessProgress
         steps={[
-          { id: "disenar", label: "Diseñar etapas", state: stateOf(0) },
-          { id: "publicar", label: "Publicar flujo", state: stateOf(1) },
+          { id: "disenar", label: "Define los pasos", state: stateOf(0) },
+          { id: "publicar", label: "Revisa y deja listo", state: stateOf(1) },
           {
             id: "usar",
-            label: "Asociar a un formato y usar",
+            label: "Úsalo en un formato",
             state: stateOf(2),
             href: isPublished ? formatsHref : undefined,
             onNavigate: confirmLeaveToFormats,
           },
         ]}
       />
-      <p className="mt-3 text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">Siguiente: </span>
-        {nextHelp}
-      </p>
+      <div
+        className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/60 px-4 py-3"
+        data-tour="process-next"
+      >
+        <p className="min-w-0 flex-1 basis-64 text-sm">
+          <span className="font-semibold">Qué sigue: </span>
+          {nextHelp}
+        </p>
+        {primary}
+      </div>
       <div
         role="tablist"
         aria-label="Vistas del proceso"
@@ -851,41 +922,15 @@ function ProcessDetail({
                     />
                   </Field>
                   {admin && (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        disabled={validate.isPending}
-                        onClick={() => validate.mutate()}
-                      >
-                        Comprobar
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={
-                          save.isPending ||
-                          !flowDirty ||
-                          name.trim().length < 3 ||
-                          flowProblems(draft).length > 0
-                        }
-                        onClick={() => {
-                          if (xmlDirty && !window.confirm("Guardar las etapas regenerará el diagrama y reemplazará sus cambios visuales sin guardar. ¿Continuar?")) return;
-                          save.mutate();
-                        }}
-                      >
-                        {save.isPending ? "Guardando…" : "Guardar borrador"}
-                      </Button>
-                      <Button
-                        variant={d.published ? "outline" : "default"}
-                        disabled={publish.isPending || dirty || !!d.published}
-                        onClick={() => publish.mutate()}
-                      >
-                        {publish.isPending
-                          ? "Comprobando…"
-                          : d.published
-                            ? "Publicado"
-                            : "Publicar flujo"}
-                      </Button>
-                    </div>
+                    <Button
+                      variant="outline"
+                      disabled={validate.isPending}
+                      onClick={() => validate.mutate()}
+                    >
+                      {validate.isPending
+                        ? "Revisando…"
+                        : "Revisar que todo esté bien"}
+                    </Button>
                   )}
                 </div>
                 <VerticalBuilder
@@ -900,13 +945,19 @@ function ProcessDetail({
             ) : (
               <EmptyState
                 icon={<Workflow />}
-                title="Este proceso todavía tiene solo un diagrama"
-                description="Abre el diagrama y extrae sus etapas para convertirlo en un flujo ejecutable. Si contiene elementos incompatibles, te indicaremos cuáles debes ajustar."
+                title="Este proceso solo tiene un diagrama"
+                description="Todavía no tiene pasos que puedas editar. Podemos crearlos a partir del diagrama y después cambias quién responde en cada uno."
                 action={
-                  <Button onClick={() => setTab("diagrama")}>
-                    Abrir diagrama y preparar flujo
-                    <ArrowRight />
-                  </Button>
+                  admin ? (
+                    <Button
+                      disabled={convert.isPending}
+                      onClick={() => convert.mutate()}
+                    >
+                      {convert.isPending
+                        ? "Creando los pasos…"
+                        : "Crear los pasos a partir del diagrama"}
+                    </Button>
+                  ) : undefined
                 }
               />
             )}
@@ -917,8 +968,8 @@ function ProcessDetail({
               >
                 <h2 className="font-semibold">
                   {preflight.ready
-                    ? "El flujo está listo para publicar"
-                    : "Revisa estos puntos antes de publicar"}
+                    ? "Todo en orden: ya puedes dejarlo listo para usar"
+                    : "Revisa estos puntos antes de dejarlo listo"}
                 </h2>
                 <ul className="mt-4 divide-y divide-border">
                   {preflight.checks.map((check) => (
@@ -963,65 +1014,106 @@ function ProcessDetail({
           ) : (
             <EmptyState
               icon={<Workflow />}
-              title="Primero convierte el diagrama en etapas editables"
-              description="El recorrido de prueba necesita un flujo con etapas."
+              title="Primero crea los pasos"
+              description="Para probar cómo se aprobaría una solicitud, el proceso necesita sus pasos."
               action={
-                <Button variant="outline" onClick={() => setTab("diagrama")}>
-                  Abrir diagrama
+                <Button
+                  variant="outline"
+                  disabled={convert.isPending}
+                  onClick={() => convert.mutate()}
+                >
+                  {convert.isPending
+                    ? "Creando los pasos…"
+                    : "Crear los pasos a partir del diagrama"}
                 </Button>
               }
             />
           ))}
-        {(tab === "diagrama" || bpmnOpened) && (
-          <div hidden={tab !== "diagrama"} aria-hidden={tab !== "diagrama"}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="max-w-xl text-sm text-muted-foreground">
-                El diagrama muestra el proceso de negocio. Extraer etapas
-                prepara un borrador editable; publicar el flujo habilita su uso
-                en solicitudes.
-              </p>
-              {xmlDirty && <p role="status" className="text-sm font-medium">Diagrama con cambios sin guardar. Se conserva al cambiar de pestaña.</p>}
-              {admin && (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={!saveXml || bpmn.isPending}
-                    onClick={() => {
-                      if (flowDirty && !window.confirm("Guardar el diagrama creará una versión sin flujo ejecutable. Las etapas sin guardar se reemplazarán. ¿Continuar?")) return;
-                      bpmn.mutate();
-                    }}
-                  >
-                    Guardar diagrama
-                  </Button>
-                  <Button
-                    disabled={!saveXml || convert.isPending}
-                    onClick={() => convert.mutate()}
-                  >
-                    {convert.isPending
-                      ? "Analizando…"
-                      : "Convertir en etapas editables"}
-                  </Button>
-                </div>
-              )}
-            </div>
-            <div className="h-[65vh] min-h-96 overflow-hidden rounded-lg border border-border">
-              <BpmnStudio
-                key={`${d.id}-${d.version}`}
-                xml={d.bpmnXml}
-                visible={tab === "diagrama"}
-                onReady={(fn) => setSaveXml(fn ? () => fn : null)}
-                onDirtyChange={setXmlDirty}
-              />
-            </div>
+        {tab === "diagrama" && (
+          <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
+            No hace falta para armar un proceso: los pasos de la primera
+            pestaña son suficientes. El diagrama es una vista técnica para
+            quien ya sabe modelar procesos.
+          </p>
+        )}
+        {(tab === "diagrama" || diagramOpen) && (
+          <div hidden={tab !== "diagrama"}>
+            <details
+              className="rounded-lg border border-border bg-background"
+              open={diagramOpen}
+              onToggle={(e) => setDiagramOpen(e.currentTarget.open)}
+            >
+              <summary className="flex min-h-11 cursor-pointer items-center px-4 py-3 font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {diagramOpen ? "Ocultar el diagrama" : "Mostrar el diagrama"}
+              </summary>
+              <div className="border-t border-border p-4">
+                <p
+                  role="note"
+                  className="mb-4 flex items-start gap-2 rounded-md bg-muted/60 px-3 py-2 text-sm"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 size-4 shrink-0"
+                    aria-hidden
+                  />
+                  Cuidado: mover o borrar elementos aquí no cambia quién
+                  aprueba. Para eso usa la pestaña «Pasos».
+                </p>
+                {xmlDirty && (
+                  <p role="status" className="mb-3 text-sm font-medium">
+                    Diagrama con cambios sin guardar. Se conservan al cambiar
+                    de pestaña.
+                  </p>
+                )}
+                {admin && (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={!saveXml || bpmn.isPending}
+                      onClick={() => {
+                        if (
+                          flowDirty &&
+                          !window.confirm(
+                            "Guardar el diagrama creará una versión sin pasos editables. Los pasos sin guardar se reemplazarán. ¿Continuar?",
+                          )
+                        )
+                          return;
+                        bpmn.mutate();
+                      }}
+                    >
+                      Guardar diagrama
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={!saveXml || convert.isPending}
+                      onClick={() => convert.mutate()}
+                    >
+                      {convert.isPending
+                        ? "Creando los pasos…"
+                        : "Crear los pasos a partir de este diagrama"}
+                    </Button>
+                  </div>
+                )}
+                {diagramOpen && (
+                  <div className="h-[70vh] min-h-[480px] overflow-hidden rounded-lg border border-border">
+                    <BpmnStudio
+                      key={`${d.id}-${d.version}`}
+                      xml={d.bpmnXml}
+                      visible={tab === "diagrama"}
+                      onReady={(fn) => setSaveXml(fn ? () => fn : null)}
+                      onDirtyChange={setXmlDirty}
+                    />
+                  </div>
+                )}
+              </div>
+            </details>
           </div>
         )}
         {tab === "seguimiento" && <RunMonitor definition={d} />}
         {tab === "decisiones" && d.dmnXml && (
           <>
             <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
-              Tabla de decisiones asociada a este proceso. Las reglas de
-              asignación ejecutables se configuran en Etapas y responsables →
-              Datos, condiciones y asignación automática.
+              Tabla de decisiones asociada a este proceso. Las reglas que sí se
+              aplican se configuran en Pasos → Datos y reglas (avanzado).
             </p>
             <DmnStudio xml={d.dmnXml} />
           </>
@@ -1037,9 +1129,9 @@ function ProcessDetail({
       <ConfirmDialog
         open={archive}
         onOpenChange={setArchive}
-        title="¿Eliminar este proceso del catálogo?"
-        description="Se retirará del catálogo. Las solicitudes, versiones y evidencia se conservan. Los formatos ya asociados conservan su configuración: revisa dónde se usa el proceso si también quieres retirarlos."
-        confirmLabel="Eliminar del catálogo"
+        title="¿Eliminar este proceso?"
+        description="Se retirará de la lista. Las solicitudes y el historial se conservan. Los formatos que ya lo usan siguen funcionando: revisa dónde se usa si también quieres retirarlos."
+        confirmLabel="Eliminar proceso"
         destructive
         pending={remove.isPending}
         onConfirm={() => remove.mutate()}

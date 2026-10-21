@@ -43,7 +43,7 @@ export function VersionHistory({
       apiClient.post(`${path(definition.key)}/versions/${version}/restore`, {}),
     onSuccess: () => {
       toast.success(
-        "Versión recuperada como nuevo borrador. Revisa y publica cuando esté lista.",
+        "Versión recuperada como nuevo borrador. Revísala y déjala lista para usar cuando quieras.",
       );
       setRestoreVersion(null);
       onOpenChange(false);
@@ -54,7 +54,7 @@ export function VersionHistory({
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent title="Historial de versiones">
+        <SheetContent title="Historial de cambios">
           <div className="flex items-center justify-between border-b border-border p-5">
             <div>
               <h2 className="text-lg font-semibold">Historial del proceso</h2>
@@ -89,14 +89,14 @@ export function VersionHistory({
                       <h3 className="font-medium">Versión {v.version}</h3>
                       <span className="text-xs text-muted-foreground">
                         {v.published
-                          ? "Publicada"
+                          ? "Lista para usar"
                           : v.version === definition.version
                             ? "Actual"
                             : "Anterior"}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {v.flow?.steps.length ?? 0} etapas ·{" "}
+                      {v.flow?.steps.length ?? 0} pasos ·{" "}
                       {v.flow?.variables.length ?? 0} datos
                     </p>
                     <div className="mt-3 flex gap-2">

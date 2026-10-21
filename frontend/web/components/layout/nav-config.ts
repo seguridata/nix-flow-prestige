@@ -84,7 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: "/process",
         label: "Procesos",
-        hint: "Etapas y responsables de cada solicitud",
+        hint: "Pasos y responsables de cada solicitud",
         icon: GitBranch,
         roles: ["sender", "admin"],
       },

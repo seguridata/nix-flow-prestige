@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   ChevronDown,
   CircleCheck,
@@ -31,8 +32,8 @@ const actionLabel = (role: FlowStep["role"]) =>
 const whoSummary = (who: FlowStep["who"]) => {
   if (who.type === "initiator") return "Quien solicita";
   if (who.type === "fixed") return who.name || who.email || "Persona sin elegir";
-  if (who.type === "lookup") return "Asignación por tabla de consulta";
-  return "Se elige al crear la solicitud";
+  if (who.type === "lookup") return "Según una tabla de consulta";
+  return "Se elige al enviar la solicitud";
 };
 
 const iconButton = "size-11 sm:size-10";
@@ -80,7 +81,7 @@ export function VerticalBuilder({
         ...value.steps,
         {
           id,
-          label: "Nueva revisión",
+          label: "Nuevo paso",
           role: "REVISOR",
           who: { type: "ask", prompt: "¿Quién revisa esta solicitud?" },
         },
@@ -90,28 +91,62 @@ export function VerticalBuilder({
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_280px]">
       <div className="min-w-0">
-        <div className="mb-4 flex items-start gap-3 rounded-lg bg-muted/60 px-4 py-3">
-          <CircleCheck
-            className="mt-0.5 size-5 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-          <div>
-            <h2 className="text-sm font-semibold">
-              Inicio: una persona envía su solicitud
-            </h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Los datos del formato determinan la ruta de aprobación.
+        <nav
+          aria-label="Vista previa de la ruta de aprobación"
+          className="mb-5 rounded-lg bg-muted/60 px-4 py-3"
+        >
+          <p className="text-sm font-semibold">Así viajará la solicitud</p>
+          <ol className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
+            <li className="rounded-full border border-border bg-background px-3 py-1">
+              Solicitante
+            </li>
+            {value.steps.map((step, i) => (
+              <li key={step.id} className="flex min-w-0 items-center gap-2">
+                <ArrowRight
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+                <span className="max-w-48 truncate rounded-full border border-border bg-background px-3 py-1">
+                  {i + 1} · {step.label || "Paso sin nombre"}
+                </span>
+              </li>
+            ))}
+            <li className="flex items-center gap-2">
+              <ArrowRight
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="rounded-full border border-border bg-background px-3 py-1">
+                Fin
+              </span>
+            </li>
+          </ol>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Empieza cuando alguien envía su solicitud. Algunos pasos pueden
+            omitirse según los datos del formato.
+          </p>
+        </nav>
+        {value.steps.length === 0 && (
+          <div className="mb-4 rounded-lg border border-dashed border-border px-4 py-6 text-center">
+            <p className="font-medium">Todavía no hay pasos</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+              Un paso es una persona que revisa, aprueba o firma. Empieza
+              agregando el primero.
             </p>
+            {!readOnly && (
+              <Button className="mt-4" onClick={addStep}>
+                <Plus /> Agregar el primer paso
+              </Button>
+            )}
           </div>
-        </div>
+        )}
         <ol className="ml-3 border-l border-border pl-5 sm:ml-4 sm:pl-7">
           {value.steps.map((step, i) => {
             const expanded = open.has(step.id);
             const panelId = `etapa-panel-${step.id}`;
             const when = describeWhen(step.when, variables);
             const summary = [
-              actionLabel(step.role),
-              whoSummary(step.who),
+              `${actionLabel(step.role)} — ${whoSummary(step.who)}`,
               step.when?.length ? `Solo si ${when}` : null,
             ]
               .filter(Boolean)
@@ -126,7 +161,7 @@ export function VerticalBuilder({
                 </span>
                 <section
                   className="rounded-lg border border-border bg-background"
-                  aria-label={`Etapa ${i + 1}: ${step.label}`}
+                  aria-label={`Paso ${i + 1}: ${step.label}`}
                 >
                   <div className="flex items-center gap-1 pr-1">
                     <button
@@ -138,7 +173,7 @@ export function VerticalBuilder({
                     >
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">
-                          {step.label || "Etapa sin nombre"}
+                          {step.label || "Paso sin nombre"}
                         </span>
                         <span className="block truncate text-sm text-muted-foreground">
                           {summary}
@@ -158,7 +193,7 @@ export function VerticalBuilder({
                           size="icon"
                           variant="ghost"
                           className={iconButton}
-                          aria-label={`Subir etapa ${i + 1}`}
+                          aria-label={`Subir paso ${i + 1}`}
                           disabled={i === 0}
                           onClick={() => move(i, -1)}
                         >
@@ -168,7 +203,7 @@ export function VerticalBuilder({
                           size="icon"
                           variant="ghost"
                           className={iconButton}
-                          aria-label={`Bajar etapa ${i + 1}`}
+                          aria-label={`Bajar paso ${i + 1}`}
                           disabled={i === value.steps.length - 1}
                           onClick={() => move(i, 1)}
                         >
@@ -178,7 +213,7 @@ export function VerticalBuilder({
                           size="icon"
                           variant="ghost"
                           className={iconButton}
-                          aria-label={`Eliminar etapa ${i + 1}`}
+                          aria-label={`Eliminar paso ${i + 1}`}
                           onClick={() =>
                             onChange({
                               ...value,
@@ -198,7 +233,7 @@ export function VerticalBuilder({
                       className="space-y-4 border-t border-border p-4 disabled:opacity-80"
                     >
                       <Field
-                        label="Nombre de la etapa"
+                        label="Nombre del paso"
                         htmlFor={`${panelId}-nombre`}
                       >
                         <Input
@@ -208,7 +243,7 @@ export function VerticalBuilder({
                         />
                       </Field>
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <Field label="Acción" htmlFor={`${panelId}-accion`}>
+                        <Field label="¿Qué hace?" htmlFor={`${panelId}-accion`}>
                           <Select
                             id={`${panelId}-accion`}
                             value={step.role}
@@ -223,7 +258,7 @@ export function VerticalBuilder({
                           </Select>
                         </Field>
                         <Field
-                          label="Responsable"
+                          label="¿Quién lo hace?"
                           htmlFor={`${panelId}-responsable`}
                         >
                           <Select
@@ -237,7 +272,7 @@ export function VerticalBuilder({
                                 update(i, {
                                   who: {
                                     type,
-                                    prompt: "¿Quién atiende esta etapa?",
+                                    prompt: "¿Quién atiende este paso?",
                                   },
                                 });
                               if (type === "fixed")
@@ -246,14 +281,14 @@ export function VerticalBuilder({
                           >
                             <option value="initiator">Quien solicita</option>
                             <option value="fixed">
-                              Una persona del directorio
+                              Una persona en específico
                             </option>
                             <option value="ask">
-                              Elegir al crear la solicitud
+                              Se elige al enviar la solicitud
                             </option>
                             {step.who.type === "lookup" && (
                               <option value="lookup">
-                                Asignación por tabla de consulta
+                                Según una tabla de consulta
                               </option>
                             )}
                           </Select>
@@ -304,11 +339,11 @@ export function VerticalBuilder({
                             </Field>
                           )}
                           <div>
-                            <p className="text-sm font-medium">Condición</p>
+                            <p className="text-sm font-medium">¿Cuándo aplica?</p>
                             <p className="mt-1 break-words text-sm">{when}</p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              Se edita en «Datos, condiciones y asignación
-                              automática», al final de las etapas.
+                              Se define en «Datos y reglas (avanzado)», al
+                              final de los pasos.
                             </p>
                           </div>
                         </div>
@@ -320,35 +355,36 @@ export function VerticalBuilder({
             );
           })}
         </ol>
-        {!readOnly && (
+        {!readOnly && value.steps.length > 0 && (
           <Button
             variant="outline"
             className="ml-3 mt-1 sm:ml-4"
             onClick={addStep}
           >
-            <Plus /> Agregar etapa
+            <Plus /> Agregar paso
           </Button>
         )}
         <p className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
           <Flag className="size-4 shrink-0" aria-hidden />
-          Fin: se conserva el documento y su expediente verificable.
+          Fin: se guarda el documento con su expediente.
         </p>
         {!readOnly && (
           <details className="mt-8 border-t border-border pt-5">
             <summary className="flex min-h-11 cursor-pointer items-center font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Datos, condiciones y asignación automática
+              Datos y reglas (avanzado)
             </summary>
             <p className="my-4 text-sm text-muted-foreground">
-              Configura qué se pide, las consultas a tablas y cuándo participa
-              cada responsable. Los cambios se reflejan en las etapas.
+              Para casos especiales: qué datos se piden, consultas a tablas y
+              cuándo participa cada persona. No hace falta para un proceso
+              sencillo.
             </p>
             <FlowEditor value={value} onChange={onChange} />
           </details>
         )}
       </div>
       <aside className="h-fit space-y-5 rounded-lg border border-border bg-background p-4 xl:sticky xl:top-20">
-        <h2 className="text-base font-semibold">Reglas de ejecución</h2>
-        <Field label="Orden" htmlFor="flujo-orden">
+        <h2 className="text-base font-semibold">Cómo se aprueba</h2>
+        <Field label="¿En qué orden?" htmlFor="flujo-orden">
           <Select
             id="flujo-orden"
             disabled={readOnly}
@@ -357,11 +393,11 @@ export function VerticalBuilder({
               onChange({ ...value, order: e.target.value as Flow["order"] })
             }
           >
-            <option value="SECUENCIAL">Una etapa a la vez</option>
-            <option value="PARALELO">Todas al mismo tiempo</option>
+            <option value="SECUENCIAL">Un paso a la vez</option>
+            <option value="PARALELO">Todos al mismo tiempo</option>
           </Select>
         </Field>
-        <Field label="Plazo total, en horas" htmlFor="flujo-plazo">
+        <Field label="Tiempo máximo para completar (en horas)" htmlFor="flujo-plazo">
           <Input
             id="flujo-plazo"
             disabled={readOnly}
@@ -382,7 +418,7 @@ export function VerticalBuilder({
                 problems.length ? "text-destructive" : "text-muted-foreground",
               )}
             />
-            {problems.length ? "Antes de guardar" : "Estructura completa"}
+            {problems.length ? "Falta completar" : "Todo completo"}
           </h3>
           {problems.length ? (
             <ul className="mt-2 list-disc space-y-2 pl-4 text-sm text-destructive">
@@ -392,8 +428,9 @@ export function VerticalBuilder({
             </ul>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
-              {value.steps.length} etapas · {value.variables.length} datos. Al
-              publicar se comprueban también las tablas y el directorio.
+              {value.steps.length} {value.steps.length === 1 ? "paso" : "pasos"}.
+              Al dejarlo listo también revisamos las tablas y las personas
+              elegidas.
             </p>
           )}
         </div>

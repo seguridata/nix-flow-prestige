@@ -50,7 +50,7 @@ export function ProcessLab({
         );
       } catch (error) {
         setPreviewError(
-          error instanceof Error ? error.message : "No se pudo evaluar la ruta.",
+          error instanceof Error ? error.message : "No se pudo probar la ruta.",
         );
         return null;
       }
@@ -68,13 +68,14 @@ export function ProcessLab({
           preview.mutate();
         }}
       >
-        <h2 className="text-lg font-semibold">Comprueba una ruta real</h2>
+        <h2 className="text-lg font-semibold">Prueba cómo se aprobaría una solicitud</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Introduce datos y consulta el mismo motor que resuelve las
-          solicitudes. No se envía ningún documento ni se crea una solicitud.
+          Escribe datos de ejemplo y mira quién tendría que aprobar y en qué
+          orden. Es solo una prueba: no se envía ningún documento ni se crea
+          una solicitud.
         </p>
         <p className="mt-3 text-xs text-muted-foreground">
-          La asignación por solicitante usa tu identidad autenticada.
+          Cuando el responsable es quien solicita, se usa tu propio usuario.
         </p>
         <div className="mt-6 space-y-4">
           {flow.variables.map((v) => (
@@ -124,7 +125,7 @@ export function ProcessLab({
         </div>
         <Button className="mt-6" type="submit" disabled={preview.isPending}>
           <FlaskConical />
-          {preview.isPending ? "Resolviendo…" : "Evaluar recorrido"}
+          {preview.isPending ? "Probando…" : "Probar la ruta"}
         </Button>
         {previewError && (
           <p role="alert" className="mt-4 text-sm text-destructive">
@@ -143,21 +144,21 @@ export function ProcessLab({
               aria-hidden
             />
             <h3 className="mt-4 font-semibold">
-              Ve quién participa antes de publicar
+              Mira quién participa antes de usarlo
             </h3>
             <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              El resultado mostrará las etapas aplicables, las personas
-              resueltas, los datos faltantes y las tablas consultadas.
+              Verás los pasos que aplican, las personas que responden y los
+              datos que faltan por completar.
             </p>
           </div>
         ) : (
           <>
-            <h3 className="text-lg font-semibold">Ruta resultante</h3>
+            <h3 className="text-lg font-semibold">Así se aprobaría</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {preview.data.order === "PARALELO"
-                ? "Etapas en paralelo"
-                : "Una etapa a la vez"}{" "}
-              · plazo {preview.data.slaHours} h
+                ? "Todos los pasos al mismo tiempo"
+                : "Un paso a la vez"}{" "}
+              · plazo de {preview.data.slaHours} horas
             </p>
             <ol className="mt-6 ml-3 border-l border-border pl-6">
               {preview.data.steps.map((step) => (
@@ -199,7 +200,7 @@ export function ProcessLab({
             {!!preview.data.lookups?.length && (
               <details className="border-t border-border pt-4">
                 <summary className="cursor-pointer text-sm font-medium">
-                  Trazabilidad de las consultas
+                  Tablas de consulta usadas
                 </summary>
                 <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
                   {preview.data.lookups.map((l, i) => (
@@ -214,7 +215,7 @@ export function ProcessLab({
               Object.keys(preview.data.derived).length > 0 && (
                 <details className="mt-4">
                   <summary className="cursor-pointer text-sm font-medium">
-                    Valores calculados
+                    Datos calculados automáticamente
                   </summary>
                   <dl className="mt-3 space-y-2 text-sm">
                     {Object.entries(preview.data.derived).map(
@@ -264,7 +265,7 @@ export function ImpactPanel({ processKey }: { processKey: string }) {
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
       <summary className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-primary">
-        Antes de cambiar: dónde se usa este proceso
+        Antes de cambiar algo: dónde se usa este proceso
       </summary>
       {impact.isPending ? (
         <p role="status" className="mt-4 text-sm">
@@ -308,7 +309,7 @@ export function ImpactPanel({ processKey }: { processKey: string }) {
             <div>
               <h3 className="font-medium">Formatos vinculados</h3>
               <p className="mt-1 text-muted-foreground">
-                {impact.data.templates.total} formatos usan este flujo.
+                {impact.data.templates.total} formatos usan este proceso.
               </p>
               <ul className="mt-3 space-y-1">
                 {impact.data.templates.byVersion.map((v) => (
@@ -319,8 +320,8 @@ export function ImpactPanel({ processKey }: { processKey: string }) {
                 ))}
               </ul>
               <p className="mt-3 max-w-sm text-xs text-muted-foreground">
-                Cada formato conserva la versión elegida. Publicar otra versión
-                no cambia automáticamente sus solicitudes existentes.
+                Cada formato conserva la versión que eligió. Dejar listo un cambio
+                nuevo no modifica las solicitudes que ya están en camino.
               </p>
             </div>
           </div>
