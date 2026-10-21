@@ -41,8 +41,11 @@ export function TestPanel({ table }: { table: LookupTable }) {
         <h2 id={`${uid}-h`} className="flex items-center gap-2 text-base font-semibold">
           <FlaskConical className="size-4" aria-hidden /> Probar una consulta
         </h2>
-        <p className="text-sm text-muted-foreground">Elige condiciones con valores de ejemplo, como si fueran los datos de una solicitud.</p>
-        <p className="text-sm text-muted-foreground">Verás qué filas coinciden, cuál gana y por qué las demás no.</p>
+        <p className="text-sm text-muted-foreground">
+          Escribe la condición con valores de ejemplo, como si fueran los datos de una solicitud.
+          <br />
+          Verás qué fila gana, cuáles más coinciden y por qué las demás no.
+        </p>
       </div>
 
       <QueryBuilder
@@ -103,7 +106,13 @@ function TestResult({
         <>
           <p role="status" className="flex items-start gap-2 rounded-md bg-[#eaf3d6] p-3 text-sm text-[#3f5900]">
             <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {matches.length === 1 ? "Coincide 1 fila." : `Coinciden ${matches.length} filas.`} Gana la primera, de arriba hacia abajo.
+            <span>
+              Con estos datos gana la fila {matches[0]!.order ?? matches[0]!.position + 1}.{" "}
+              {matches.length === 1
+                ? "Es la única que coincide."
+                : `Coinciden ${matches.length} filas, pero gana la primera, de arriba hacia abajo.`}
+              {failed.length > 0 ? " Las demás no coinciden porque no cumplen alguna condición; abajo ves cuál." : ""}
+            </span>
           </p>
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full min-w-[32rem] text-left text-sm">

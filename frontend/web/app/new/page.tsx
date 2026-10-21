@@ -16,6 +16,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { RoutePanel, SentenceChip, SentenceRow, type RouteStop } from "@/components/flow/sentence";
 import { SignerAutocomplete } from "@/components/new/signer-autocomplete";
 import { cn } from "@/libs/utils";
 import { createCase } from "@/services/cases-service";
@@ -250,6 +251,15 @@ function NewSignatureRequest() {
     },
   ];
 
+  const routeStops: RouteStop[] = [
+    { title: "Subes el documento", sub: file ? file.name : title.trim() || undefined },
+    ...(watchedSigners ?? []).map((signer, i) => ({
+      title: signer?.name?.trim() || signer?.email?.trim() || `Participante ${i + 1}`,
+      sub: `${signer?.role === "REVISOR" ? "Revisa" : "Firma"}${!sequential && fields.length > 1 ? " al mismo tiempo que los demás" : ""}`,
+    })),
+    { title: "Se guarda el expediente", sub: "Queda el registro de quién firmó y cuándo" },
+  ];
+
   return (
     <AppShell title="Enviar documento">
       <PageHeader
@@ -293,7 +303,7 @@ function NewSignatureRequest() {
         })}
       </ol>
 
-      <div className={cn("grid gap-8", step < last && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <form
           className="mx-auto w-full max-w-2xl min-w-0 space-y-8 lg:mx-0"
           onSubmit={(e) => {
@@ -343,56 +353,101 @@ function NewSignatureRequest() {
                 <h2 id="paso-firmantes" className="text-xl font-semibold">
                   ¿Quién debe firmar o revisar este documento?
                 </h2>
-                <p className="mt-1 text-sm text-muted-foreground">Agrega a los participantes en el orden en que intervienen.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Lee el orden como una frase y toca cualquier recuadro para cambiarlo.</p>
               </div>
 
-              <ul className="flex flex-col gap-3">
-                {fields.map((field, index) => (
-                  <li key={field.id} className="rounded-lg border border-border bg-background p-4">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">Participante {index + 1}</p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove(index)}
-                        disabled={fields.length === 1}
-                        aria-label={`Quitar al participante ${index + 1}`}
-                      >
-                        <Trash2 /> Quitar
-                      </Button>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Field label="Nombre" error={form.formState.errors.signers?.[index]?.name?.message}>
-                        <SignerAutocomplete
-                          register={form.register(`signers.${index}.name`)}
-                          value={form.watch(`signers.${index}.name`) ?? ""}
-                          colleagues={colleagues}
-                          onPick={pickInto(index)}
-                          placeholder="María González"
-                          aria-label="Nombre del firmante"
-                        />
-                      </Field>
-                      <Field label="Correo" error={form.formState.errors.signers?.[index]?.email?.message}>
-                        <SignerAutocomplete
-                          register={form.register(`signers.${index}.email`)}
-                          value={form.watch(`signers.${index}.email`) ?? ""}
-                          colleagues={colleagues}
-                          onPick={pickInto(index)}
-                          placeholder="maria@empresa.com"
-                          aria-label="Correo del firmante"
-                        />
-                      </Field>
-                      <Field label="Papel" htmlFor={`role-${index}`} className="sm:col-span-2 sm:max-w-xs">
-                        <Select id={`role-${index}`} {...form.register(`signers.${index}.role`)}>
+              <p className="rounded-2xl border border-border bg-muted/60 p-4 text-base leading-[2.25] sm:p-5 sm:text-lg">
+                Firman{" "}
+                <SentenceChip label={sequential ? "uno tras otro" : "todos a la vez"} title="Orden de firma">
+                  <Select
+                    aria-label="Orden de firma"
+                    value={sequential ? "seq" : "par"}
+                    onChange={(event) => form.setValue("sequential", event.target.value === "seq")}
+                  >
+                    <option value="seq">Uno tras otro, en el orden de abajo</option>
+                    <option value="par">Todos a la vez</option>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    {sequential ? "Cada persona recibe el documento cuando la anterior termina." : "Todos reciben el documento al mismo tiempo."}
+                  </p>
+                </SentenceChip>
+                .
+              </p>
+
+              <ol className="flex flex-col gap-3">
+                {fields.map((field, index) => {
+                  const signer = watchedSigners?.[index];
+                  const role = signer?.role ?? "FIRMANTE";
+                  const personLabel = signer?.name?.trim() || signer?.email?.trim() || "Elige a la persona";
+                  const prefix =
+                    fields.length === 1
+                      ? "Solo"
+                      : !sequential
+                        ? "Al mismo tiempo"
+                        : index === 0
+                          ? "Primero"
+                          : index === fields.length - 1
+                            ? "Por último"
+                            : "Después";
+                  const rowErrors = form.formState.errors.signers?.[index];
+                  const rowError = [rowErrors?.name?.message, rowErrors?.email?.message].filter(Boolean).join(" · ");
+                  return (
+                    <SentenceRow
+                      key={field.id}
+                      n={index + 1}
+                      actions={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-11"
+                          onClick={() => remove(index)}
+                          disabled={fields.length === 1}
+                          aria-label={`Quitar al participante ${index + 1}`}
+                        >
+                          <Trash2 />
+                        </Button>
+                      }
+                    >
+                      {prefix}{" "}
+                      <SentenceChip label={role === "REVISOR" ? "revisa" : "firma"} title={`Papel del participante ${index + 1}`}>
+                        <Select id={`role-${index}`} aria-label={`Papel del participante ${index + 1}`} {...form.register(`signers.${index}.role`)}>
                           <option value="FIRMANTE">Firmante</option>
                           <option value="REVISOR">Revisor</option>
                         </Select>
-                      </Field>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                      </SentenceChip>{" "}
+                      <SentenceChip label={personLabel} title={`Participante ${index + 1}`}>
+                        <Field label="Nombre" error={rowErrors?.name?.message}>
+                          <SignerAutocomplete
+                            register={form.register(`signers.${index}.name`)}
+                            value={form.watch(`signers.${index}.name`) ?? ""}
+                            colleagues={colleagues}
+                            onPick={pickInto(index)}
+                            placeholder="María González"
+                            aria-label="Nombre del firmante"
+                          />
+                        </Field>
+                        <Field label="Correo" error={rowErrors?.email?.message}>
+                          <SignerAutocomplete
+                            register={form.register(`signers.${index}.email`)}
+                            value={form.watch(`signers.${index}.email`) ?? ""}
+                            colleagues={colleagues}
+                            onPick={pickInto(index)}
+                            placeholder="maria@empresa.com"
+                            aria-label="Correo del firmante"
+                          />
+                        </Field>
+                      </SentenceChip>
+                      .
+                      {rowError ? (
+                        <span role="alert" className="block text-sm leading-normal text-destructive">
+                          {rowError}. Toca el recuadro de la persona para corregirlo.
+                        </span>
+                      ) : null}
+                    </SentenceRow>
+                  );
+                })}
+              </ol>
               {form.formState.errors.signers?.message ? (
                 <p role="alert" className="text-sm text-destructive">
                   {form.formState.errors.signers.message}
@@ -400,18 +455,8 @@ function NewSignatureRequest() {
               ) : null}
 
               <Button type="button" variant="outline" onClick={() => append({ name: "", email: "", role: "FIRMANTE" })}>
-                <Plus /> Añadir participante
+                <Plus /> Y después, otra persona
               </Button>
-
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-background p-4">
-                <div>
-                  <p id="lbl-sequential" className="text-sm font-medium">
-                    Orden secuencial
-                  </p>
-                  <p className="text-sm text-muted-foreground">Reciben el documento uno por uno, en el orden de arriba. Si lo apagas, todos lo reciben a la vez.</p>
-                </div>
-                <Switch aria-labelledby="lbl-sequential" checked={sequential} onCheckedChange={(checked) => form.setValue("sequential", checked)} />
-              </div>
             </section>
           ) : null}
 
@@ -545,7 +590,9 @@ function NewSignatureRequest() {
               <SummaryList items={summary} />
             </div>
           </aside>
-        ) : null}
+        ) : (
+          <RoutePanel stops={routeStops} className="lg:sticky lg:top-20 lg:self-start" />
+        )}
       </div>
     </AppShell>
   );
