@@ -20,7 +20,7 @@ export function PageHeader({
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
-  back?: { href: string; label: string };
+  back?: { href: string; label: string; onClick?: () => void };
   meta?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
@@ -30,6 +30,14 @@ export function PageHeader({
       {back ? (
         <Link
           href={back.href as Route}
+          onClick={
+            back.onClick
+              ? (e) => {
+                  e.preventDefault();
+                  back.onClick?.();
+                }
+              : undefined
+          }
           className="inline-flex w-fit items-center gap-1.5 rounded-sm text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeft className="size-4" />
