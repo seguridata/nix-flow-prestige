@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { allVariables, describeWhen, describeWho, emptyFlow, flowProblems, opsFor, slugKey, type Flow, type LookupWho } from "@/libs/flow";
+import { allVariables, describeWhen, describeWho, emptyFlow, flowProblems, opsFor, optionsFor, pruneDependencies, slugKey, type Flow, type LookupWho } from "@/libs/flow";
 import type { LookupQuery, LookupTableSummary } from "@/libs/lookup";
 
 const base = (): Flow => ({
@@ -167,5 +167,39 @@ describe("flowProblems", () => {
     const f = base();
     f.steps = [];
     expect(flowProblems(f)).toContain("Agrega al menos un paso.");
+  });
+});
+
+describe("listas dependientes", () => {
+  const tipo = { key: "tipo", label: "Tipo", type: "select" as const, required: true, options: ["A", "B"] };
+  const concepto = {
+    key: "concepto",
+    label: "Concepto",
+    type: "select" as const,
+    required: true,
+    options: ["a1", "a2", "b1"],
+    dependsOn: { variable: "tipo", options: { A: ["a1", "a2"], B: ["b1"] } },
+  };
+
+  it("ofrece solo las opciones del valor elegido y nada mientras no se elige", () => {
+    expect(optionsFor(concepto, { tipo: "A" })).toEqual(["a1", "a2"]);
+    expect(optionsFor(concepto, { tipo: "B" })).toEqual(["b1"]);
+    expect(optionsFor(concepto, {})).toEqual([]);
+    expect(optionsFor(concepto, { tipo: "" })).toEqual([]);
+    expect(optionsFor(tipo, {})).toEqual(["A", "B"]);
+  });
+
+  it("al editar, descarta lo que ya no es opción y quita la dependencia si el padre dejó de ser lista", () => {
+    const pruned = pruneDependencies([{ ...tipo, options: ["A"] }, { ...concepto, options: ["a1", "b1"] }]);
+    expect(pruned[1]!.dependsOn).toEqual({ variable: "tipo", options: { A: ["a1"] } });
+    const sinPadre = pruneDependencies([{ ...tipo, type: "text" }, concepto]);
+    expect(sinPadre[1]!.dependsOn).toBeUndefined();
+  });
+
+  it("avisa si una dependencia no es válida o no ofrece nada", () => {
+    const flow = (variables: Flow["variables"]): Flow => ({ ...emptyFlow(), steps: [{ id: "p", label: "p", role: "FIRMANTE", who: { type: "initiator" } }], variables });
+    expect(flowProblems(flow([tipo, concepto]))).toEqual([]);
+    expect(flowProblems(flow([concepto])).join("|")).toContain("depende de una lista que no es válida");
+    expect(flowProblems(flow([tipo, { ...concepto, dependsOn: { variable: "tipo", options: { A: [] } } }])).join("|")).toContain("no tiene opciones");
   });
 });

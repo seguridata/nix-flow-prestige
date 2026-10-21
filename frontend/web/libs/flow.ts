@@ -21,6 +21,37 @@ export interface FlowVariable {
   type: VarType;
   required: boolean;
   options?: string[];
+  /** Lista dependiente: las opciones salen del valor de otra lista (p. ej. concepto según el tipo de gasto). `options` es la unión. */
+  dependsOn?: { variable: string; options: Record<string, string[]> };
+}
+
+/**
+ * Deja las listas dependientes coherentes tras editar variables: quita la dependencia si el padre ya no es una lista
+ * de selección y descarta de cada lista lo que ya no es opción del padre o del propio campo.
+ */
+export function pruneDependencies(variables: FlowVariable[]): FlowVariable[] {
+  return variables.map((v) => {
+    if (!v.dependsOn) return v;
+    const parent = variables.find((x) => x.key === v.dependsOn!.variable);
+    if (v.type !== "select" || parent?.type !== "select" || parent.key === v.key || parent.dependsOn) {
+      return { ...v, dependsOn: undefined };
+    }
+    const own = new Set(v.options ?? []);
+    const parentOpts = new Set(parent.options ?? []);
+    const options = Object.fromEntries(
+      Object.entries(v.dependsOn.options)
+        .filter(([k]) => parentOpts.has(k))
+        .map(([k, l]) => [k, l.filter((o) => own.has(o))]),
+    );
+    return { ...v, dependsOn: { variable: v.dependsOn.variable, options } };
+  });
+}
+
+/** Opciones que corresponden a la variable según los valores ya capturados (sin dependencia: todas). */
+export function optionsFor(v: FlowVariable, values: Readonly<Record<string, string | number | undefined>>): string[] {
+  if (!v.dependsOn) return v.options ?? [];
+  const parent = values[v.dependsOn.variable];
+  return parent === undefined || parent === "" ? [] : (v.dependsOn.options[String(parent)] ?? []);
 }
 
 export interface Condition {
@@ -173,6 +204,14 @@ export function flowProblems(flow: Flow, tables?: readonly LookupTableSummary[])
     else if (keys.has(v.key)) out.push(`La variable «${v.label}» está repetida.`);
     keys.add(v.key);
     if (v.type === "select" && !(v.options?.length)) out.push(`«${v.label}» necesita al menos una opción.`);
+    if (v.dependsOn) {
+      const parent = flow.variables.find((x) => x.key === v.dependsOn!.variable);
+      if (v.type !== "select" || parent?.type !== "select" || parent.key === v.key || parent.dependsOn) {
+        out.push(`«${v.label}» depende de una lista que no es válida.`);
+      } else if (Object.values(v.dependsOn.options).every((l) => l.length === 0)) {
+        out.push(`«${v.label}» no tiene opciones para ningún valor de «${parent.label}».`);
+      }
+    }
   }
   const sourcesForDerived: SourceVar[] = [...BUILTIN_LOOKUP_SOURCES, ...flow.variables.map((v) => ({ key: v.key, label: v.label || v.key }))];
   const tableOf = (key: string) => tables?.find((t) => t.key === key);

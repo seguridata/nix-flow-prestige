@@ -20,7 +20,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { attachmentErrorsFrom, attachmentStatus, unmetSpecs } from "@/libs/attachments";
-import { type FlowVariable } from "@/libs/flow";
+import { optionsFor, type FlowVariable } from "@/libs/flow";
 import { needsPerson } from "@/libs/format-steps";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
@@ -166,7 +166,15 @@ function UsarForm({ format }: { format: FormatDetail }) {
       : "";
 
   const groups = groupVariables(format.flow.variables);
-  const setValue = (key: string, val: string) => setValues((s) => ({ ...s, [key]: val }));
+  const setValue = (key: string, val: string) =>
+    setValues((s) => {
+      const next = { ...s, [key]: val };
+      // Una lista dependiente solo conserva su valor si sigue siendo una opción del nuevo valor de la que depende.
+      for (const v of format.flow.variables) {
+        if (v.dependsOn?.variable === key && next[v.key] && !optionsFor(v, next).includes(next[v.key]!)) next[v.key] = "";
+      }
+      return next;
+    });
 
   return (
     <form
@@ -185,7 +193,14 @@ function UsarForm({ format }: { format: FormatDetail }) {
             </h2>
             <div className="grid gap-x-5 gap-y-5 sm:grid-cols-2">
               {g.items.map((v) => (
-                <VariableField key={v.key} variable={v} value={values[v.key] ?? ""} onChange={(val) => setValue(v.key, val)} />
+                <VariableField
+                  key={v.key}
+                  variable={v}
+                  options={optionsFor(v, values)}
+                  parentLabel={v.dependsOn ? (format.flow.variables.find((x) => x.key === v.dependsOn!.variable)?.label ?? v.dependsOn.variable) : undefined}
+                  value={values[v.key] ?? ""}
+                  onChange={(val) => setValue(v.key, val)}
+                />
               ))}
             </div>
           </section>
@@ -328,10 +343,24 @@ function SearchableList({ id, value, options, onChange }: { id: string; value: s
   );
 }
 
-function VariableField({ variable: v, value, onChange }: { variable: FlowVariable; value: string; onChange: (v: string) => void }) {
+function VariableField({
+  variable: v,
+  options,
+  parentLabel,
+  value,
+  onChange,
+}: {
+  variable: FlowVariable;
+  /** Opciones vigentes: todas, o solo las del valor elegido en la lista de la que depende. */
+  options: string[];
+  parentLabel?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   const id = `f-${v.key}`;
   const label = v.label || v.key;
-  const searchable = v.type === "select" && (v.options?.length ?? 0) > SEARCHABLE_FROM;
+  const waiting = v.type === "select" && !!parentLabel && options.length === 0;
+  const searchable = v.type === "select" && options.length > SEARCHABLE_FROM;
   const long = isLongText(v);
   return (
     <Field
@@ -342,11 +371,11 @@ function VariableField({ variable: v, value, onChange }: { variable: FlowVariabl
       hint={long ? <span className="tabular-nums">{value.length}/500 caracteres</span> : undefined}
     >
       {searchable ? (
-        <SearchableList id={id} value={value} options={v.options ?? []} onChange={onChange} />
+        <SearchableList key={options.join("|")} id={id} value={value} options={options} onChange={onChange} />
       ) : v.type === "select" ? (
-        <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Elige una opción</option>
-          {(v.options ?? []).map((o) => (
+        <Select id={id} value={value} disabled={waiting} onChange={(e) => onChange(e.target.value)}>
+          <option value="">{waiting ? `Primero elige «${parentLabel}»` : "Elige una opción"}</option>
+          {options.map((o) => (
             <option key={o} value={o}>
               {o}
             </option>

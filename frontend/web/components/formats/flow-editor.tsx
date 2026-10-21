@@ -15,6 +15,7 @@ import {
   BUILTIN_LOOKUP_SOURCES,
   newId,
   opsFor,
+  pruneDependencies,
   OP_LABEL,
   slugKey,
   VAR_TYPE_LABEL,
@@ -48,12 +49,67 @@ function Missing({ children }: { children: React.ReactNode }) {
 }
 
 /**
+ * «Sus opciones dependen de otra lista»: cada valor de la otra lista muestra solo las opciones que se marcan aquí
+ * (p. ej. el concepto de gasto según el tipo de gasto).
+ */
+function DependsOnEditor({ variable: v, all, onChange }: { variable: FlowVariable; all: FlowVariable[]; onChange: (v: FlowVariable) => void }) {
+  const candidates = all.filter((x) => x.key !== v.key && x.type === "select" && !x.dependsOn && (x.options?.length ?? 0) > 0);
+  const parent = v.dependsOn ? all.find((x) => x.key === v.dependsOn!.variable) : undefined;
+  if (!v.dependsOn && candidates.length === 0) return null;
+  const own = v.options ?? [];
+  const setParent = (key: string) => {
+    if (!key) {
+      return onChange({ ...v, dependsOn: undefined });
+    }
+    onChange({ ...v, dependsOn: { variable: key, options: v.dependsOn?.variable === key ? v.dependsOn.options : {} } });
+  };
+  const toggle = (parentValue: string, option: string, on: boolean) => {
+    const current = v.dependsOn!.options[parentValue] ?? [];
+    const list = on ? own.filter((o) => current.includes(o) || o === option) : current.filter((o) => o !== option);
+    onChange({ ...v, dependsOn: { ...v.dependsOn!, options: { ...v.dependsOn!.options, [parentValue]: list } } });
+  };
+  return (
+    <div className="mt-2 space-y-2">
+      <label className="flex flex-wrap items-center gap-2 text-sm">
+        Sus opciones dependen de
+        <select className={selectClass} aria-label="Lista de la que dependen las opciones" value={v.dependsOn?.variable ?? ""} onChange={(e) => setParent(e.target.value)}>
+          <option value="">Ninguna (siempre todas)</option>
+          {[...candidates, ...(parent && !candidates.includes(parent) ? [parent] : [])].map((x) => (
+            <option key={x.key} value={x.key}>
+              {x.label || x.key}
+            </option>
+          ))}
+        </select>
+      </label>
+      {v.dependsOn && parent ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Marca qué opciones se ofrecen cuando se elige cada valor de «{parent.label || parent.key}».</p>
+          {(parent.options ?? []).map((pv) => (
+            <fieldset key={pv} className="rounded-md border border-border p-2">
+              <legend className="px-1 text-sm font-medium">{pv}</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {own.map((o) => (
+                  <label key={o} className="flex items-center gap-1.5 text-sm">
+                    <input type="checkbox" checked={(v.dependsOn!.options[pv] ?? []).includes(o)} onChange={(e) => toggle(pv, o, e.target.checked)} />
+                    {o}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Editor del flujo de un formato o de un flujo publicable: qué datos se piden, a quién se envía y
  * en qué orden, y bajo qué condiciones se suma cada persona. Equivale a dibujar el BPMN, pero solo
  * con lo que el motor sabe ejecutar; el diagrama se genera a partir de esto. Los pasos se leen como oraciones.
  */
 export function FlowEditor({ value, onChange }: { value: Flow; onChange: (f: Flow) => void }) {
-  const setVars = (variables: FlowVariable[]) => onChange({ ...value, variables });
+  const setVars = (variables: FlowVariable[]) => onChange({ ...value, variables: pruneDependencies(variables) });
   const setSteps = (steps: FlowStep[]) => onChange({ ...value, steps });
   const derived = value.derived ?? [];
   const setDerived = (next: DerivedVariable[]) => onChange({ ...value, derived: next.length ? next : undefined });
@@ -149,6 +205,7 @@ export function FlowEditor({ value, onChange }: { value: Flow; onChange: (f: Flo
                   }
                 />
               ) : null}
+              {v.type === "select" ? <DependsOnEditor variable={v} all={value.variables} onChange={(nv) => setVars(value.variables.map((x, j) => (j === i ? nv : x)))} /> : null}
             </li>
           ))}
         </ul>
