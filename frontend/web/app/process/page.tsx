@@ -511,7 +511,7 @@ function ProcessProgress({
     steps.findIndex((s) => s.state === "current"),
   );
   return (
-    <nav aria-label="Preparar el proceso" className="rounded-2xl border border-border bg-muted/50 px-3 py-5 sm:px-8 sm:py-6">
+    <nav aria-label="Preparar el proceso" className="rounded-2xl border border-border bg-muted/50 px-3 py-3 sm:px-8 sm:py-4">
       <ol className="flex">
         {steps.map((step, i) => {
           const Icon = icons[i] ?? ListChecks;
@@ -521,15 +521,15 @@ function ProcessProgress({
               <span
                 aria-hidden
                 className={cn(
-                  "flex h-14 items-center justify-center transition-colors",
+                  "flex h-8 items-center justify-center transition-colors",
                   reached ? "text-primary" : "text-muted-foreground/70",
                 )}
               >
-                <Icon className="size-11 sm:size-12" strokeWidth={1.4} />
+                <Icon className="size-7 sm:size-8" strokeWidth={1.5} />
               </span>
               <span
                 className={cn(
-                  "flex items-center justify-center gap-1 text-balance text-center text-sm leading-tight",
+                  "flex items-center justify-center gap-1 text-balance text-center text-[13px] leading-tight",
                   reached ? "font-semibold text-foreground" : "text-muted-foreground",
                 )}
               >
@@ -539,7 +539,7 @@ function ProcessProgress({
               <span className="sr-only">{`, ${stateText[step.state].toLowerCase()}`}</span>
             </>
           );
-          const column = "group mx-auto flex min-h-14 w-full max-w-48 flex-col items-center gap-2.5 rounded-xl px-1 py-1";
+          const column = "group mx-auto flex min-h-11 w-full max-w-44 flex-col items-center gap-1.5 rounded-xl px-1 py-1";
           return (
             <li key={step.id} className="relative flex-1" aria-current={step.state === "current" ? "step" : undefined}>
               {step.href ? (
@@ -557,7 +557,7 @@ function ProcessProgress({
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute left-[calc(50%+2.25rem)] top-6 h-1.5 w-[calc(100%-4.5rem)] -translate-y-1/2 rounded-full sm:left-[calc(50%+2.75rem)] sm:top-7 sm:w-[calc(100%-5.5rem)]",
+                    "pointer-events-none absolute left-[calc(50%+1.75rem)] top-3.5 h-1 w-[calc(100%-3.5rem)] -translate-y-1/2 rounded-full sm:left-[calc(50%+2rem)] sm:top-4 sm:w-[calc(100%-4rem)]",
                     i < currentIndex ? "bg-foreground" : "bg-foreground/25",
                   )}
                 />

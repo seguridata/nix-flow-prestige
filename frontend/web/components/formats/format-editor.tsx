@@ -582,7 +582,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
 
   return (
     <div className="flex flex-col gap-6">
-      <WizardSteps steps={wizardSteps} current={current} onSelect={go} ariaLabel="Pasos del formato" className="rounded-2xl border border-border bg-muted/50 px-4 py-5 sm:px-8 sm:py-6" />
+      <WizardSteps steps={wizardSteps} current={current} onSelect={go} ariaLabel="Pasos del formato" className="rounded-2xl border border-border bg-muted/50 px-4 py-3 sm:px-8 sm:py-4" />
 
       {locked ? (
         <p role="status" className="rounded-md border border-border bg-muted/50 p-3 text-sm">

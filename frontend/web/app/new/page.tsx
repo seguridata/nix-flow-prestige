@@ -272,7 +272,7 @@ function NewSignatureRequest() {
 
       <WizardSteps
         ariaLabel="Pasos para enviar"
-        className="mb-8 rounded-2xl border border-border bg-muted/50 px-4 py-5 sm:px-8 sm:py-6"
+        className="mb-8 rounded-2xl border border-border bg-muted/50 px-4 py-3 sm:px-8 sm:py-4"
         current={step}
         onSelect={(index) => {
           // Atrás se puede siempre; adelante solo con «Continuar», que valida el paso actual.

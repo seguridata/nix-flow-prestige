@@ -70,20 +70,20 @@ export function WizardSteps({
                 disabled={!!s.blocked && !isCurrent}
                 onClick={() => onSelect(i)}
                 title={s.blocked}
-                className="group mx-auto flex min-h-14 w-full max-w-44 flex-col items-center gap-2.5 rounded-xl px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
+                className="group mx-auto flex min-h-11 w-full max-w-40 flex-col items-center gap-1.5 rounded-xl px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "flex h-14 items-center justify-center transition-colors",
+                    "flex h-8 items-center justify-center transition-colors",
                     reached ? "text-primary" : "text-muted-foreground/70 group-enabled:group-hover:text-muted-foreground",
                   )}
                 >
-                  {Icon ? <Icon className="size-12" strokeWidth={1.4} /> : <span className="font-mono text-3xl font-semibold">{i + 1}</span>}
+                  {Icon ? <Icon className="size-8" strokeWidth={1.5} /> : <span className="font-mono text-xl font-semibold">{i + 1}</span>}
                 </span>
                 <span
                   className={cn(
-                    "flex items-center justify-center gap-1 text-balance text-center text-sm leading-tight",
+                    "flex items-center justify-center gap-1 text-balance text-center text-[13px] leading-tight",
                     reached ? "font-semibold text-foreground" : "text-muted-foreground",
                   )}
                 >
@@ -100,7 +100,7 @@ export function WizardSteps({
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute left-[calc(50%+2.5rem)] top-7 h-1.5 w-[calc(100%-5rem)] -translate-y-1/2 rounded-full",
+                    "pointer-events-none absolute left-[calc(50%+2rem)] top-4 h-1 w-[calc(100%-4rem)] -translate-y-1/2 rounded-full",
                     i < current ? "bg-foreground" : "bg-foreground/25",
                   )}
                 />
