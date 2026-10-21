@@ -47,7 +47,7 @@ function NuevoFormatoContent() {
       ) : flowKey && selectedFlow.isLoading ? <p role="status">Preparando el flujo publicado…</p>
       : flowKey && !seed ? <div role="alert" className="max-w-xl space-y-4"><p>Este flujo no está publicado o ya no está disponible. Revísalo antes de conectarlo a un formato.</p><Button asChild variant="outline"><Link href={`/process?process=${encodeURIComponent(flowKey)}` as never}>Revisar proceso</Link></Button></div>
       : mode ? (
-        <FormatEditor mode={mode} proposal={seed?.flow ? { name: seed.name, description: seed.description, flow: seed.flow, flowKey: seed.key, flowVersion: seed.version } : undefined} />
+        <div className="max-w-5xl"><FormatEditor mode={mode} proposal={seed?.flow ? { name: seed.name, description: seed.description, flow: seed.flow, flowKey: seed.key, flowVersion: seed.version } : undefined} /></div>
       ) : (
         <section aria-labelledby="nuevo-tipo" className="max-w-3xl">
           <h2 id="nuevo-tipo" className="text-lg font-semibold">

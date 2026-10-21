@@ -26,13 +26,13 @@ export default function EditarFormatoPage({ params }: { params: Promise<{ id: st
       {!isAdmin ? (
         <p className="max-w-md text-sm text-muted-foreground">Solo el administrador puede editar formatos.</p>
       ) : format.isLoading ? (
-        <Skeleton className="h-96 max-w-2xl rounded-lg" />
+        <Skeleton className="h-96 max-w-5xl rounded-lg" />
       ) : format.isError || !format.data ? (
         <p role="alert" className="text-sm">
           No se encontró el formato.
         </p>
       ) : (
-        <FormatEditor key={format.data.id} initial={format.data} />
+        <div className="max-w-5xl"><FormatEditor key={format.data.id} initial={format.data} /></div>
       )}
     </AppShell>
   );
