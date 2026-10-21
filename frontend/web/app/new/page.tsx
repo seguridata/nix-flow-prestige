@@ -6,12 +6,11 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
-import { Check, CheckCircle2, CircleDashed, ClipboardCheck, FilePenLine, FileText, Fingerprint, KeyRound, PenTool, Plus, ShieldCheck, SlidersHorizontal, Trash2, Upload } from "lucide-react";
+import { Check, CheckCircle2, CircleDashed, FileText, Fingerprint, KeyRound, PenTool, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
-import { WizardSteps } from "@/components/ui/wizard-steps";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -56,7 +55,6 @@ const METHOD_ICONS = {
 } as const;
 
 const STEPS = ["Documento", "Firmantes", "Opciones", "Revisar"] as const;
-const STEP_ICONS = [FileText, FilePenLine, SlidersHorizontal, ClipboardCheck];
 
 export default function NewSignatureRequestPage() {
   return (
@@ -270,22 +268,28 @@ function NewSignatureRequest() {
         description="Cuatro pasos: el documento, quién firma, cómo y una última revisión."
       />
 
-      <WizardSteps
-        ariaLabel="Pasos para enviar"
-        className="mb-8 rounded-2xl border border-border bg-muted/50 px-4 py-3 sm:px-8 sm:py-4"
-        current={step}
-        onSelect={(index) => {
-          // Atrás se puede siempre; adelante solo con «Continuar», que valida el paso actual.
-          if (index < step) setStep(index);
-        }}
-        steps={STEPS.map((label, index) => ({
-          id: label,
-          label,
-          icon: STEP_ICONS[index],
-          done: index < step,
-          blocked: index > step ? "Completa el paso actual para continuar." : undefined,
-        }))}
-      />
+      <div className="mx-auto mb-10 max-w-2xl">
+        <ol aria-label="Pasos para enviar" className="flex items-center gap-3">
+          {STEPS.map((label, index) => (
+            <li key={label} className="flex flex-1 items-center gap-3 last:flex-none" aria-current={index === step ? "step" : undefined}>
+              <span
+                aria-hidden
+                className={cn(
+                  "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                  index <= step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                )}
+              >
+                {index + 1}
+              </span>
+              <span className={cn("text-sm font-medium", index === step ? "text-foreground" : "text-muted-foreground")}>
+                {label}
+                {index < step ? <span className="sr-only"> (completado)</span> : null}
+              </span>
+              {index < STEPS.length - 1 ? <span aria-hidden className="mx-1 h-px flex-1 bg-border" /> : null}
+            </li>
+          ))}
+        </ol>
+      </div>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <form
