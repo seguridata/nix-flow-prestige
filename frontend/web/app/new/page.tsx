@@ -574,9 +574,9 @@ function NewSignatureRequest() {
 
         {step < last ? (
           <aside aria-label="Resumen del envío" className="hidden lg:block">
-            <div className="sticky top-20 rounded-lg border border-border bg-background p-4">
-              <h2 className="mb-3 text-base font-semibold">Resumen</h2>
-              <SummaryList items={summary} />
+            <div className="sticky top-20 rounded-2xl bg-secondary p-6 text-secondary-foreground">
+              <h2 className="mb-4 text-lg font-semibold">Resumen</h2>
+              <SummaryList items={summary} dark />
             </div>
           </aside>
         ) : (
@@ -597,17 +597,28 @@ interface SummaryItem {
 }
 
 /** Lista de lo que se enviará. Cada línea dice si está lista con icono y texto, no solo con color. */
-function SummaryList({ items, onEdit, editable = false }: { items: SummaryItem[]; onEdit?: (step: number) => void; editable?: boolean }) {
+function SummaryList({
+  items,
+  onEdit,
+  editable = false,
+  dark = false,
+}: {
+  items: SummaryItem[];
+  onEdit?: (step: number) => void;
+  editable?: boolean;
+  /** Sobre la tarjeta carbón del resumen lateral. */
+  dark?: boolean;
+}) {
   return (
-    <dl className="divide-y divide-border rounded-lg border border-border bg-background">
+    <dl className={cn(dark ? "divide-y divide-white/15" : "divide-y divide-border rounded-lg border border-border bg-background")}>
       {items.map((item) => (
-        <div key={item.label} className="flex items-start justify-between gap-3 px-4 py-3">
+        <div key={item.label} className={cn("flex items-start justify-between gap-3 py-3", dark ? "first:pt-0 last:pb-0" : "px-4")}>
           <div className="min-w-0">
-            <dt className="text-sm text-muted-foreground">{item.label}</dt>
-            <dd className="mt-0.5 text-sm font-medium break-words">{item.value}</dd>
+            <dt className={cn("text-sm", dark ? "text-white/60" : "text-muted-foreground")}>{item.label}</dt>
+            <dd className={cn("mt-0.5 text-sm font-medium break-words", dark && "text-white")}>{item.value}</dd>
             {item.detail ? (
-              <dd className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-                {item.done ? <Check className="size-4" aria-hidden /> : <CircleDashed className="size-4" aria-hidden />}
+              <dd className={cn("mt-0.5 flex items-center gap-1.5 text-sm", dark ? "text-white/70" : "text-muted-foreground")}>
+                {item.done ? <Check className={cn("size-4", dark && "text-primary")} aria-hidden /> : <CircleDashed className="size-4" aria-hidden />}
                 {item.detail}
               </dd>
             ) : null}
