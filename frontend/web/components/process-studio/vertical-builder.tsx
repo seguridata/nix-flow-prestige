@@ -448,7 +448,7 @@ export function VerticalBuilder({
                         <option value="FIRMANTE">Firmar documento</option>
                       </Select>
                     </SentenceChip>
-                    {step.role === "FIRMANTE" ? " el documento." : "."}
+                    {step.role === "FIRMANTE" ? <span className="whitespace-nowrap"> el documento.</span> : "."}
                     {step.who.type === "ask" && (
                       <span className="block text-sm leading-normal text-muted-foreground">
                         La persona se elige al enviar la solicitud.

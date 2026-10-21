@@ -23,21 +23,21 @@ export function SentenceRow({
   className?: string;
 }) {
   return (
-    <li className={cn("flex flex-wrap items-start gap-x-4 gap-y-2 rounded-2xl border border-border bg-muted/60 p-4 sm:flex-nowrap sm:p-5", className)}>
+    <li className={cn("flex flex-wrap items-start gap-x-4 gap-y-2 rounded-2xl border border-border bg-muted/60 p-3.5 sm:flex-nowrap sm:p-4", className)}>
       <span
         aria-hidden
-        className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground font-mono text-sm text-background"
+        className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground font-mono text-xs text-background"
       >
         {n}
       </span>
-      <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] text-base leading-[2.25] text-foreground sm:basis-auto sm:text-lg">{children}</div>
+      <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] text-sm leading-[2.3] text-foreground sm:basis-auto sm:text-[15px]">{children}</div>
       {actions ? <div className="flex w-full shrink-0 items-center justify-end gap-1 sm:w-auto">{actions}</div> : null}
     </li>
   );
 }
 
 const chipClass =
-  "mx-0.5 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border border-b-2 border-b-foreground bg-background px-3 py-0.5 align-baseline font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring";
+  "mx-0.5 inline-flex min-h-7 items-center gap-1 rounded-md border border-border border-b-2 border-b-foreground bg-background px-2.5 py-0 align-baseline text-[13px] font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Recuadro editable. Sin `children` o con `readOnly` es solo texto con el mismo aspecto, sin caret. */
 export function SentenceChip({
@@ -58,7 +58,7 @@ export function SentenceChip({
   const [open, setOpen] = React.useState(false);
   if (readOnly || !children) {
     return (
-      <span className="mx-0.5 inline-flex min-h-9 items-center rounded-lg bg-background/70 px-3 py-0.5 align-baseline font-semibold">
+      <span className="mx-0.5 inline-flex min-h-7 items-center rounded-md bg-background/70 px-2.5 py-0 align-baseline text-[13px] font-semibold">
         {label}
       </span>
     );
@@ -67,7 +67,7 @@ export function SentenceChip({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger className={chipClass} aria-label={ariaLabel ?? `${title}: ${typeof label === "string" ? label : "cambiar"}`}>
         {label}
-        <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDown aria-hidden className="size-3 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
         align="start"
