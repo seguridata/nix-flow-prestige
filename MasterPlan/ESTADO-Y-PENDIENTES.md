@@ -62,6 +62,17 @@
 - [x] Supabase Storage probado de punta a punta con el cliente S3 del BFF (path-style, `us-east-1`, endpoint `https://<ref>.supabase.co/storage/v1/s3`): HeadBucket, escritura, lectura con contenido idéntico, listado y borrado en el bucket `prestige-docs`. Latencia desde esta máquina ~400 a 550 ms por operación; el chequeo de salud del BFF (`HeadBucket` con límite de 2 s) debería ir holgado desde el servidor, que está en la misma región (no medido). Llave y configuración en `backend/bff/.env.supabase`, ignorado por Git.
 - Falta: formato y tablas de gasto (`seed:example-gastos` necesita el BFF completo con claves de cifrado y de almacenamiento), la matriz de 62 responsables y las 9 reglas (se aplican contra el BFF ya corriendo, y la matriz hay que importarla o exportarla del sandbox); dos dominios con HTTPS (API y Keycloak). Los usuarios de Keycloak del servidor también hay que provisionarlos allí.
 
+### Rediseño de la interfaz (21 oct)
+- [x] **Navegación** agrupada por tarea (Mi trabajo, Documentos, Personas, Configuración), acción principal «Enviar documento», encabezado sólido y componentes comunes (PageHeader, Select, Textarea, Field, EmptyState).
+- [x] **Pantallas rediseñadas:** Inicio con cola de acción, Por firmar y Enviados con filtros, Mis documentos en lista, Altas de identidad, Operación, Conexiones, portal del firmante, firma interna, evidencia y login. Los iconos van sin figura de fondo (regla del dueño).
+- [x] **Steppers** con icono desnudo y línea fina (asistente de formatos y Procesos); Enviar documento conserva el original centrado, con resumen lateral en tarjeta carbón.
+- [x] **El proceso como frase** (propuesta C): pasos de Procesos, de formatos, condiciones de tablas de consulta y firmantes de Enviar se leen como oraciones con recuadros editables y panel de ruta en carbón. Se quitó el arrastre de pasos en el editor de formatos (ahora subir y bajar).
+- [x] **Formatos como asistente por pasos** con revisión final; **tabla de consulta** con pestañas y rejilla acotada; **Procesos** en lenguaje llano con el diagrama BPMN plegado y opcional.
+- [x] **Panel de firma** con visor de la solicitud y de cada adjunto (pestañas) y «Guardar en mis archivos» (descarga). Los adjuntos se ven también en el expediente.
+- [x] **Cotizaciones: mínimo 1** en el formato «Solicitud de gastos (Adquisiciones)», en Supabase (producción) y en el sandbox local; el editor de formatos ya permite definir por anexo si es obligatorio, el mínimo y el máximo. Los nombres de paso del proceso aún dicen «≥3 cotizaciones» (pendiente de decidir si cambian).
+- Frontend: 283/283 pruebas y tsc limpio al cierre. Falta revisión visual del asistente de formato y de «Probar una consulta» en móvil. El portal del firmante externo (`/firmar/[token]`) todavía no muestra adjuntos (el endpoint de adjuntos exige sesión).
+- Operación local: la VM de WSL se apaga si no queda una sesión de `wsl` abierta; lanzar `bun run dev` como sesión larga y no cerrarla. Si quedan `node` huérfanos de Windows, `prisma generate` falla (EPERM) hasta detenerlos.
+
 ### Retirado el 17 oct
 - [x] **Collector OpenTelemetry del sandbox** (servicio de compose y `otel-collector.yaml`): no recibía tráfico ni había destino donde guardar datos. El SDK del BFF sigue apagado por defecto y el script `verify-tenant-otlp.ts` se conserva. Se retoma cuando se elija backend en staging.
 
