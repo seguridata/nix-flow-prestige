@@ -125,9 +125,9 @@ describe('armado del ejemplo', () => {
     expect(specs[0]).toEqual({
       key: 'cotizaciones',
       label: 'Cotizaciones del proveedor',
-      help: 'Adjunta al menos 3 cotizaciones de proveedores distintos',
+      help: 'Adjunta al menos 1 cotización del proveedor',
       required: true,
-      min: 3,
+      min: 1,
       max: 6,
       accept: ['pdf', 'image', 'excel', 'word'],
       maxSizeMB: 15,

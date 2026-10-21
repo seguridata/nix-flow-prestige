@@ -120,9 +120,9 @@ export const EXAMPLE_ATTACHMENTS: AttachmentSpec[] = [
   {
     key: 'cotizaciones',
     label: 'Cotizaciones del proveedor',
-    help: 'Adjunta al menos 3 cotizaciones de proveedores distintos',
+    help: 'Adjunta al menos 1 cotización del proveedor',
     required: true,
-    min: 3,
+    min: 1,
     max: 6,
     accept: ['pdf', 'image', 'excel', 'word'],
     maxSizeMB: 15,
@@ -153,7 +153,7 @@ export function exampleFormBody(): FormBody {
   return {
     name: FORM_NAME,
     description:
-      'Solicitud de gasto o compra. Captura el área, el tipo y concepto de gasto y el monto, adjunta al menos 3 cotizaciones y el sistema envía cada paso a quien corresponde según la matriz de responsables.',
+      'Solicitud de gasto o compra. Captura el área, el tipo y concepto de gasto y el monto, adjunta al menos 1 cotización y el sistema envía cada paso a quien corresponde según la matriz de responsables.',
     category: FORM_CATEGORY,
     flow: exampleFlow(),
     flowKey: 'adquisiciones-gastos',
