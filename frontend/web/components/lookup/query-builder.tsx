@@ -195,8 +195,8 @@ export function QueryBuilder({ name, query, onChange, tables, sources, fixedOnly
           </ul>
           <Button
             type="button"
-            variant="link"
-            className="text-sm"
+            variant="outline"
+            size="sm"
             disabled={!table}
             onClick={() => onChange({ ...query, match: [...query.match, newCondition(columns[0], useVars ? sources : [])] })}
           >

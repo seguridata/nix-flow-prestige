@@ -36,14 +36,13 @@ export function TestPanel({ table }: { table: LookupTable }) {
   const summary: LookupTableSummary[] = [table];
 
   return (
-    <section aria-labelledby={`${uid}-h`} className="space-y-3 rounded-lg border border-border p-4">
-      <div>
+    <section aria-labelledby={`${uid}-h`} className="max-w-4xl space-y-4">
+      <div className="space-y-1">
         <h2 id={`${uid}-h`} className="flex items-center gap-2 text-base font-semibold">
-          <FlaskConical className="size-4" aria-hidden /> Probar consulta
+          <FlaskConical className="size-4" aria-hidden /> Probar una consulta
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Elige las condiciones con valores de ejemplo, como si fueran los datos de una solicitud. Verás qué filas coinciden, cuál gana y por qué las demás no.
-        </p>
+        <p className="text-sm text-muted-foreground">Elige condiciones con valores de ejemplo, como si fueran los datos de una solicitud.</p>
+        <p className="text-sm text-muted-foreground">Verás qué filas coinciden, cuál gana y por qué las demás no.</p>
       </div>
 
       <QueryBuilder
@@ -59,7 +58,7 @@ export function TestPanel({ table }: { table: LookupTable }) {
         }}
       />
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" disabled={problems.length > 0 || run.isPending} onClick={() => run.mutate()}>
+        <Button type="button" className="min-w-28" disabled={problems.length > 0 || run.isPending} onClick={() => run.mutate()}>
           {run.isPending ? "Probando…" : "Probar"}
         </Button>
         {problems.length > 0 && query.match.length > 0 ? (
