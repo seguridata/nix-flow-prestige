@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
 import { bpmnToFlow } from './bpmn-to-flow';
-import { DerivedMissError, castCell, deriveValues, flowToBpmn, missingForConditions, publicFlow, publicWho, resolveFlow, validateFlow } from './flow';
+import { DerivedMissError, castCell, deriveValues, flowToBpmn, missingForConditions, optionsFor, publicFlow, publicWho, resolveFlow, validateFlow } from './flow';
 import type { Flow } from './flow.types';
 
 /** Formato de vacaciones: el director solo participa si piden más de 5 días. */
@@ -383,5 +383,39 @@ describe('publicFlow: lo que ve quien llena el formato', () => {
     expect(publicFlow({ steps: 'x' })).toEqual({ steps: 'x' });
     expect(publicWho({ type: 'ask', prompt: 'p' })).toEqual({ type: 'ask', prompt: 'p' });
     expect(publicWho(lookupWho() as never)).toEqual({ type: 'lookup', prompt: '¿Quién autoriza?' });
+  });
+});
+
+describe('listas dependientes (dependsOn)', () => {
+  const tipo = { key: 'tipo', label: 'Tipo', type: 'select' as const, required: true, options: ['A', 'B'] };
+  const concepto = {
+    key: 'concepto',
+    label: 'Concepto',
+    type: 'select' as const,
+    required: true,
+    options: ['a1', 'a2', 'b1'],
+    dependsOn: { variable: 'tipo', options: { A: ['a1', 'a2'], B: ['b1'] } },
+  };
+  const flow = (variables: unknown[]) => ({ ...vacaciones, variables, steps: [vacaciones.steps[0]!] });
+
+  it('acepta una dependencia coherente y ofrece solo las opciones del valor elegido', () => {
+    expect(validateFlow(flow([tipo, concepto]))).toEqual([]);
+    expect(optionsFor(concepto, { tipo: 'A' })).toEqual(['a1', 'a2']);
+    expect(optionsFor(concepto, { tipo: 'B' })).toEqual(['b1']);
+    expect(optionsFor(concepto, {})).toEqual([]);
+    expect(optionsFor(concepto, { tipo: 'C' })).toEqual([]);
+    expect(optionsFor(tipo, {})).toEqual(['A', 'B']);
+  });
+
+  it.each([
+    ['el padre no existe', [concepto], 'depende de «tipo»'],
+    ['el padre no es un select', [{ ...tipo, type: 'text' as const, options: undefined }, concepto], 'depende de «tipo»'],
+    ['clave que no es opción del padre', [tipo, { ...concepto, dependsOn: { variable: 'tipo', options: { Z: ['a1'] } } }], '«Z» no es una opción'],
+    ['opción que no está en la lista del hijo', [tipo, { ...concepto, dependsOn: { variable: 'tipo', options: { A: ['zz'] } } }], 'deben ser opciones de la lista'],
+    ['depende de sí misma', [{ ...concepto, dependsOn: { variable: 'concepto', options: {} } }], 'de sí misma'],
+    ['cadena de dependientes', [tipo, concepto, { ...concepto, key: 'otro', dependsOn: { variable: 'concepto', options: {} } }], 'de sí misma ni de otra'],
+    ['forma inválida', [tipo, { ...concepto, dependsOn: 'x' }], 'la dependencia debe indicar'],
+  ])('rechaza: %s', (_n, variables, msg) => {
+    expect(validateFlow(flow(variables)).join('|')).toContain(msg);
   });
 });

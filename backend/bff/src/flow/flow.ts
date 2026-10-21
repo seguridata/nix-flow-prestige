@@ -116,6 +116,43 @@ export function flowQueries(flow: Flow): { where: string; query: LookupQuery; co
 /** Claves de las tablas que cita el flujo, sin repetir. */
 export const flowTableKeys = (flow: Flow): string[] => [...new Set(flowQueries(flow).map((q) => q.query.table))];
 
+/** Opciones que corresponden a `v` según el valor ya capturado de la variable de la que depende (sin dependencia: todas). */
+export function optionsFor(v: FlowVariable, values: Readonly<Record<string, string | number | undefined>>): string[] {
+  if (!v.dependsOn) return v.options ?? [];
+  const parent = values[v.dependsOn.variable];
+  return parent === undefined || parent === '' ? [] : (v.dependsOn.options[String(parent)] ?? []);
+}
+
+/** Valida las listas dependientes: el padre es un `select`, las claves son sus opciones y las opciones del hijo salen de su lista. */
+export function validateDependsOn(variables: readonly FlowVariable[]): string[] {
+  const errors: string[] = [];
+  const byKey = new Map(variables.map((v) => [v.key, v]));
+  for (const v of variables) {
+    const d = (v as { dependsOn?: unknown }).dependsOn;
+    if (d === undefined) continue;
+    const at = `Variable «${v.key}»`;
+    if (!isObj(d) || typeof d.variable !== 'string' || !isObj(d.options)) {
+      errors.push(`${at}: la dependencia debe indicar la variable y las opciones por valor`);
+      continue;
+    }
+    const parent = byKey.get(d.variable);
+    if (v.type !== 'select') errors.push(`${at}: solo una lista de selección puede depender de otra`);
+    else if (!parent || parent.type !== 'select') errors.push(`${at}: depende de «${d.variable}», que debe ser una lista de selección`);
+    else if (parent.key === v.key || parent.dependsOn) errors.push(`${at}: no puede depender de sí misma ni de otra lista dependiente`);
+    else {
+      const own = new Set(v.options ?? []);
+      const parentOpts = new Set(parent.options ?? []);
+      for (const [value, list] of Object.entries(d.options)) {
+        if (!parentOpts.has(value)) errors.push(`${at}: «${value}» no es una opción de «${parent.key}»`);
+        else if (!Array.isArray(list) || list.some((o) => typeof o !== 'string' || !own.has(o))) {
+          errors.push(`${at}: las opciones de «${value}» deben ser opciones de la lista`);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 /** Valida la forma y la coherencia de un flujo. Devuelve los errores en español (vacío = válido). */
 export function validateFlow(input: unknown): string[] {
   const errors: string[] = [];
@@ -152,6 +189,7 @@ export function validateFlow(input: unknown): string[] {
       }
       vars.set(key, v as unknown as FlowVariable);
     });
+    errors.push(...validateDependsOn(variables.filter(isObj) as unknown as FlowVariable[]));
   }
 
   // Variables derivadas de una tabla (ADR-008 §5): se calculan ANTES de decidir qué pasos aplican, así que pueden usarse en `when`.
