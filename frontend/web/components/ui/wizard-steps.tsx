@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CircleDashed, Lock, MapPin } from "lucide-react";
+import { Check, Lock, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/libs/utils";
 
@@ -8,6 +8,8 @@ export interface WizardStep {
   id: string;
   label: string;
   description?: string;
+  /** Icono grande del paso (lucide). Sin icono se muestra el número. */
+  icon?: LucideIcon;
   /** El paso ya tiene lo necesario. */
   done: boolean;
   /** Motivo (en texto) por el que todavía no se puede entrar a este paso. */
@@ -15,25 +17,29 @@ export interface WizardStep {
 }
 
 /**
- * Indicador de avance de un asistente por pasos. Escritorio: lista horizontal con círculo numerado o palomita,
- * nombre y estado en texto (Completo / Actual / Pendiente) además del icono y el color. Móvil: «Paso 2 de 5 · Nombre»
- * con barra de progreso. Los botones miden al menos 44px.
+ * Indicador de avance de un asistente por pasos.
+ * Escritorio: un icono grande por paso unido por líneas gruesas (negra el tramo ya recorrido, gris el que falta);
+ * verde el paso actual y los completos (con palomita), gris los pendientes; el nombre va en negrita solo si el paso
+ * está completo o es el actual. El estado también va en texto para lectores de pantalla (nunca solo color).
+ * Móvil: «Paso 2 de 5 · Nombre» con barra de progreso.
  */
 export function WizardSteps({
   steps,
   current,
   onSelect,
+  ariaLabel = "Pasos",
   className,
 }: {
   steps: WizardStep[];
   current: number;
   onSelect: (index: number) => void;
+  ariaLabel?: string;
   className?: string;
 }) {
   const active = steps[current];
   const doneCount = steps.filter((s) => s.done).length;
   return (
-    <nav aria-label="Pasos del formato" className={className}>
+    <nav aria-label={ariaLabel} className={className}>
       <div className="sm:hidden">
         <p className="text-sm font-medium" aria-live="polite">
           Paso {current + 1} de {steps.length} <span className="text-muted-foreground">·</span> {active?.label}
@@ -51,41 +57,57 @@ export function WizardSteps({
         </div>
       </div>
 
-      <ol className="hidden items-stretch gap-2 sm:flex">
+      <ol className="hidden sm:flex">
         {steps.map((s, i) => {
           const isCurrent = i === current;
-          const state = isCurrent ? "Actual" : s.done ? "Completo" : "Pendiente";
-          const StateIcon = isCurrent ? MapPin : s.done ? Check : s.blocked ? Lock : CircleDashed;
+          const reached = isCurrent || s.done;
+          const Icon = s.icon;
+          const state = isCurrent ? "paso actual" : s.done ? "completo" : "pendiente";
           return (
-            <li key={s.id} className="min-w-0 flex-1" aria-current={isCurrent ? "step" : undefined}>
+            <li key={s.id} className="relative flex-1" aria-current={isCurrent ? "step" : undefined}>
               <button
                 type="button"
                 disabled={!!s.blocked && !isCurrent}
                 onClick={() => onSelect(i)}
                 title={s.blocked}
-                className={cn(
-                  "flex min-h-14 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
-                  isCurrent ? "border-foreground bg-background shadow-elevated" : "border-transparent bg-muted hover:bg-muted/70",
-                )}
+                className="group mx-auto flex min-h-14 w-full max-w-44 flex-col items-center gap-2.5 rounded-xl px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-xs",
-                    s.done && !isCurrent ? "bg-primary text-primary-foreground" : isCurrent ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
+                    "relative flex size-14 items-center justify-center rounded-2xl transition-colors",
+                    reached ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-enabled:group-hover:bg-muted/70",
+                    isCurrent && "ring-4 ring-primary/30",
                   )}
                 >
-                  {s.done && !isCurrent ? <Check className="size-4" /> : i + 1}
+                  {Icon ? <Icon className="size-7" strokeWidth={1.75} /> : <span className="font-mono text-lg font-semibold">{i + 1}</span>}
+                  {s.done && !isCurrent ? (
+                    <span className="absolute -bottom-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background ring-2 ring-background">
+                      <Check className="size-3" strokeWidth={3} />
+                    </span>
+                  ) : s.blocked && !isCurrent ? (
+                    <span className="absolute -bottom-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-background text-muted-foreground ring-2 ring-muted">
+                      <Lock className="size-3" />
+                    </span>
+                  ) : null}
                 </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{s.label}</span>
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <StateIcon className="size-3" aria-hidden />
-                    {state}
-                  </span>
+                <span className={cn("text-balance text-center text-sm leading-tight", reached ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                  {s.label}
                 </span>
-                <span className="sr-only">{s.blocked ? `. ${s.blocked}` : s.description ? `. ${s.description}` : ""}</span>
+                <span className="sr-only">
+                  {`, ${state}`}
+                  {s.blocked ? `. ${s.blocked}` : s.description ? `. ${s.description}` : ""}
+                </span>
               </button>
+              {i < steps.length - 1 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute left-[calc(50%+2.75rem)] top-7 h-1.5 w-[calc(100%-5.5rem)] -translate-y-1/2 rounded-full",
+                    i < current ? "bg-foreground" : "bg-foreground/25",
+                  )}
+                />
+              ) : null}
             </li>
           );
         })}

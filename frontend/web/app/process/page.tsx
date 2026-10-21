@@ -11,8 +11,11 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  ClipboardCheck,
   Download,
+  FileText,
   History,
+  ListChecks,
   MoreHorizontal,
   PencilLine,
   Plus,
@@ -491,81 +494,74 @@ function NewProcess({
 
 type StepState = "done" | "current" | "pending";
 
-/** Avance real del proceso: paso completado, actual y pendiente, con texto además de icono. */
+/** Avance real del proceso: icono grande por paso unido por líneas (negra lo recorrido, gris lo que falta), con el estado también en texto. */
 function ProcessProgress({
   steps,
 }: {
   steps: { id: string; label: string; state: StepState; href?: string; onNavigate?: (e: React.MouseEvent) => void }[];
 }) {
+  const icons = [ListChecks, ClipboardCheck, FileText];
   const stateText: Record<StepState, string> = {
     done: "Completado",
     current: "Paso actual",
     pending: "Pendiente",
   };
+  const currentIndex = Math.max(
+    0,
+    steps.findIndex((s) => s.state === "current"),
+  );
   return (
-    <nav aria-label="Preparar el proceso">
-      <ol className="grid gap-3 sm:grid-cols-3">
+    <nav aria-label="Preparar el proceso" className="rounded-2xl border border-border bg-muted/50 px-3 py-5 sm:px-8 sm:py-6">
+      <ol className="flex">
         {steps.map((step, i) => {
+          const Icon = icons[i] ?? ListChecks;
+          const reached = step.state !== "pending";
           const body = (
             <>
               <span
                 aria-hidden
                 className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-full font-mono text-sm font-semibold",
-                  step.state === "done" && "bg-primary text-primary-foreground",
-                  step.state === "current" &&
-                    "bg-secondary text-secondary-foreground",
-                  step.state === "pending" && "bg-muted text-muted-foreground",
+                  "relative flex size-12 items-center justify-center rounded-2xl transition-colors sm:size-14",
+                  reached ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                  step.state === "current" && "ring-4 ring-primary/30",
                 )}
               >
-                {step.state === "done" ? <Check className="size-4" /> : i + 1}
+                <Icon className="size-6 sm:size-7" strokeWidth={1.75} />
+                {step.state === "done" ? (
+                  <span className="absolute -bottom-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background ring-2 ring-background">
+                    <Check className="size-3" strokeWidth={3} />
+                  </span>
+                ) : null}
               </span>
-              <span className="min-w-0">
-                <span
-                  className={cn(
-                    "block text-sm",
-                    step.state === "pending"
-                      ? "text-muted-foreground"
-                      : "font-semibold",
-                  )}
-                >
-                  {step.label}
-                </span>
-                <span className="block text-sm text-muted-foreground">
-                  {stateText[step.state]}
-                </span>
+              <span className={cn("text-balance text-center text-sm leading-tight", reached ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                {step.label}
               </span>
+              <span className="sr-only">{`, ${stateText[step.state].toLowerCase()}`}</span>
             </>
           );
-          const box = cn(
-            "flex min-h-14 items-center gap-3 rounded-lg border px-4 py-2.5",
-            step.state === "current"
-              ? "border-foreground/40 bg-background"
-              : "border-border bg-background",
-          );
+          const column = "group mx-auto flex min-h-14 w-full max-w-48 flex-col items-center gap-2.5 rounded-xl px-1 py-1";
           return (
-            <li
-              key={step.id}
-              aria-current={step.state === "current" ? "step" : undefined}
-            >
+            <li key={step.id} className="relative flex-1" aria-current={step.state === "current" ? "step" : undefined}>
               {step.href ? (
                 <Link
                   href={step.href as never}
                   onClick={step.onNavigate}
-                  className={cn(
-                    box,
-                    "outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
+                  className={cn(column, "outline-none focus-visible:ring-2 focus-visible:ring-ring")}
                 >
                   {body}
-                  <ArrowRight
-                    className="ml-auto size-4 shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
                 </Link>
               ) : (
-                <div className={box}>{body}</div>
+                <div className={column}>{body}</div>
               )}
+              {i < steps.length - 1 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute left-[calc(50%+2.25rem)] top-6 h-1.5 w-[calc(100%-4.5rem)] -translate-y-1/2 rounded-full sm:left-[calc(50%+2.75rem)] sm:top-7 sm:w-[calc(100%-5.5rem)]",
+                    i < currentIndex ? "bg-foreground" : "bg-foreground/25",
+                  )}
+                />
+              ) : null}
             </li>
           );
         })}

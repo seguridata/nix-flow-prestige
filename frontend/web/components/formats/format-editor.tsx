@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, Crosshair, FileUp, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ClipboardCheck, Crosshair, FilePenLine, FileText, FileUp, Info, Paperclip, Save, Trash2, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { FormatAiAssistant } from "@/components/ai/format-ai-assistant";
@@ -137,21 +137,21 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
   const attachmentProblems = specProblems(specs);
   const rulesProblems = chosenMethods.length === 0 ? ["Elige al menos un método de firma."] : [];
 
-  const stepDefs: { id: string; label: string; description: string; problems: string[] }[] = isForm
+  const stepDefs: { id: string; label: string; description: string; icon: LucideIcon; problems: string[] }[] = isForm
     ? [
-        { id: "info", label: "Información", description: "Nombre, categoría y descripción.", problems: nameProblems },
-        { id: "flujo", label: "Datos y firmantes", description: "Qué se pide y quién firma.", problems: flowStepProblems },
-        { id: "anexos", label: "Anexos", description: "Archivos que se deben adjuntar.", problems: attachmentProblems },
-        { id: "reglas", label: "Reglas de firma", description: "Métodos y verificación.", problems: rulesProblems },
-        { id: "revisar", label: "Revisar y guardar", description: "Resumen antes de guardar.", problems: [] },
+        { id: "info", label: "Información", description: "Nombre, categoría y descripción.", icon: Info, problems: nameProblems },
+        { id: "flujo", label: "Firmantes", description: "Qué se pide y quién firma.", icon: FilePenLine, problems: flowStepProblems },
+        { id: "anexos", label: "Anexos", description: "Archivos que se deben adjuntar.", icon: Paperclip, problems: attachmentProblems },
+        { id: "reglas", label: "Reglas", description: "Métodos y verificación.", icon: ClipboardCheck, problems: rulesProblems },
+        { id: "revisar", label: "Revisar y guardar", description: "Resumen antes de guardar.", icon: Save, problems: [] },
       ]
     : [
-        { id: "doc", label: "Documento", description: "PDF, nombre y descripción.", problems: [...pdfProblems, ...nameProblems] },
-        { id: "flujo", label: "Datos y firmantes", description: "Qué se pide y quién firma.", problems: flowStepProblems },
-        { id: "ubicar", label: "Ubicar datos en el PDF", description: "Dónde va cada dato.", problems: [] },
-        { id: "anexos", label: "Anexos", description: "Archivos que se deben adjuntar.", problems: attachmentProblems },
-        { id: "reglas", label: "Reglas de firma", description: "Métodos y verificación.", problems: rulesProblems },
-        { id: "revisar", label: "Revisar y guardar", description: "Resumen antes de guardar.", problems: [] },
+        { id: "doc", label: "Documento", description: "PDF, nombre y descripción.", icon: FileText, problems: [...pdfProblems, ...nameProblems] },
+        { id: "flujo", label: "Firmantes", description: "Qué se pide y quién firma.", icon: FilePenLine, problems: flowStepProblems },
+        { id: "ubicar", label: "Ubicar datos", description: "Dónde va cada dato en el PDF.", icon: Crosshair, problems: [] },
+        { id: "anexos", label: "Anexos", description: "Archivos que se deben adjuntar.", icon: Paperclip, problems: attachmentProblems },
+        { id: "reglas", label: "Reglas", description: "Métodos y verificación.", icon: ClipboardCheck, problems: rulesProblems },
+        { id: "revisar", label: "Revisar y guardar", description: "Resumen antes de guardar.", icon: Save, problems: [] },
       ];
   const problems = stepDefs.flatMap((s) => s.problems);
   const last = stepDefs.length - 1;
@@ -173,6 +173,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
     id: s.id,
     label: s.label,
     description: s.description,
+    icon: s.icon,
     done: i === last ? !!saved && !dirty && problems.length === 0 : s.problems.length === 0 && (!!saved || visited.includes(i)),
     blocked: blockedReason(i),
   }));
@@ -581,7 +582,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
 
   return (
     <div className="flex flex-col gap-6">
-      <WizardSteps steps={wizardSteps} current={current} onSelect={go} />
+      <WizardSteps steps={wizardSteps} current={current} onSelect={go} ariaLabel="Pasos del formato" className="rounded-2xl border border-border bg-muted/50 px-4 py-5 sm:px-8 sm:py-6" />
 
       {locked ? (
         <p role="status" className="rounded-md border border-border bg-muted/50 p-3 text-sm">
@@ -589,12 +590,25 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
         </p>
       ) : null}
 
-      <section aria-labelledby="ed-step-title" className={cn("min-w-0 space-y-5", wide ? "" : "max-w-3xl")}>
-        <div>
-          <h2 id="ed-step-title" ref={heading} tabIndex={-1} className="text-lg font-semibold outline-none">
-            {view.title}
-          </h2>
-          <p className="mt-0.5 max-w-prose text-sm text-muted-foreground">{view.text}</p>
+      <section
+        aria-labelledby="ed-step-title"
+        className={cn("min-w-0 space-y-6 rounded-2xl border border-border bg-background p-5 shadow-subtle sm:p-8", wide ? "" : "max-w-3xl")}
+      >
+        <div className="flex items-start gap-4 border-b border-border pb-5">
+          {(() => {
+            const StepIcon = stepDefs[current]?.icon;
+            return StepIcon ? (
+              <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <StepIcon className="size-6" strokeWidth={1.75} />
+              </span>
+            ) : null;
+          })()}
+          <div className="min-w-0">
+            <h2 id="ed-step-title" ref={heading} tabIndex={-1} className="text-xl font-semibold outline-none">
+              {view.title}
+            </h2>
+            <p className="mt-1 max-w-prose text-sm text-muted-foreground">{view.text}</p>
+          </div>
         </div>
         {stepId === "revisar" ? (
           // La revisión nunca se bloquea: ahí están Publicar y Eliminar de un formato ya publicado.
