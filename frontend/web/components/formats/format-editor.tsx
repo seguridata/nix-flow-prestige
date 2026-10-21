@@ -598,8 +598,8 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
           {(() => {
             const StepIcon = stepDefs[current]?.icon;
             return StepIcon ? (
-              <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                <StepIcon className="size-6" strokeWidth={1.75} />
+              <span aria-hidden className="flex shrink-0 items-center justify-center text-primary">
+                <StepIcon className="size-10" strokeWidth={1.5} />
               </span>
             ) : null;
           })()}

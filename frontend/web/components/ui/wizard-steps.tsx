@@ -75,23 +75,20 @@ export function WizardSteps({
                 <span
                   aria-hidden
                   className={cn(
-                    "relative flex size-14 items-center justify-center rounded-2xl transition-colors",
-                    reached ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-enabled:group-hover:bg-muted/70",
-                    isCurrent && "ring-4 ring-primary/30",
+                    "flex h-14 items-center justify-center transition-colors",
+                    reached ? "text-primary" : "text-muted-foreground/70 group-enabled:group-hover:text-muted-foreground",
                   )}
                 >
-                  {Icon ? <Icon className="size-7" strokeWidth={1.75} /> : <span className="font-mono text-lg font-semibold">{i + 1}</span>}
-                  {s.done && !isCurrent ? (
-                    <span className="absolute -bottom-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background ring-2 ring-background">
-                      <Check className="size-3" strokeWidth={3} />
-                    </span>
-                  ) : s.blocked && !isCurrent ? (
-                    <span className="absolute -bottom-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-background text-muted-foreground ring-2 ring-muted">
-                      <Lock className="size-3" />
-                    </span>
-                  ) : null}
+                  {Icon ? <Icon className="size-12" strokeWidth={1.4} /> : <span className="font-mono text-3xl font-semibold">{i + 1}</span>}
                 </span>
-                <span className={cn("text-balance text-center text-sm leading-tight", reached ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                <span
+                  className={cn(
+                    "flex items-center justify-center gap-1 text-balance text-center text-sm leading-tight",
+                    reached ? "font-semibold text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {s.done && !isCurrent ? <Check aria-hidden className="size-4 shrink-0" strokeWidth={3} /> : null}
+                  {s.blocked && !isCurrent ? <Lock aria-hidden className="size-3.5 shrink-0" /> : null}
                   {s.label}
                 </span>
                 <span className="sr-only">
@@ -103,7 +100,7 @@ export function WizardSteps({
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute left-[calc(50%+2.75rem)] top-7 h-1.5 w-[calc(100%-5.5rem)] -translate-y-1/2 rounded-full",
+                    "pointer-events-none absolute left-[calc(50%+2.5rem)] top-7 h-1.5 w-[calc(100%-5rem)] -translate-y-1/2 rounded-full",
                     i < current ? "bg-foreground" : "bg-foreground/25",
                   )}
                 />

@@ -101,8 +101,8 @@ export default function EvidencePage({ params }: { params: Promise<{ id: string 
         ) : !completed || !manifest ? (
           <div className="max-w-2xl space-y-5">
             <div role="status" className="flex items-start gap-4 rounded-lg border border-border bg-muted/40 p-5">
-              <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
-                <Lock className="size-5" />
+              <span aria-hidden className="flex shrink-0 items-center justify-center text-foreground">
+                <Lock className="size-8" strokeWidth={1.5} />
               </span>
               <div className="min-w-0">
                 <h2 className="text-xl font-semibold leading-tight text-balance">

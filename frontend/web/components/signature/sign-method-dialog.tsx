@@ -157,8 +157,8 @@ export function SignMethodDialog({
                   isSelected ? "border-primary bg-accent" : "border-border hover:bg-muted",
                 )}
               >
-                <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-                  <Icon className="size-5 text-primary" strokeWidth={1.75} />
+                <span className="flex items-center justify-center">
+                  <Icon className="size-8 text-primary" strokeWidth={1.5} />
                 </span>
                 <span className="text-sm font-semibold text-foreground">{info.label}</span>
                 <span className="text-xs leading-snug text-muted-foreground">{info.description}</span>

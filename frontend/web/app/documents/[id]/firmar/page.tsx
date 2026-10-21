@@ -334,7 +334,7 @@ function Notice({
     <div className="flex flex-1 items-center justify-center px-4 py-12">
       <section role="status" className="flex max-w-md flex-col items-start gap-3">
         {icon ? (
-          <span className="flex size-12 items-center justify-center rounded-full border border-border bg-muted">{icon}</span>
+          <span className="flex items-center justify-center text-foreground [&_svg]:size-10 [&_svg]:stroke-[1.5]">{icon}</span>
         ) : null}
         <h1 className="text-balance text-xl font-semibold leading-tight">{title}</h1>
         <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>

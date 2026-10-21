@@ -305,7 +305,7 @@ function Outcome({
 }) {
   return (
     <section role="status" className="space-y-4">
-      <span className="flex size-12 items-center justify-center rounded-full border border-border bg-muted text-foreground">
+      <span className="flex items-center justify-center text-foreground [&_svg]:size-10 [&_svg]:stroke-[1.5]">
         {icon}
       </span>
       <h1 className="text-balance text-2xl font-semibold leading-tight tracking-tight">{title}</h1>
@@ -340,7 +340,7 @@ function ReviewStep({
 
       <section className="rounded-lg border border-border p-4">
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <span className="flex shrink-0 items-center justify-center text-muted-foreground">
             <FileText className="size-5" aria-hidden />
           </span>
           <div className="min-w-0">

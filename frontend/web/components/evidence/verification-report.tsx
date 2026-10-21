@@ -15,10 +15,10 @@ function StateMark({ state }: { state: CheckRow["state"] }) {
     <span
       aria-hidden
       className={cn(
-        "flex size-7 shrink-0 items-center justify-center rounded-full border",
-        state === "pass" && "border-primary bg-primary text-primary-foreground",
-        state === "fail" && "border-foreground bg-foreground text-background",
-        state === "absent" && "border-border text-muted-foreground",
+        "flex size-7 shrink-0 items-center justify-center",
+        state === "pass" && "text-primary",
+        state === "fail" && "text-foreground",
+        state === "absent" && "text-muted-foreground",
       )}
     >
       {state === "pass" ? <Check className="size-4" strokeWidth={3} /> : null}
@@ -66,13 +66,13 @@ export function VerificationReport({
         <span
           aria-hidden
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full",
-            intact && "bg-primary text-primary-foreground",
-            failed && "bg-foreground text-background",
-            verdict.kind === "checking" && "bg-muted text-muted-foreground",
+            "flex shrink-0 items-center justify-center",
+            intact && "text-primary",
+            failed && "text-foreground",
+            verdict.kind === "checking" && "text-muted-foreground",
           )}
         >
-          {intact ? <Check className="size-6" strokeWidth={3} /> : failed ? <ShieldAlert className="size-6" /> : <Info className="size-5" />}
+          {intact ? <Check className="size-9" strokeWidth={2.5} /> : failed ? <ShieldAlert className="size-9" strokeWidth={1.75} /> : <Info className="size-8" strokeWidth={1.5} />}
         </span>
         <div className="min-w-0">
           <h2 className="text-xl font-semibold leading-tight text-balance">{verdict.title}</h2>

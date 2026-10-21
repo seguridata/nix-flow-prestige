@@ -577,11 +577,11 @@ function IneSlot({
       <span
         aria-hidden
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-md",
-          loaded ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+          "flex shrink-0 items-center justify-center",
+          loaded ? "text-primary" : "text-muted-foreground",
         )}
       >
-        {loaded ? <Check className="size-5" strokeWidth={3} /> : <FileImage className="size-5" />}
+        {loaded ? <Check className="size-7" strokeWidth={2.5} /> : <FileImage className="size-7" strokeWidth={1.5} />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">INE, {label.toLowerCase()}</span>

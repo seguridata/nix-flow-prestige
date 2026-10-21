@@ -521,19 +521,19 @@ function ProcessProgress({
               <span
                 aria-hidden
                 className={cn(
-                  "relative flex size-12 items-center justify-center rounded-2xl transition-colors sm:size-14",
-                  reached ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                  step.state === "current" && "ring-4 ring-primary/30",
+                  "flex h-14 items-center justify-center transition-colors",
+                  reached ? "text-primary" : "text-muted-foreground/70",
                 )}
               >
-                <Icon className="size-6 sm:size-7" strokeWidth={1.75} />
-                {step.state === "done" ? (
-                  <span className="absolute -bottom-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background ring-2 ring-background">
-                    <Check className="size-3" strokeWidth={3} />
-                  </span>
-                ) : null}
+                <Icon className="size-11 sm:size-12" strokeWidth={1.4} />
               </span>
-              <span className={cn("text-balance text-center text-sm leading-tight", reached ? "font-semibold text-foreground" : "text-muted-foreground")}>
+              <span
+                className={cn(
+                  "flex items-center justify-center gap-1 text-balance text-center text-sm leading-tight",
+                  reached ? "font-semibold text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {step.state === "done" ? <Check aria-hidden className="size-4 shrink-0" strokeWidth={3} /> : null}
                 {step.label}
               </span>
               <span className="sr-only">{`, ${stateText[step.state].toLowerCase()}`}</span>

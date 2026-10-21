@@ -62,7 +62,7 @@ function NuevoFormatoContent() {
                   onClick={() => setMode(c.kind)}
                   className="flex h-full w-full flex-col items-start gap-2 rounded-lg border border-border bg-background p-5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span className="flex size-10 items-center justify-center rounded-md bg-muted"><c.icon className="size-5" aria-hidden /></span>
+                  <c.icon className="size-9 text-foreground" strokeWidth={1.5} aria-hidden />
                   <span className="text-base font-medium">{c.title}</span>
                   <span className="text-sm text-muted-foreground">{c.text}</span>
                 </button>
