@@ -81,7 +81,7 @@ describe("actionQueue", () => {
       broken: [{ id: "w1", workflowId: "wf", status: "FALLIDO", lastError: null }],
     });
     expect(items.map((i) => i.kind)).toEqual(["firmar", "alta", "flujo"]);
-    expect(items[0]).toMatchObject({ title: "Firmar Caso s1", href: "/documents/d-s1/firmar", cta: "Revisar y firmar" });
+    expect(items[0]).toMatchObject({ title: "Firmar Caso s1", href: "/documents/d-s1/firmar", cta: "Firmar" });
     expect(items[1]).toMatchObject({ title: "Revisar alta de Marcos Pérez", href: "/onboarding/o1" });
     expect(items[2]).toMatchObject({ href: "/operations", detail: "Revisa su estado en Operación." });
   });

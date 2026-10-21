@@ -5,17 +5,20 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, UserPlus } from "lucide-react";
+import { ChevronRight, CircleCheck, CircleX, UserPlus, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/documents/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { groupOnboarding, isClosed, nextAction, onboardingSteps, type OnboardingCaseView } from "@/libs/onboarding-flow";
+import { groupOnboarding, hasConsent, isClosed, nextAction, onboardingSteps, type OnboardingCaseView } from "@/libs/onboarding-flow";
 import { cn } from "@/libs/utils";
 import { apiClient } from "@/services/api-client";
 import { buildOnboardingCreatePayload } from "@/services/payloads";
@@ -32,46 +35,60 @@ export default function OnboardingListPage() {
   const empty = list.isSuccess && (list.data?.length ?? 0) === 0;
 
   return (
-    <AppShell
-      title="Onboarding"
-      actions={
-        <Button size="sm" onClick={() => setOpen(true)}>
-          <UserPlus /> Nueva alta
-        </Button>
-      }
-    >
+    <AppShell title="Altas de identidad">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Altas de identidad</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Antes de firmar, cada persona deja su consentimiento, su INE y una prueba de vida. RH revisa y decide si se
-            habilita; esa decisión queda en la auditoría.
-          </p>
-        </header>
+        <PageHeader
+          title="Altas de identidad"
+          description={
+            list.isLoading
+              ? "Cargando las altas…"
+              : groups.action.length > 0
+                ? `${groups.action.length === 1 ? "1 alta espera" : `${groups.action.length} altas esperan`} tu decisión. Van primero.`
+                : "Antes de firmar, cada persona deja su consentimiento, su INE y una prueba de vida. RH revisa y decide si se habilita; esa decisión queda en la auditoría."
+          }
+          actions={
+            <Button onClick={() => setOpen(true)}>
+              <UserPlus /> Nueva alta
+            </Button>
+          }
+        />
 
         {list.isLoading ? (
-          <div className="space-y-3" aria-busy>
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-20 rounded-lg" />
-            ))}
+          <div className="space-y-3" aria-busy aria-label="Cargando altas">
+            <div className="rounded-lg border-2 border-border p-5">
+              <Skeleton className="h-5 w-1/3" />
+              <Skeleton className="mt-3 h-4 w-1/2" />
+            </div>
+            <div className="divide-y divide-border rounded-lg border border-border">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-4 px-4 py-4">
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="h-6 w-24 rounded-full" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : list.isError ? (
-          <div role="alert" className="rounded-lg border border-border p-6 text-sm">
-            No se pudieron cargar las altas.{" "}
-            <Button variant="link" onClick={() => list.refetch()}>
+          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-5 text-sm">
+            <span>No se pudieron cargar las altas.</span>
+            <Button size="sm" variant="outline" onClick={() => list.refetch()}>
               Reintentar
             </Button>
           </div>
         ) : empty ? (
-          <div className="rounded-lg border border-dashed border-border px-6 py-14 text-center">
-            <p className="text-base font-medium">Todavía no hay altas</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-              Inicia una para que una persona pueda firmar con identidad verificada.
-            </p>
-            <Button className="mt-4" onClick={() => setOpen(true)}>
-              <UserPlus /> Nueva alta
-            </Button>
-          </div>
+          <EmptyState
+            icon={<UserRoundCheck />}
+            title="Todavía no hay altas"
+            description="Inicia una para que una persona pueda firmar con identidad verificada. Te guiaremos con el consentimiento, la INE y la prueba de vida."
+            action={
+              <Button onClick={() => setOpen(true)}>
+                <UserPlus /> Nueva alta
+              </Button>
+            }
+          />
         ) : (
           <div className="space-y-9">
             <Group title="Requieren tu decisión" rows={groups.action} emphasis />
@@ -92,9 +109,9 @@ function Group({ title, rows, emphasis = false }: { title: string; rows: Onboard
     <section aria-label={title}>
       <h2 className="mb-3 flex items-baseline gap-2 text-base font-semibold">
         {title}
-        <span className="text-sm font-normal text-muted-foreground">{rows.length}</span>
+        <span className="text-sm font-normal tabular-nums text-muted-foreground">{rows.length}</span>
       </h2>
-      <ul className="space-y-2">
+      <ul className={emphasis ? "space-y-3" : "divide-y divide-border overflow-hidden rounded-lg border border-border bg-background"}>
         {rows.map((row) => (
           <CaseRow key={row.id} row={row} emphasis={emphasis} />
         ))}
@@ -103,37 +120,56 @@ function Group({ title, rows, emphasis = false }: { title: string; rows: Onboard
   );
 }
 
+/** La acción siguiente como botón: «Revisar INE», «Habilitar», «Continuar captura» o «Ver alta». */
+function rowCta(row: OnboardingCaseView): string {
+  if (isClosed(row)) return "Ver alta";
+  if (nextAction(row).needsRh) return row.ineVerified ? "Habilitar" : "Revisar INE";
+  return hasConsent(row) ? "Continuar captura" : "Registrar consentimiento";
+}
+
 function CaseRow({ row, emphasis }: { row: OnboardingCaseView; emphasis: boolean }) {
   const steps = onboardingSteps(row);
   const done = steps.filter((s) => s.state === "done").length;
   const next = nextAction(row);
+  const closed = isClosed(row);
   return (
     <li>
       <Link
         href={`/onboarding/${row.id}` as Route}
         className={cn(
-          "group flex items-center gap-4 rounded-lg border bg-background px-4 py-3.5 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
-          emphasis ? "border-2 border-foreground" : "border-border",
+          "group flex flex-col gap-3 bg-background outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:gap-4",
+          emphasis ? "rounded-lg border-2 border-foreground p-4 shadow-subtle sm:p-5" : "min-h-16 px-4 py-3.5 focus-visible:ring-inset",
         )}
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-medium">{row.fullName}</p>
+          <p className={cn("truncate", emphasis ? "text-lg font-semibold" : "text-base font-medium")}>{row.fullName}</p>
           <p className="mt-0.5 truncate text-sm text-muted-foreground">
             {KIND_TEXT[row.kind] ?? row.kind} · {row.email}
           </p>
-          <p className={cn("mt-1.5 text-sm", next.needsRh ? "font-medium text-foreground" : "text-muted-foreground")}>
+          <p className={cn("mt-1.5 flex items-center gap-1.5 text-sm", next.needsRh ? "font-medium text-foreground" : "text-muted-foreground")}>
+            {row.status === "HABILITADO" ? <CircleCheck className="size-4 shrink-0" aria-hidden /> : null}
+            {row.status === "RECHAZADO" ? <CircleX className="size-4 shrink-0" aria-hidden /> : null}
             {next.sentence}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end sm:gap-2">
           <StatusBadge status={row.status} />
-          {isClosed(row) ? null : (
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {done} de {steps.length} pasos
+          {closed ? null : (
+            <span className="text-sm tabular-nums text-muted-foreground">
+              Paso {Math.min(done + 1, steps.length)} de {steps.length}
             </span>
           )}
         </div>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+        <span
+          aria-hidden
+          className={cn(
+            buttonVariants({ variant: emphasis ? "default" : "outline", size: emphasis ? "lg" : "default" }),
+            "w-full shrink-0 sm:w-auto sm:min-w-36",
+          )}
+        >
+          {rowCta(row)}
+          <ChevronRight />
+        </span>
       </Link>
     </li>
   );
@@ -183,38 +219,28 @@ function NewCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             if (ready && !create.isPending) create.mutate();
           }}
         >
-          <div>
-            <Label htmlFor="alta-tipo">Tipo</Label>
-            <select
-              id="alta-tipo"
-              className="mt-1.5 h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
-              value={form.kind}
-              onChange={(e) => setForm({ ...form, kind: e.target.value as typeof form.kind })}
-            >
+          <Field label="Tipo de persona" htmlFor="alta-tipo">
+            <Select id="alta-tipo" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as typeof form.kind })}>
               {Object.entries(KIND_TEXT).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
               ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="alta-nombre">Nombre completo</Label>
-            <Input id="alta-nombre" className="mt-1.5" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
-          </div>
-          <div>
-            <Label htmlFor="alta-correo">Correo</Label>
-            <Input id="alta-correo" className="mt-1.5" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </div>
+            </Select>
+          </Field>
+          <Field label="Nombre completo" htmlFor="alta-nombre">
+            <Input id="alta-nombre" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+          </Field>
+          <Field label="Correo" htmlFor="alta-correo">
+            <Input id="alta-correo" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="alta-curp">CURP (opcional)</Label>
-              <Input id="alta-curp" className="mt-1.5" value={form.curp} onChange={(e) => setForm({ ...form, curp: e.target.value })} />
-            </div>
-            <div>
-              <Label htmlFor="alta-rfc">RFC (opcional)</Label>
-              <Input id="alta-rfc" className="mt-1.5" value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value })} />
-            </div>
+            <Field label="CURP" htmlFor="alta-curp" optional>
+              <Input id="alta-curp" value={form.curp} onChange={(e) => setForm({ ...form, curp: e.target.value })} />
+            </Field>
+            <Field label="RFC" htmlFor="alta-rfc" optional>
+              <Input id="alta-rfc" value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value })} />
+            </Field>
           </div>
 
           <fieldset className="rounded-lg border border-border bg-muted/40 p-3">
@@ -225,7 +251,7 @@ function NewCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             <label className="mt-3 flex cursor-pointer items-start gap-3 text-sm leading-snug">
               <input
                 type="checkbox"
-                className="mt-0.5 size-5 shrink-0 accent-[var(--brand-carbon)]"
+                className="mt-0.5 size-6 shrink-0 accent-[var(--brand-carbon)]"
                 checked={consent}
                 onChange={(e) => setConsent(e.target.checked)}
               />

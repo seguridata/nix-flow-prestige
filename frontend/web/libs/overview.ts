@@ -79,7 +79,7 @@ export function actionQueue(input: {
       title: `Firmar ${r.caseTitle || r.documentTitle}`,
       detail: statusSentence(r),
       href: `/documents/${r.documentId}/firmar`,
-      cta: "Revisar y firmar",
+      cta: "Firmar",
     })),
     ...input.review.map<ActionItem>((r) => ({
       id: `alta-${r.id}`,
@@ -87,7 +87,7 @@ export function actionQueue(input: {
       title: `Revisar alta de ${r.fullName}`,
       detail: "Espera la decisión de RH.",
       href: `/onboarding/${r.id}`,
-      cta: "Revisar alta",
+      cta: "Revisar",
     })),
     ...input.broken.map<ActionItem>((r) => ({
       id: `flujo-${r.id}`,
