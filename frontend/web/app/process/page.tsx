@@ -4,23 +4,42 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Check,
   CheckCircle2,
   ChevronRight,
+  CircleAlert,
   Download,
   History,
+  MoreHorizontal,
+  PencilLine,
   Plus,
   Search,
   Trash2,
   Upload,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { BpmnStudio } from "@/components/process-studio/bpmn-studio";
 import { DmnStudio } from "@/components/bpm/dmn-studio";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { VerticalBuilder } from "@/components/process-studio/vertical-builder";
 import {
@@ -57,6 +76,57 @@ const failure = (e: unknown) =>
     e instanceof Error ? e.message : "No se pudo completar la operación.",
   );
 const path = (key: string) => `/process-definitions/${encodeURIComponent(key)}`;
+
+/** Estado de un proceso y su siguiente acción, en texto: nunca depende solo del color. */
+function processStatus(d: ProcessDefinition) {
+  if (!d.flow)
+    return {
+      badge: "Solo diagrama",
+      variant: "warning" as const,
+      Icon: CircleAlert,
+      next: "Convertir en etapas",
+    };
+  if (d.publishedVersion == null)
+    return {
+      badge: "Borrador",
+      variant: "neutral" as const,
+      Icon: PencilLine,
+      next: d.flow.steps.length ? "Revisar y publicar" : "Agregar etapas",
+    };
+  if (d.version > d.publishedVersion)
+    return {
+      badge: "Publicado, con cambios sin publicar",
+      variant: "warning" as const,
+      Icon: AlertTriangle,
+      next: "Revisar y publicar",
+    };
+  return {
+    badge: "Publicado",
+    variant: "success" as const,
+    Icon: CheckCircle2,
+    next: "Usar en un formato",
+  };
+}
+
+/** Botón «atrás» con el mismo aspecto del de PageHeader, pero con acción (confirma cambios sin guardar). */
+function BackButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mb-4 inline-flex min-h-11 w-fit items-center gap-1.5 rounded-sm text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <ArrowLeft className="size-4" aria-hidden />
+      {children}
+    </button>
+  );
+}
 
 export default function ProcessPage() {
   const cache = useQueryClient();
@@ -112,8 +182,23 @@ export default function ProcessPage() {
   );
   return (
     <AppShell title="Procesos de gastos">
-      <main className="mx-auto w-full max-w-6xl selection:bg-primary/25">
-      {!admin ? <section className="max-w-xl py-6"><h1 className="text-2xl font-semibold">Solicitudes y aprobaciones</h1><p className="mt-3 text-sm leading-relaxed text-muted-foreground">El administrador prepara los procesos y publica sus flujos. Para enviar una solicitud, elige un formato disponible: su ruta de aprobación ya está configurada.</p><Button asChild className="mt-5"><Link href="/formatos">Elegir formato<ArrowRight/></Link></Button></section> : creating ? (
+      <main className="mx-auto w-full min-w-0 max-w-6xl selection:bg-primary/25">
+        {!admin ? (
+          <>
+            <PageHeader
+              title="Solicitudes y aprobaciones"
+              description="El administrador prepara los procesos y publica sus flujos. Para enviar una solicitud, elige un formato disponible: su ruta de aprobación ya está configurada."
+              actions={
+                <Button asChild>
+                  <Link href="/formatos">
+                    Elegir formato
+                    <ArrowRight />
+                  </Link>
+                </Button>
+              }
+            />
+          </>
+        ) : creating ? (
           <NewProcess
             onCancel={() => setCreating(false)}
             onCreated={(key) => {
@@ -136,18 +221,11 @@ export default function ProcessPage() {
           />
         ) : (
           <>
-            <header className="flex flex-wrap items-start justify-between gap-5">
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight">
-                  Del gasto a la aprobación
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                  Diseña el proceso, publica su flujo y úsalo en una solicitud.
-                  Cada proceso aparece una sola vez; su historial vive dentro.
-                </p>
-              </div>
-              {admin && (
-                <div className="flex flex-wrap gap-2">
+            <PageHeader
+              title="Procesos"
+              description="Diseña el proceso, publica su flujo y úsalo en una solicitud. Cada proceso aparece una sola vez; su historial vive dentro."
+              actions={
+                <>
                   <input
                     className="hidden"
                     type="file"
@@ -159,6 +237,9 @@ export default function ProcessPage() {
                       e.target.value = "";
                     }}
                   />
+                  <Button onClick={() => setCreating(true)}>
+                    <Plus /> Crear proceso
+                  </Button>
                   <Button
                     variant="outline"
                     disabled={importPackage.isPending}
@@ -166,42 +247,13 @@ export default function ProcessPage() {
                   >
                     <Upload /> Importar
                   </Button>
-                  <Button onClick={() => setCreating(true)}>
-                    <Plus /> Crear proceso
-                  </Button>
-                </div>
-              )}
-            </header>
-            <nav
-              aria-label="Cómo funciona"
-              className="my-8 grid gap-3 border-y border-border py-5 sm:grid-cols-3"
-            >
-              {[
-                [
-                  "Diseña el proceso",
-                  "Ordena las revisiones y sus responsables.",
-                ],
-                ["Publica el flujo", "Comprueba reglas y prepara su uso."],
-                [
-                  "Crea una solicitud",
-                  "Un formato publicado aplica ese flujo.",
-                ],
-              ].map(([label, help], i) => (
-                <div key={label} className="flex items-start gap-3">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold">
-                    {i + 1}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium">{label}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{help}</p>
-                  </div>
-                </div>
-              ))}
-            </nav>
-            <div className="mb-4 flex flex-wrap items-center gap-3">
+                </>
+              }
+            />
+            <div className="mb-5 flex flex-wrap items-center gap-3">
               <label className="relative min-w-52 flex-1">
                 <Search
-                  className="absolute left-3 top-3 size-4 text-muted-foreground"
+                  className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground"
                   aria-hidden
                 />
                 <Input
@@ -212,16 +264,17 @@ export default function ProcessPage() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </label>
-              <select
-                aria-label="Filtrar procesos"
-                className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              >
-                <option value="todos">Todos</option>
-                <option value="publicados">Con flujo publicado</option>
-                <option value="borradores">Sin publicar</option>
-              </select>
+              <div className="w-full sm:w-52">
+                <Select
+                  aria-label="Filtrar procesos"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="publicados">Publicados</option>
+                  <option value="borradores">Borradores</option>
+                </Select>
+              </div>
             </div>
             {defs.isPending ? (
               <p role="status" className="py-12 text-sm text-muted-foreground">
@@ -239,62 +292,86 @@ export default function ProcessPage() {
                 </Button>
               </div>
             ) : visible.length ? (
-              <ul className="divide-y divide-border border-y border-border">
-                {visible.map((d) => (
-                  <li key={d.key}>
-                    <button
-                      className="group flex w-full items-center gap-4 px-2 py-5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-primary sm:px-4"
-                      onClick={() => setSelectedKey(d.key)}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <h2 className="font-semibold">{d.name}</h2>
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-1 text-xs",
-                              d.publishedVersion != null
-                                ? "bg-primary/15 text-foreground"
-                                : "bg-muted text-muted-foreground",
-                            )}
-                          >
+              <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-background">
+                {visible.map((d) => {
+                  const status = processStatus(d);
+                  return (
+                    <li key={d.key}>
+                      <button
+                        type="button"
+                        className="group flex min-h-20 w-full items-center gap-4 px-4 py-4 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
+                        onClick={() => setSelectedKey(d.key)}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                            <h2 className="break-words font-semibold">
+                              {d.name}
+                            </h2>
+                            <Badge variant={status.variant}>
+                              <status.Icon className="size-3.5" aria-hidden />
+                              {status.badge}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                            {d.description ||
+                              "Define las etapas, responsables y condiciones de este proceso."}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {d.flow?.steps.length ?? 0} etapas ·{" "}
+                            {d.versionCount ?? 1}{" "}
+                            {(d.versionCount ?? 1) === 1
+                              ? "versión"
+                              : "versiones"}
                             {d.publishedVersion != null
-                              ? "Disponible para solicitudes"
-                              : "Borrador"}
-                          </span>
+                              ? ` · en uso v${d.publishedVersion}`
+                              : ""}
+                          </p>
                         </div>
-                        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                          {d.description ||
-                            "Define las etapas, responsables y condiciones de este proceso."}
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {d.flow?.steps.length ?? 0} etapas · {d.versionCount}{" "}
-                          {d.versionCount === 1 ? "versión" : "versiones"}
-                          {d.publishedVersion != null
-                            ? ` · publicada v${d.publishedVersion}`
-                            : ""}
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1"
-                        aria-hidden
-                      />
-                    </button>
-                  </li>
-                ))}
+                        <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium">
+                          <span className="hidden sm:inline">
+                            {status.next}
+                          </span>
+                          <ChevronRight
+                            className="size-5 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                            aria-hidden
+                          />
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
-              <div className="py-14 text-center">
-                <h2 className="font-medium">
-                  {rows.length
+              <EmptyState
+                icon={<Workflow />}
+                title={
+                  rows.length
                     ? "No hay coincidencias"
-                    : "El siguiente proceso empieza aquí"}
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {rows.length
+                    : "El siguiente proceso empieza aquí"
+                }
+                description={
+                  rows.length
                     ? "Prueba otro nombre o cambia el filtro."
-                    : "Crea las etapas de una solicitud de gastos o un subproceso de adquisición."}
-                </p>
-              </div>
+                    : "Crea las etapas de una solicitud de gastos o un subproceso de adquisición."
+                }
+                action={
+                  rows.length ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSearch("");
+                        setFilter("todos");
+                      }}
+                    >
+                      Quitar filtros
+                    </Button>
+                  ) : (
+                    <Button onClick={() => setCreating(true)}>
+                      <Plus /> Crear proceso
+                    </Button>
+                  )
+                }
+              />
             )}
           </>
         )}
@@ -327,44 +404,40 @@ function NewProcess({
   });
   return (
     <section className="max-w-xl">
-      <Button variant="ghost" onClick={onCancel}>
-        <ArrowLeft /> Volver a procesos
-      </Button>
-      <h1 className="mt-5 text-2xl font-semibold">Crear proceso</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Empieza con un nombre claro. Después definirás los datos y las
-        aprobaciones.
-      </p>
+      <BackButton onClick={onCancel}>Volver a procesos</BackButton>
+      <PageHeader
+        title="Crear proceso"
+        description="Empieza con un nombre claro. Después definirás los datos y las aprobaciones."
+        className="mb-6"
+      />
       <form
-        className="mt-7 space-y-5"
+        className="space-y-5"
         onSubmit={(e) => {
           e.preventDefault();
           create.mutate();
         }}
       >
-        <label className="block text-sm font-medium">
-          Nombre
+        <Field label="Nombre" htmlFor="proceso-nombre">
           <Input
+            id="proceso-nombre"
             autoFocus
             required
             minLength={3}
             maxLength={120}
-            className="mt-2"
             placeholder="Ej. Solicitud de gastos de viaje"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-        </label>
-        <label className="block text-sm font-medium">
-          ¿Para qué se usa?
-          <textarea
-            className="mt-2 min-h-28 w-full rounded-md border border-border bg-background p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+        </Field>
+        <Field label="¿Para qué se usa?" htmlFor="proceso-uso" optional>
+          <Textarea
+            id="proceso-uso"
             maxLength={500}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-        </label>
-        <div className="flex gap-3">
+        </Field>
+        <div className="flex flex-wrap gap-3">
           <Button
             type="submit"
             disabled={create.isPending || name.trim().length < 3}
@@ -377,6 +450,91 @@ function NewProcess({
         </div>
       </form>
     </section>
+  );
+}
+
+type StepState = "done" | "current" | "pending";
+
+/** Avance real del proceso: paso completado, actual y pendiente, con texto además de icono. */
+function ProcessProgress({
+  steps,
+}: {
+  steps: { id: string; label: string; state: StepState; href?: string; onNavigate?: (e: React.MouseEvent) => void }[];
+}) {
+  const stateText: Record<StepState, string> = {
+    done: "Completado",
+    current: "Paso actual",
+    pending: "Pendiente",
+  };
+  return (
+    <nav aria-label="Preparar el proceso">
+      <ol className="grid gap-3 sm:grid-cols-3">
+        {steps.map((step, i) => {
+          const body = (
+            <>
+              <span
+                aria-hidden
+                className={cn(
+                  "flex size-8 shrink-0 items-center justify-center rounded-full font-mono text-sm font-semibold",
+                  step.state === "done" && "bg-primary text-primary-foreground",
+                  step.state === "current" &&
+                    "bg-secondary text-secondary-foreground",
+                  step.state === "pending" && "bg-muted text-muted-foreground",
+                )}
+              >
+                {step.state === "done" ? <Check className="size-4" /> : i + 1}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={cn(
+                    "block text-sm",
+                    step.state === "pending"
+                      ? "text-muted-foreground"
+                      : "font-semibold",
+                  )}
+                >
+                  {step.label}
+                </span>
+                <span className="block text-sm text-muted-foreground">
+                  {stateText[step.state]}
+                </span>
+              </span>
+            </>
+          );
+          const box = cn(
+            "flex min-h-14 items-center gap-3 rounded-lg border px-4 py-2.5",
+            step.state === "current"
+              ? "border-foreground/40 bg-background"
+              : "border-border bg-background",
+          );
+          return (
+            <li
+              key={step.id}
+              aria-current={step.state === "current" ? "step" : undefined}
+            >
+              {step.href ? (
+                <Link
+                  href={step.href as never}
+                  onClick={step.onNavigate}
+                  className={cn(
+                    box,
+                    "outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
+                  )}
+                >
+                  {body}
+                  <ArrowRight
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                </Link>
+              ) : (
+                <div className={box}>{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -514,6 +672,10 @@ function ProcessDetail({
       return;
     onBack();
   };
+  const confirmLeaveToFormats = (e: React.MouseEvent) => {
+    if (dirty && !window.confirm("Tienes cambios sin guardar. ¿Ir a formatos?"))
+      e.preventDefault();
+  };
   const tabs: [Tab, string][] = [
     ["constructor", "Etapas y responsables"],
     ["probar", "Probar recorrido"],
@@ -523,84 +685,106 @@ function ProcessDetail({
   if (!admin) tabs.splice(1, 1);
   if (d.dmnXml && !d.dmnXml.includes("Determinar SLA y orden"))
     tabs.push(["decisiones", "Tabla de decisiones"]);
+
+  const hasSteps = (d.flow?.steps.length ?? 0) > 0;
+  const isPublished =
+    d.publishedVersion != null && d.version <= d.publishedVersion;
+  const current = !hasSteps ? 0 : !isPublished ? 1 : 2;
+  const stateOf = (i: number): StepState =>
+    i < current ? "done" : i === current ? "current" : "pending";
+  const formatsHref = `/formatos?flow=${encodeURIComponent(d.key)}`;
+  const nextHelp = [
+    "Agrega las etapas y sus responsables, y guarda el borrador.",
+    dirty
+      ? "Guarda tus cambios para poder publicar el flujo."
+      : "Comprueba y publica el flujo para habilitarlo en formatos.",
+    "El flujo está publicado. Asócialo a un formato para usarlo en solicitudes.",
+  ][current];
+
   return (
     <>
-      <Button variant="ghost" className="-ml-3" onClick={back}>
-        <ArrowLeft /> Todos los procesos
-      </Button>
-      <header className="mt-4 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="break-words text-2xl font-semibold tracking-tight sm:text-3xl">
-            {d.name}
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            {d.description || "Configura la ruta que seguirá cada solicitud."}
-          </p>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Editando v{d.version}
-            {dirty ? " · cambios sin guardar" : " · guardada"}
-            {d.publishedVersion
-              ? ` · en uso: v${d.publishedVersion}`
-              : " · aún sin publicar"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setHistory(true)}>
-            <History /> Historial
-          </Button>
-          {admin && (
-            <>
-              <Button
-                variant="ghost"
-                disabled={exportPackage.isPending}
-                onClick={() => exportPackage.mutate()}
-                aria-label="Exportar paquete verificable"
-              >
-                <Download />
+      <BackButton onClick={back}>Todos los procesos</BackButton>
+      <PageHeader
+        className="mb-6"
+        title={<span className="break-words">{d.name}</span>}
+        description={
+          d.description || "Configura la ruta que seguirá cada solicitud."
+        }
+        meta={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span>Editando v{d.version}</span>
+            <Badge variant={dirty ? "warning" : "neutral"}>
+              {dirty ? (
+                <AlertTriangle className="size-3.5" aria-hidden />
+              ) : (
+                <Check className="size-3.5" aria-hidden />
+              )}
+              {dirty ? "Cambios sin guardar" : "Guardada"}
+            </Badge>
+            <span>
+              {d.publishedVersion
+                ? `En uso: v${d.publishedVersion}`
+                : "Aún sin publicar"}
+            </span>
+          </span>
+        }
+        actions={
+          <>
+            {current === 2 && admin ? (
+              <Button asChild>
+                <Link href={formatsHref as never} onClick={confirmLeaveToFormats}>
+                  Asociar a un formato <ArrowRight />
+                </Link>
               </Button>
-              <Button
-                variant="ghost"
-                aria-label="Eliminar proceso del catálogo"
-                onClick={() => setArchive(true)}
-              >
-                <Trash2 />
-              </Button>
-            </>
-          )}
-        </div>
-      </header>
-      <nav
-        aria-label="Preparar el proceso"
-        className="mt-7 flex flex-wrap items-center gap-x-3 gap-y-2 border-y border-border py-4 text-sm"
-      >
-        <span className="font-medium">1. Diseñar etapas</span>
-        <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
-        <span
-          className={
-            d.publishedVersion ? "font-medium" : "text-muted-foreground"
-          }
-        >
-          2. Publicar flujo
-        </span>
-        <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
-        <Link
-          className="underline underline-offset-4 hover:text-primary"
-          href={`/formatos?flow=${encodeURIComponent(d.key)}`}
-          onClick={(e) => {
-            if (
-              dirty &&
-              !window.confirm("Tienes cambios sin guardar. ¿Ir a formatos?")
-            )
-              e.preventDefault();
-          }}
-        >
-          3. Asociar a un formato y usar
-        </Link>
-      </nav>
+            ) : null}
+            <Button variant="outline" onClick={() => setHistory(true)}>
+              <History /> Historial
+            </Button>
+            {admin && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <MoreHorizontal /> Más
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={exportPackage.isPending}
+                    onSelect={() => exportPackage.mutate()}
+                  >
+                    <Download /> Exportar paquete verificable
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem destructive onSelect={() => setArchive(true)}>
+                    <Trash2 /> Eliminar del catálogo
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </>
+        }
+      />
+      <ProcessProgress
+        steps={[
+          { id: "disenar", label: "Diseñar etapas", state: stateOf(0) },
+          { id: "publicar", label: "Publicar flujo", state: stateOf(1) },
+          {
+            id: "usar",
+            label: "Asociar a un formato y usar",
+            state: stateOf(2),
+            href: isPublished ? formatsHref : undefined,
+            onNavigate: confirmLeaveToFormats,
+          },
+        ]}
+      />
+      <p className="mt-3 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">Siguiente: </span>
+        {nextHelp}
+      </p>
       <div
         role="tablist"
         aria-label="Vistas del proceso"
-        className="mt-4 flex overflow-x-auto border-b border-border"
+        className="-mx-4 mt-6 flex overflow-x-auto border-b border-border px-4 [scrollbar-width:thin] sm:mx-0 sm:px-0"
       >
         {tabs.map(([id, label]) => (
           <button
@@ -630,7 +814,7 @@ function ProcessDetail({
               document.getElementById(`tab-${next}`)?.focus();
             }}
             className={cn(
-              "shrink-0 border-b-2 px-4 py-3 text-sm focus-visible:outline-2 focus-visible:outline-primary",
+              "min-h-11 shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               tab === id
                 ? "border-primary font-medium"
                 : "border-transparent text-muted-foreground hover:text-foreground",
@@ -644,17 +828,20 @@ function ProcessDetail({
         role="tabpanel"
         id={`panel-${tab}`}
         aria-labelledby={`tab-${tab}`}
-        className="py-7"
+        className="py-6"
       >
         {tab === "constructor" && (
           <>
             {draft ? (
               <>
-                <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-                  <label className="w-full max-w-lg text-sm font-medium">
-                    Nombre del proceso
+                <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+                  <Field
+                    label="Nombre del proceso"
+                    htmlFor="proceso-nombre-edicion"
+                    className="w-full max-w-lg"
+                  >
                     <Input
-                      className="mt-2"
+                      id="proceso-nombre-edicion"
                       disabled={!admin}
                       value={name}
                       onChange={(e) => {
@@ -662,7 +849,7 @@ function ProcessDetail({
                         setPreflight(null);
                       }}
                     />
-                  </label>
+                  </Field>
                   {admin && (
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -688,6 +875,7 @@ function ProcessDetail({
                         {save.isPending ? "Guardando…" : "Guardar borrador"}
                       </Button>
                       <Button
+                        variant={d.published ? "outline" : "default"}
                         disabled={publish.isPending || dirty || !!d.published}
                         onClick={() => publish.mutate()}
                       >
@@ -710,28 +898,21 @@ function ProcessDetail({
                 />
               </>
             ) : (
-              <div className="max-w-xl py-8">
-                <h2 className="text-lg font-semibold">
-                  Este proceso todavía tiene solo un diagrama
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  Abre el diagrama y extrae sus etapas para convertirlo en un
-                  flujo ejecutable. Si contiene elementos incompatibles, te
-                  indicaremos cuáles debes ajustar.
-                </p>
-                <Button
-                  className="mt-5"
-                  variant="outline"
-                  onClick={() => setTab("diagrama")}
-                >
-                  Abrir diagrama y preparar flujo
-                  <ArrowRight />
-                </Button>
-              </div>
+              <EmptyState
+                icon={<Workflow />}
+                title="Este proceso todavía tiene solo un diagrama"
+                description="Abre el diagrama y extrae sus etapas para convertirlo en un flujo ejecutable. Si contiene elementos incompatibles, te indicaremos cuáles debes ajustar."
+                action={
+                  <Button onClick={() => setTab("diagrama")}>
+                    Abrir diagrama y preparar flujo
+                    <ArrowRight />
+                  </Button>
+                }
+              />
             )}
             {preflight && (
               <div
-                className="mt-8 rounded-xl border border-border p-5"
+                className="mt-8 rounded-lg border border-border bg-background p-4 sm:p-5"
                 role="status"
               >
                 <h2 className="font-semibold">
@@ -743,11 +924,15 @@ function ProcessDetail({
                   {preflight.checks.map((check) => (
                     <li className="py-3 text-sm" key={check.key}>
                       <p className="flex items-center gap-2 font-medium">
-                        {check.status === "pass" && (
-                          <CheckCircle2 className="size-4" />
+                        {check.status === "pass" ? (
+                          <CheckCircle2 className="size-4 shrink-0" />
+                        ) : check.status === "warn" ? (
+                          <AlertTriangle className="size-4 shrink-0" />
+                        ) : (
+                          <CircleAlert className="size-4 shrink-0" />
                         )}
                         {check.label}
-                        <span className="ml-auto text-xs text-muted-foreground">
+                        <span className="ml-auto shrink-0 text-sm font-normal text-muted-foreground">
                           {check.status === "pass"
                             ? "Correcto"
                             : check.status === "warn"
@@ -776,9 +961,16 @@ function ProcessDetail({
           (draft ? (
             <ProcessLab processKey={d.key} flow={draft} />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Primero convierte el diagrama en etapas editables.
-            </p>
+            <EmptyState
+              icon={<Workflow />}
+              title="Primero convierte el diagrama en etapas editables"
+              description="El recorrido de prueba necesita un flujo con etapas."
+              action={
+                <Button variant="outline" onClick={() => setTab("diagrama")}>
+                  Abrir diagrama
+                </Button>
+              }
+            />
           ))}
         {(tab === "diagrama" || bpmnOpened) && (
           <div hidden={tab !== "diagrama"} aria-hidden={tab !== "diagrama"}>
@@ -812,7 +1004,7 @@ function ProcessDetail({
                 </div>
               )}
             </div>
-            <div className="h-[65vh] min-h-96 overflow-hidden rounded-xl border border-border">
+            <div className="h-[65vh] min-h-96 overflow-hidden rounded-lg border border-border">
               <BpmnStudio
                 key={`${d.id}-${d.version}`}
                 xml={d.bpmnXml}
