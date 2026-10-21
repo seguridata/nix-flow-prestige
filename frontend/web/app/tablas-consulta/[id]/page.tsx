@@ -1,13 +1,13 @@
 "use client";
 
 import { use, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Pencil, Trash2, TriangleAlert, Upload } from "lucide-react";
+import { Download, Pencil, Trash2, TriangleAlert, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { ExportRowsButton } from "@/components/lookup/export-button";
 import { downloadTemplate, ImportDialog } from "@/components/lookup/import-dialog";
 import { RowsGrid, rowsKey } from "@/components/lookup/rows-grid";
@@ -64,9 +64,42 @@ export default function TablaConsultaPage({ params }: { params: Promise<{ id: st
 
   return (
     <AppShell title={t?.name ?? "Tabla de consulta"}>
-      <Link href={"/tablas-consulta" as never} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Todas las tablas
-      </Link>
+      <PageHeader
+        back={{ href: "/tablas-consulta", label: "Todas las tablas" }}
+        title={t?.name ?? "Tabla de consulta"}
+        description={isAdmin && t?.description ? t.description : undefined}
+        meta={
+          isAdmin && t ? (
+            <>
+              Clave <span className="whitespace-nowrap font-mono text-foreground">{t.key}</span> · revisión <span className="tabular-nums">{t.revision}</span> ·{" "}
+              <span className="tabular-nums">{t.rowCount}</span> {t.rowCount === 1 ? "fila" : "filas"}
+            </>
+          ) : undefined
+        }
+        actions={
+          isAdmin && t ? (
+            <>
+              <label className="flex items-center gap-2 pr-2 text-sm">
+                <Switch checked={t.active} disabled={toggle.isPending} onCheckedChange={(c) => toggle.mutate(c)} />
+                {t.active ? "Activa" : "Desactivada"}
+              </label>
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <Pencil /> Esquema
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+                <Upload /> Importar
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => downloadTemplate(t)}>
+                <Download /> Plantilla CSV
+              </Button>
+              <ExportRowsButton table={t} />
+              <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmDelete(true)}>
+                <Trash2 /> Eliminar
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
 
       {!isAdmin ? (
         <p className="max-w-md text-sm text-muted-foreground">Solo el administrador puede ver y editar las tablas de consulta.</p>
@@ -84,39 +117,10 @@ export default function TablaConsultaPage({ params }: { params: Promise<{ id: st
         </div>
       ) : (
         <div className="max-w-6xl space-y-8">
-          <header className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold">{t.name}</h1>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  Clave <span className="font-mono text-foreground">{t.key}</span> · revisión {t.revision} · {t.rowCount}{" "}
-                  {t.rowCount === 1 ? "fila" : "filas"}
-                </p>
-                {t.description ? <p className="mt-1 max-w-2xl text-sm">{t.description}</p> : null}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="flex items-center gap-2 pr-2 text-sm">
-                  <Switch checked={t.active} disabled={toggle.isPending} onCheckedChange={(c) => toggle.mutate(c)} />
-                  {t.active ? "Activa" : "Desactivada"}
-                </label>
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <Pencil /> Esquema
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
-                  <Upload /> Importar
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => downloadTemplate(t)}>
-                  <Download /> Plantilla CSV
-                </Button>
-                <ExportRowsButton table={t} />
-                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmDelete(true)}>
-                  <Trash2 /> Eliminar
-                </Button>
-              </div>
-            </div>
-            <ul className="flex flex-wrap gap-1.5 text-xs" aria-label="Columnas">
+          <section aria-label="Columnas de la tabla" className="space-y-3">
+            <ul className="flex flex-wrap gap-1.5 text-sm">
               {t.columns.map((c) => (
-                <li key={c.key} className="rounded-full border border-border px-2.5 py-1">
+                <li key={c.key} className="rounded-full border border-border bg-background px-3 py-1">
                   {c.label} <span className="text-muted-foreground">· {COLUMN_TYPE_LABEL[c.type].toLowerCase()}</span>
                 </li>
               ))}
@@ -126,7 +130,7 @@ export default function TablaConsultaPage({ params }: { params: Promise<{ id: st
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /> {deleteError}
               </p>
             ) : null}
-          </header>
+          </section>
 
           <RowsGrid table={t} onCountChange={refreshTable} />
           <TestPanel table={t} />

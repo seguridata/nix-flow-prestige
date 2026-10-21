@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, FileText, Paperclip, Upload, X } from "lucide-react";
+import { CircleAlert, CircleCheck, FileText, Upload, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -105,7 +105,7 @@ export function useAttachments(templateId: string, specs: readonly AttachmentSpe
 
 export type AttachmentsState = ReturnType<typeof useAttachments>;
 
-/** Bloque «Anexos» del llenado: una zona de carga por especificación, con contador claro y errores por anexo. */
+/** Sección «Anexos» del llenado: una zona de carga por especificación, con progreso claro y errores por anexo. */
 export function AttachmentsBlock({
   specs,
   state,
@@ -118,17 +118,32 @@ export function AttachmentsBlock({
   const uid = useId();
   if (specs.length === 0) return null;
   return (
-    <section aria-labelledby={`${uid}-h`} className="space-y-4 rounded-lg border border-border p-4">
+    <section aria-labelledby={`${uid}-h`} className="space-y-5">
       <div>
-        <h2 id={`${uid}-h`} className="flex items-center gap-2 text-sm font-semibold">
-          <Paperclip className="size-4" aria-hidden /> Anexos
+        <h2 id={`${uid}-h`} className="text-lg font-semibold">
+          Adjuntos
         </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Adjunta lo que pide este formato. No se puede enviar hasta cumplir los mínimos.</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">Sube lo que pide este formato. Podrás enviar cuando se cumplan los mínimos.</p>
       </div>
-      {specs.map((s) => (
-        <SpecZone key={s.key} spec={s} state={state} serverError={serverErrors[s.key]} />
-      ))}
+      <div className="space-y-4">
+        {specs.map((s) => (
+          <SpecZone key={s.key} spec={s} state={state} serverError={serverErrors[s.key]} />
+        ))}
+      </div>
     </section>
+  );
+}
+
+/** Barra por tramos: un tramo por archivo requerido (hasta 10). Es decorativa; el texto del contador lleva el significado. */
+function ProgressSegments({ min, count }: { min: number; count: number }) {
+  const total = Math.min(min, 10);
+  const filled = min > 10 ? Math.round((Math.min(count, min) / min) * total) : Math.min(count, min);
+  return (
+    <div aria-hidden className="flex gap-1">
+      {Array.from({ length: total }).map((_, i) => (
+        <span key={i} className={cn("h-1.5 flex-1 rounded-full transition-colors", i < filled ? "bg-primary" : "bg-border")} />
+      ))}
+    </div>
   );
 }
 
@@ -137,31 +152,33 @@ function SpecZone({ spec, state, serverError }: { spec: AttachmentSpec; state: A
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const mine = state.items.filter((x) => x.specKey === spec.key);
-  const status = attachmentStatus(spec, state.counts[spec.key] ?? 0);
+  const count = state.counts[spec.key] ?? 0;
+  const status = attachmentStatus(spec, count);
+  const min = effectiveMin(spec);
   const notices = state.notices[spec.key] ?? [];
   const full = mine.filter((x) => x.status !== "error").length >= spec.max;
   const hint = `${uid}-hint`;
   const accept = acceptAttribute(spec);
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 className="text-sm font-medium">
-          {spec.label}
-          {spec.required ? null : <span className="font-normal text-muted-foreground"> (opcional)</span>}
-        </h3>
-        <p
-          role="status"
-          className={cn("inline-flex items-center gap-1.5 text-xs font-medium", status.met ? "text-[#3f5900]" : "text-[#a15c00]")}
-        >
-          {status.met ? <CircleCheck className="size-4" aria-hidden /> : <CircleAlert className="size-4" aria-hidden />}
-          <span>
-            {status.text}
-            {status.met ? (effectiveMin(spec) > 0 ? " · completo" : "") : ` · faltan ${status.missing}`}
-          </span>
-        </p>
+    <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h3 className="text-sm font-medium">
+            {spec.label}
+            {spec.required ? null : <span className="ml-1.5 font-normal text-muted-foreground">(opcional)</span>}
+          </h3>
+          <p role="status" className="inline-flex items-center gap-1.5 text-sm font-medium tabular-nums">
+            {status.met ? <CircleCheck className="size-4" aria-hidden /> : <CircleAlert className="size-4" aria-hidden />}
+            <span>
+              {status.text}
+              {status.met ? (min > 0 ? " · completo" : "") : ` · faltan ${status.missing}`}
+            </span>
+          </p>
+        </div>
+        {min > 0 ? <ProgressSegments min={min} count={count} /> : null}
+        {spec.help ? <p className="text-sm text-muted-foreground">{spec.help}</p> : null}
       </div>
-      {spec.help ? <p className="text-xs text-muted-foreground">{spec.help}</p> : null}
 
       <div
         onDragOver={(e) => {
@@ -176,8 +193,8 @@ function SpecZone({ spec, state, serverError }: { spec: AttachmentSpec; state: A
           if (files.length) state.add(spec, files);
         }}
         className={cn(
-          "flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3 text-sm transition-colors",
-          over ? "border-foreground bg-muted" : "border-border",
+          "flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-5 text-center transition-colors",
+          over ? "border-foreground bg-muted" : "border-border bg-muted/40",
           full && "opacity-60",
         )}
       >
@@ -197,16 +214,16 @@ function SpecZone({ spec, state, serverError }: { spec: AttachmentSpec; state: A
         <Button type="button" variant="outline" size="sm" disabled={full} aria-describedby={hint} onClick={() => input.current?.click()}>
           <Upload /> Elegir {spec.max > 1 ? "archivos" : "archivo"}
         </Button>
-        <span id={hint} className="min-w-0 flex-1 text-xs text-muted-foreground">
-          {full ? `Llegaste al máximo de ${spec.max}.` : "o arrástralos aquí."} Se aceptan: {acceptText(spec)} · hasta {spec.maxSizeMB} MB cada uno · máximo {spec.max}.
-        </span>
+        <p id={hint} className="text-xs leading-relaxed text-muted-foreground">
+          {full ? `Llegaste al máximo de ${spec.max}.` : "O arrástralos aquí."} Se aceptan: {acceptText(spec)} · hasta {spec.maxSizeMB} MB cada uno · máximo {spec.max}.
+        </p>
       </div>
 
       {notices.length > 0 || serverError ? (
-        <ul role="alert" className="space-y-1 rounded-md bg-[#fbe9e7] p-2.5 text-xs text-[#8c2018]">
+        <ul role="alert" className="space-y-1 rounded-md bg-[#fbe9e7] p-2.5 text-sm text-[#8c2018]">
           {[...notices, ...(serverError ? [serverError] : [])].map((m, i) => (
             <li key={i} className="flex gap-1.5">
-              <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {m}
+              <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /> {m}
             </li>
           ))}
         </ul>
@@ -215,13 +232,13 @@ function SpecZone({ spec, state, serverError }: { spec: AttachmentSpec; state: A
       {mine.length > 0 ? (
         <ul className="space-y-1.5" aria-label={`Archivos de ${spec.label}`}>
           {mine.map((it) => (
-            <li key={it.id} className="rounded-md border border-border p-2 text-sm">
+            <li key={it.id} className="rounded-md border border-border bg-background p-2 text-sm">
               <div className="flex items-center gap-2">
                 <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                 <span className="min-w-0 flex-1 truncate" title={it.name}>
                   {it.name}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(it.size)}</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatBytes(it.size)}</span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -239,7 +256,7 @@ function SpecZone({ spec, state, serverError }: { spec: AttachmentSpec; state: A
                   <span className="w-20 text-right text-xs tabular-nums text-muted-foreground">Subiendo {it.progress}%</span>
                 </div>
               ) : it.status === "done" ? (
-                <p className="mt-0.5 flex items-center gap-1 text-xs text-[#3f5900]">
+                <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                   <CircleCheck className="size-3.5" aria-hidden /> Listo
                 </p>
               ) : (

@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Crosshair, FileUp, Trash2 } from "lucide-react";
+import { Crosshair, FileUp, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { FormatAiAssistant } from "@/components/ai/format-ai-assistant";
@@ -175,10 +174,6 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
   return (
     <div className="grid gap-10 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
       <div className="space-y-10">
-        <Link href={"/formatos" as never} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" /> Todos los formatos
-        </Link>
-
         {locked ? (
           <p role="status" className="rounded-md border border-border bg-muted/50 p-3 text-sm">
             Este formato digital está publicado y no se edita. Despublícalo para cambiarlo; la hoja base se vuelve a generar al guardar.

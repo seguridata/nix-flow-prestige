@@ -2,13 +2,15 @@
 
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ChevronsUp, CircleOff, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUp, CircleOff, Plus, Rows3, Search, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   cellText,
@@ -237,9 +239,9 @@ export function RowsGrid({ table, onCountChange }: { table: LookupTable; onCount
           <h2 id={`${uid}-h`} className="text-base font-semibold">
             Filas
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Gana la <strong className="font-semibold">primera fila de arriba hacia abajo</strong> que cumple la consulta: pon lo más específico primero.
-            Una celda vacía vale como «cualquiera».
+          <p className="max-w-xl text-sm text-muted-foreground">
+            Gana la <strong className="font-semibold text-foreground">primera fila de arriba hacia abajo</strong> que cumple la consulta. Una celda
+            vacía vale como «cualquiera».
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -254,16 +256,13 @@ export function RowsGrid({ table, onCountChange }: { table: LookupTable; onCount
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select
-            aria-label="Mostrar filas"
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40"
-            value={active}
-            onChange={(e) => setActive(e.target.value as ActiveFilter)}
-          >
-            <option value="all">Todas</option>
-            <option value="active">Solo activas</option>
-            <option value="inactive">Solo inactivas</option>
-          </select>
+          <div className="w-40">
+            <Select aria-label="Mostrar filas" className="h-9" value={active} onChange={(e) => setActive(e.target.value as ActiveFilter)}>
+              <option value="all">Todas</option>
+              <option value="active">Solo activas</option>
+              <option value="inactive">Solo inactivas</option>
+            </Select>
+          </div>
           <Button ref={addRef} size="sm" onClick={() => setAdding(true)} disabled={!canAdd}>
             <Plus /> Agregar fila
           </Button>
@@ -305,17 +304,16 @@ export function RowsGrid({ table, onCountChange }: { table: LookupTable; onCount
       ) : (
         <>
           {rows.length === 0 && !adding && !filtering && !typing && !stale ? (
-            <div className="flex flex-col items-center rounded-lg border border-dashed border-border py-12 text-center">
-              <p className="text-base font-medium">Esta tabla aún no tiene filas</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Agrega una fila, o importa un CSV o pega lo que copiaste de Excel desde «Importar».
-              </p>
-            </div>
+            <EmptyState
+              icon={<Rows3 />}
+              title="Esta tabla aún no tiene filas"
+              description="Agrega una fila, o importa un CSV o pega lo que copiaste de Excel desde «Importar»."
+            />
           ) : null}
 
           {rows.length > 0 || adding ? (
             <div className={cn("overflow-x-auto rounded-lg border border-border", stale && "opacity-60")} aria-busy={stale}>
-              <table ref={tableRef} className="w-full text-left text-sm" style={{ minWidth: `${12 + table.columns.length * 10}rem` }}>
+              <table ref={tableRef} className="w-full text-left text-sm tabular-nums" style={{ minWidth: `${12 + table.columns.length * 10}rem` }}>
                 <caption className="sr-only">
                   Filas de la tabla {table.name}. Gana la primera que cumple la consulta. Se muestran {nf.format(rows.length)} de {nf.format(total)}.
                 </caption>
@@ -406,13 +404,13 @@ export function RowsGrid({ table, onCountChange }: { table: LookupTable; onCount
           ) : null}
 
           {hasMore ? (
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <p className="text-sm tabular-nums">
+                Mostrando <strong className="font-semibold">{nf.format(rows.length)}</strong> de {nf.format(total)}
+              </p>
               <Button variant="outline" size="sm" disabled={rowsQ.isFetchingNextPage || stale} onClick={() => void loadMore()}>
                 {rowsQ.isFetchingNextPage ? "Cargando…" : `Cargar más (quedan ${nf.format(remaining)})`}
               </Button>
-              <p className="text-xs text-muted-foreground">
-                Mostrando {nf.format(rows.length)} de {nf.format(total)}
-              </p>
             </div>
           ) : null}
         </>

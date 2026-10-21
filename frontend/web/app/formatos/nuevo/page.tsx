@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, FileUp } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { FormatEditor } from "@/components/formats/format-editor";
 import { useSession } from "@/store/session-store";
 import { fetchFlowDefinitions, type FormatKind } from "@/services/formats-service";
@@ -22,7 +23,7 @@ const CHOICES: { kind: FormatKind; title: string; text: string; icon: typeof Fil
   {
     kind: "FORM",
     title: "Formato digital",
-    text: "Sin PDF. Defines los datos, el flujo y los anexos, y el sistema genera la hoja base.",
+    text: "Sin PDF. Defines los datos, la ruta de firmas y los adjuntos, y el sistema genera la hoja base.",
     icon: FileText,
   },
 ];
@@ -36,6 +37,11 @@ function NuevoFormatoContent() {
   const [mode, setMode] = useState<FormatKind | null>(null);
   return (
     <AppShell title="Nuevo formato">
+      <PageHeader
+        back={{ href: "/formatos", label: "Todos los formatos" }}
+        title="Nuevo formato"
+        description={mode ? "Completa los datos, la ruta de firmas y los adjuntos. Se guarda como borrador hasta que lo publiques." : "Un formato es una plantilla que cualquier persona llena para enviar a firma."}
+      />
       {!roles.includes("admin") ? (
         <p className="max-w-md text-sm text-muted-foreground">Solo el administrador puede crear formatos.</p>
       ) : flowKey && selectedFlow.isLoading ? <p role="status">Preparando el flujo publicado…</p>
@@ -43,8 +49,8 @@ function NuevoFormatoContent() {
       : mode ? (
         <FormatEditor mode={mode} proposal={seed?.flow ? { name: seed.name, description: seed.description, flow: seed.flow, flowKey: seed.key, flowVersion: seed.version } : undefined} />
       ) : (
-        <section aria-labelledby="nuevo-tipo" className="max-w-2xl">
-          <h2 id="nuevo-tipo" className="text-base font-semibold">
+        <section aria-labelledby="nuevo-tipo" className="max-w-3xl">
+          <h2 id="nuevo-tipo" className="text-lg font-semibold">
             ¿Cómo quieres crear el formato?
           </h2>
           {seed ? <p className="mt-2 text-sm text-muted-foreground">Usarás «{seed.name}» con sus {seed.flow!.steps.length} pasos de aprobación. El formato permanecerá como borrador hasta que lo revises.</p> : null}
@@ -54,9 +60,9 @@ function NuevoFormatoContent() {
                 <button
                   type="button"
                   onClick={() => setMode(c.kind)}
-                  className="flex h-full w-full flex-col items-start gap-2 rounded-lg border border-border p-4 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-full w-full flex-col items-start gap-2 rounded-lg border border-border bg-background p-5 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <c.icon className="size-6" aria-hidden />
+                  <span className="flex size-10 items-center justify-center rounded-md bg-muted"><c.icon className="size-5" aria-hidden /></span>
                   <span className="text-base font-medium">{c.title}</span>
                   <span className="text-sm text-muted-foreground">{c.text}</span>
                 </button>

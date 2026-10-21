@@ -4,12 +4,14 @@ import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { FilePlus2, FileText, Pencil, Search } from "lucide-react";
+import { ArrowRight, Check, CircleDashed, FilePlus2, FileText, Pencil, Search } from "lucide-react";
 
 import { TemplateDrafts } from "@/components/chat/template-drafts";
 import { DocumentIcon } from "@/components/drive/drive-icons";
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { plural } from "@/libs/drive";
@@ -55,30 +57,49 @@ function FormatosCatalog() {
     [loaded, category, query, flowKey],
   );
 
+  const drafts = isAdmin ? shown.filter((f) => !f.published) : [];
+  const published = isAdmin ? shown.filter((f) => f.published) : shown;
+
   return (
-    <AppShell
-      title="Formatos"
-      actions={
-        isAdmin ? (
-          <Button asChild size="sm">
-            <Link href={(flowKey ? `/formatos/nuevo?flow=${encodeURIComponent(flowKey)}` : "/formatos/nuevo") as never}>
-              <FilePlus2 /> Nuevo formato
-            </Link>
-          </Button>
-        ) : undefined
-      }
-    >
-      <p className="mb-5 max-w-xl text-sm text-muted-foreground">
-        Elige un formato, llena tus datos y se envía a quien corresponda. El documento se completa solo y el flujo de firmas ya viene definido.
-      </p>
-      {flowKey ? <section className="mb-6 flex flex-wrap items-center justify-between gap-3 border-y border-border py-4" aria-label="Continuar con el flujo"><div><h2 className="font-semibold">Elige el formato que usará este flujo</h2><p className="mt-1 text-sm text-muted-foreground">Abre uno publicado para llenar los datos y enviar. Si aún no hay uno, crea su hoja digital.</p></div><div className="flex gap-2"><Button asChild variant="outline"><Link href={"/formatos" as never}>Todos los formatos</Link></Button>{isAdmin ? <Button asChild><Link href={`/formatos/nuevo?flow=${encodeURIComponent(flowKey)}` as never}>Crear formato con este flujo</Link></Button> : null}</div></section> : null}
+    <AppShell title="Formatos">
+      <PageHeader
+        title="Formatos"
+        description="Elige un formato, llena tus datos y se envía a quien corresponda."
+        actions={
+          isAdmin ? (
+            <Button asChild>
+              <Link href={(flowKey ? `/formatos/nuevo?flow=${encodeURIComponent(flowKey)}` : "/formatos/nuevo") as never}>
+                <FilePlus2 /> Nuevo formato
+              </Link>
+            </Button>
+          ) : undefined
+        }
+      />
+      {flowKey ? (
+        <section className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-4" aria-label="Continuar con el flujo">
+          <div>
+            <h2 className="font-semibold">Elige el formato que usará este flujo</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Abre uno publicado para llenar los datos y enviar. Si aún no hay uno, crea su hoja digital.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={"/formatos" as never}>Todos los formatos</Link>
+            </Button>
+            {isAdmin ? (
+              <Button asChild>
+                <Link href={`/formatos/nuevo?flow=${encodeURIComponent(flowKey)}` as never}>Crear formato con este flujo</Link>
+              </Button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {isAdmin ? <TemplateDrafts /> : null}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="relative">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative sm:w-72">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="h-9 w-64 pl-9" aria-label="Buscar formato" placeholder="Buscar formato" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input className="pl-9" aria-label="Buscar formato" placeholder="Buscar formato" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         {categories.length > 0 ? (
           <div role="group" aria-label="Categorías" className="flex flex-wrap gap-1.5">
@@ -89,10 +110,11 @@ function FormatosCatalog() {
                 aria-pressed={category === c}
                 onClick={() => setCategory(c)}
                 className={cn(
-                  "rounded-full border px-3 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  category === c ? "border-foreground bg-foreground text-background" : "border-border hover:bg-muted",
+                  "inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  category === c ? "border-foreground bg-foreground font-medium text-background" : "border-border hover:bg-muted",
                 )}
               >
+                {category === c ? <Check className="size-3.5" aria-hidden /> : null}
                 {c ?? "Todos"}
               </button>
             ))}
@@ -103,7 +125,7 @@ function FormatosCatalog() {
       {formats.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-lg" />
+            <Skeleton key={i} className="h-40 rounded-lg" />
           ))}
         </div>
       ) : formats.isError && loaded.length === 0 ? (
@@ -114,22 +136,38 @@ function FormatosCatalog() {
           </Button>
         </div>
       ) : shown.length === 0 ? (
-        <div className="flex flex-col items-center py-16 text-center">
-          <DocumentIcon className="size-16" />
-          <p className="mt-4 text-base font-medium">{loaded.length ? (formats.hasNextPage ? "No hay coincidencias entre los formatos cargados" : "Ningún formato coincide") : "Aún no hay formatos publicados"}</p>
-          {isAdmin && !loaded.length ? (
-            <p className="mt-1 max-w-sm text-sm text-muted-foreground">Sube un PDF y marca dónde van los datos, o crea un formato digital sin PDF. Define el flujo y los anexos. Por ejemplo, un formato de vacaciones.</p>
+        <EmptyState
+          icon={<FileText />}
+          title={loaded.length ? (formats.hasNextPage ? "No hay coincidencias entre los formatos cargados" : "Ningún formato coincide") : "Aún no hay formatos publicados"}
+          description={
+            loaded.length
+              ? "Prueba con otra palabra o quita la categoría elegida."
+              : isAdmin
+                ? "Sube un PDF y marca dónde van los datos, o crea un formato digital sin PDF. Define la ruta de firmas y los adjuntos. Por ejemplo, un formato de vacaciones."
+                : "Cuando el administrador publique un formato, lo verás aquí para llenarlo."
+          }
+          action={
+            isAdmin && !loaded.length ? (
+              <Button asChild>
+                <Link href={"/formatos/nuevo" as never}>
+                  <FilePlus2 /> Nuevo formato
+                </Link>
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="space-y-10">
+          {isAdmin && drafts.length > 0 ? (
+            <FormatGroup title="Borradores" note="Aún no los ve nadie más. Termínalos y publícalos desde Editar." formats={drafts} isAdmin={isAdmin} />
+          ) : null}
+          {published.length > 0 ? (
+            <FormatGroup title={isAdmin ? "Publicados" : undefined} note={isAdmin ? "Disponibles para toda la organización." : undefined} formats={published} isAdmin={isAdmin} />
           ) : null}
         </div>
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {shown.map((f) => (
-            <FormatCard key={f.id} format={f} isAdmin={isAdmin} />
-          ))}
-        </ul>
       )}
       {!formats.isLoading && loaded.length > 0 ? (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
           <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
             {plural(shown.length, "formato visible", "formatos visibles")} entre {loaded.length} cargados.
             {formats.hasNextPage ? " Hay más formatos por cargar; los filtros se aplican a los cargados." : " Has llegado al final del catálogo."}
@@ -148,27 +186,57 @@ function FormatosCatalog() {
 
 export default function FormatosPage() { return <Suspense fallback={<div className="p-8">Cargando formatos…</div>}><FormatosContent /></Suspense>; }
 
+function FormatGroup({ title, note, formats, isAdmin }: { title?: string; note?: string; formats: FormatSummary[]; isAdmin: boolean }) {
+  return (
+    <section aria-label={title}>
+      {title ? (
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold">
+            {title} <span className="font-normal tabular-nums text-muted-foreground">· {formats.length}</span>
+          </h2>
+          {note ? <p className="text-sm text-muted-foreground">{note}</p> : null}
+        </div>
+      ) : null}
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {formats.map((f) => (
+          <FormatCard key={f.id} format={f} isAdmin={isAdmin} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: boolean }) {
   return (
     <li className="relative">
       <Link
         href={`/formatos/${f.id}` as never}
-        className="flex h-full gap-4 rounded-lg border border-border p-4 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          "group flex h-full flex-col gap-3 rounded-lg border bg-background p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
+          f.published ? "border-border" : "border-dashed border-foreground/40",
+        )}
       >
-        <DocumentIcon label={kindIconLabel(f.kind)} className="size-14 shrink-0" />
-        <span className="min-w-0 flex-1">
-          <span className="block text-base font-medium leading-snug">{f.name}</span>
-          {f.description ? <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{f.description}</span> : null}
-          <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {f.category ? <span className="rounded-full border border-border px-2 py-0.5">{f.category}</span> : null}
-            <span>{plural(f.fieldCount, "dato", "datos")}</span>
-            <span>{plural(f.stepCount, "paso", "pasos")}</span>
-            {f.kind === "FORM" ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5">
-                <FileText className="size-3.5" aria-hidden /> {kindLabel(f.kind)}
-              </span>
-            ) : null}
-            {!f.published ? <span className="rounded-full border border-foreground px-2 py-0.5 font-medium text-foreground">Borrador</span> : null}
+        <span className="flex gap-3">
+          <DocumentIcon label={kindIconLabel(f.kind)} className="size-12 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-medium leading-snug">{f.name}</span>
+            <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{f.description || "Sin descripción."}</span>
+          </span>
+        </span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {!f.published ? (
+            <span className="inline-flex items-center gap-1 font-medium text-foreground">
+              <CircleDashed className="size-3.5" aria-hidden /> Borrador
+            </span>
+          ) : null}
+          {f.category ? <span>{f.category}</span> : null}
+          <span>{kindLabel(f.kind)}</span>
+          <span className="tabular-nums">{plural(f.fieldCount, "dato", "datos")}</span>
+          <span className="tabular-nums">{plural(f.stepCount, "paso de firma", "pasos de firma")}</span>
+        </span>
+        <span className="mt-auto flex items-center justify-between pt-1">
+          <span className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-[filter] group-hover:brightness-95">
+            {f.published ? "Llenar" : "Abrir"} <ArrowRight className="size-4" aria-hidden />
           </span>
         </span>
       </Link>
@@ -176,9 +244,9 @@ function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: bo
         <Link
           href={`/formatos/${f.id}/editar` as never}
           aria-label={`Editar ${f.name}`}
-          className="absolute right-2 top-2 rounded-md p-1.5 text-muted-foreground outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute bottom-4 right-4 inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Pencil className="size-4" />
+          <Pencil className="size-4" aria-hidden /> Editar
         </Link>
       ) : null}
     </li>
