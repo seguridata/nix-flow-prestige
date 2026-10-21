@@ -48,7 +48,7 @@ export function NotificationsBell() {
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Avisos</p>
           {unread > 0 ? (
-            <button type="button" className="text-xs text-primary" onClick={() => markAll.mutate()}>
+            <button type="button" className="text-xs font-medium text-foreground underline underline-offset-4" onClick={() => markAll.mutate()}>
               Marcar leídos
             </button>
           ) : null}

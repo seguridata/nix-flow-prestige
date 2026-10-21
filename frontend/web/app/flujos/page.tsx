@@ -58,10 +58,10 @@ function FlowLibrary() {
                 <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">{row.latest.description || "Define los responsables y el recorrido de aprobación."}</p>
                 <p className="mt-2 text-sm text-muted-foreground">{row.latest.flow!.steps.length} pasos · {row.latest.flow!.order === "SECUENCIAL" ? "Uno después de otro" : "En paralelo"} · Plazo {row.latest.flow!.slaHours} h</p>
               </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
-                {!row.published ? <Button asChild><Link href={editHref(row.key)}>Revisar y publicar</Link></Button>
-                  : pending ? <><Button asChild><Link href={editHref(row.key)}>Revisar y publicar</Link></Button><Button asChild variant="outline"><Link href={`/formatos?flow=${encodeURIComponent(row.key)}` as never}>Usar versión publicada</Link></Button></>
-                  : <><Button asChild><Link href={`/formatos?flow=${encodeURIComponent(row.key)}` as never}>Usar este flujo <ArrowRight /></Link></Button><Button asChild variant="outline"><Link href={editHref(row.key)}>Editar pasos</Link></Button></>}
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center lg:w-[22rem] lg:justify-end">
+                {!row.published ? <Button asChild variant="outline" className="sm:min-w-44"><Link href={editHref(row.key)}>Revisar y publicar</Link></Button>
+                  : pending ? <><Button asChild variant="outline" className="sm:min-w-44"><Link href={editHref(row.key)}>Revisar y publicar</Link></Button><Button asChild variant="ghost"><Link href={`/formatos?flow=${encodeURIComponent(row.key)}` as never}>Usar la publicada</Link></Button></>
+                  : <><Button asChild variant="outline" className="sm:min-w-44"><Link href={`/formatos?flow=${encodeURIComponent(row.key)}` as never}>Usar este flujo <ArrowRight /></Link></Button><Button asChild variant="ghost"><Link href={editHref(row.key)}>Editar pasos</Link></Button></>}
               </div>
             </li>;
           })}

@@ -298,7 +298,7 @@ export default function DocumentDetailPage({
                 .
               </p>
             ) : me?.status === "FIRMADO" ? (
-              <p className="mt-6 text-center text-sm text-success">
+              <p className="mt-6 text-center text-sm font-medium text-foreground">
                 Ya firmaste este documento
                 {me.usedMethod ? ` · método: ${me.usedMethod.toLowerCase()}` : ""}.
               </p>

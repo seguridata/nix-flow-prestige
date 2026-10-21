@@ -115,10 +115,11 @@ export function AppShell({
         <button
           type="button"
           onClick={() => palette.setOpen(true)}
+          title="Buscar documentos, solicitudes y personas"
           className="mx-3 mb-4 flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-xs text-white/60 outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-primary"
         >
           <Search className="size-3.5" />
-          Buscar documentos y personas
+          Buscar
           <kbd className="ml-auto font-mono text-[10px] text-white/40">Ctrl K</kbd>
         </button>
       </aside>
@@ -203,7 +204,7 @@ export function AppShell({
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2, ease: [0.215, 0.61, 0.355, 1] }}
-          className="px-4 py-6 sm:px-8 sm:py-8"
+          className="px-4 pb-28 pt-6 sm:px-8 sm:pb-28 sm:pt-8"
         >
           {children}
         </motion.main>
