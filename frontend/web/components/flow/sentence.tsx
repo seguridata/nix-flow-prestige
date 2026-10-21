@@ -23,15 +23,15 @@ export function SentenceRow({
   className?: string;
 }) {
   return (
-    <li className={cn("flex items-start gap-4 rounded-2xl border border-border bg-muted/60 p-4 sm:p-5", className)}>
+    <li className={cn("flex flex-wrap items-start gap-x-4 gap-y-2 rounded-2xl border border-border bg-muted/60 p-4 sm:flex-nowrap sm:p-5", className)}>
       <span
         aria-hidden
         className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground font-mono text-sm text-background"
       >
         {n}
       </span>
-      <div className="min-w-0 flex-1 text-base leading-[2.25] text-foreground sm:text-lg">{children}</div>
-      {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+      <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] text-base leading-[2.25] text-foreground sm:basis-auto sm:text-lg">{children}</div>
+      {actions ? <div className="flex w-full shrink-0 items-center justify-end gap-1 sm:w-auto">{actions}</div> : null}
     </li>
   );
 }
@@ -43,15 +43,19 @@ const chipClass =
 export function SentenceChip({
   label,
   title,
+  ariaLabel,
   readOnly,
   children,
 }: {
   label: React.ReactNode;
   /** Encabezado del popover; también el nombre accesible del recuadro. */
   title: string;
+  /** Nombre accesible cuando `label` no es texto plano (por ejemplo lleva un icono). */
+  ariaLabel?: string;
   readOnly?: boolean;
   children?: React.ReactNode;
 }) {
+  const [open, setOpen] = React.useState(false);
   if (readOnly || !children) {
     return (
       <span className="mx-0.5 inline-flex min-h-9 items-center rounded-lg bg-background/70 px-3 py-0.5 align-baseline font-semibold">
@@ -60,12 +64,23 @@ export function SentenceChip({
     );
   }
   return (
-    <Popover>
-      <PopoverTrigger className={chipClass} aria-label={`${title}: ${typeof label === "string" ? label : "cambiar"}`}>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className={chipClass} aria-label={ariaLabel ?? `${title}: ${typeof label === "string" ? label : "cambiar"}`}>
         {label}
         <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 space-y-3">
+      <PopoverContent
+        align="start"
+        className="w-80 space-y-3"
+        onKeyDown={(e) => {
+          // El contenido va en un portal fuera del <form>: Enter en un campo de una línea confirma y cierra.
+          const t = e.target as HTMLElement;
+          if (e.key === "Enter" && t.tagName === "INPUT" && (t as HTMLInputElement).type !== "checkbox") {
+            e.preventDefault();
+            setOpen(false);
+          }
+        }}
+      >
         <p className="text-sm font-semibold">{title}</p>
         {children}
       </PopoverContent>
