@@ -30,6 +30,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { BpmnStudio } from "@/components/process-studio/bpmn-studio";
 import { DmnStudio } from "@/components/bpm/dmn-studio";
 import { Badge } from "@/components/ui/badge";
+import { WizardSteps } from "@/components/ui/wizard-steps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -494,79 +495,31 @@ function NewProcess({
 
 type StepState = "done" | "current" | "pending";
 
-/** Avance real del proceso: icono grande por paso unido por líneas (negra lo recorrido, gris lo que falta), con el estado también en texto. */
+/** Avance real del proceso con el mismo indicador de los asistentes: palomita verde lo completo, carbón con barra verde el paso actual, gris lo pendiente. */
 function ProcessProgress({
   steps,
 }: {
   steps: { id: string; label: string; state: StepState; href?: string; onNavigate?: (e: React.MouseEvent) => void }[];
 }) {
   const icons = [ListChecks, ClipboardCheck, FileText];
-  const stateText: Record<StepState, string> = {
-    done: "Completado",
-    current: "Paso actual",
-    pending: "Pendiente",
-  };
-  const currentIndex = Math.max(
+  const current = Math.max(
     0,
     steps.findIndex((s) => s.state === "current"),
   );
   return (
-    <nav aria-label="Preparar el proceso" className="py-2">
-      <ol className="flex">
-        {steps.map((step, i) => {
-          const Icon = icons[i] ?? ListChecks;
-          const reached = step.state !== "pending";
-          const body = (
-            <>
-              <span
-                aria-hidden
-                className={cn(
-                  "flex h-8 items-center justify-center transition-colors",
-                  reached ? "text-primary" : "text-muted-foreground/70",
-                )}
-              >
-                <Icon className="size-7 sm:size-8" strokeWidth={1.5} />
-              </span>
-              <span
-                className={cn(
-                  "flex items-center justify-center gap-1 text-balance text-center text-[13px] leading-tight",
-                  reached ? "font-semibold text-foreground" : "text-muted-foreground",
-                )}
-              >
-                {step.state === "done" ? <Check aria-hidden className="size-4 shrink-0" strokeWidth={3} /> : null}
-                {step.label}
-              </span>
-              <span className="sr-only">{`, ${stateText[step.state].toLowerCase()}`}</span>
-            </>
-          );
-          const column = "group mx-auto flex min-h-11 w-full max-w-44 flex-col items-center gap-1.5 rounded-xl px-1 py-1";
-          return (
-            <li key={step.id} className="relative flex-1" aria-current={step.state === "current" ? "step" : undefined}>
-              {step.href ? (
-                <Link
-                  href={step.href as never}
-                  onClick={step.onNavigate}
-                  className={cn(column, "outline-none focus-visible:ring-2 focus-visible:ring-ring")}
-                >
-                  {body}
-                </Link>
-              ) : (
-                <div className={column}>{body}</div>
-              )}
-              {i < steps.length - 1 ? (
-                <span
-                  aria-hidden
-                  className={cn(
-                    "pointer-events-none absolute left-[calc(50%+2.25rem)] top-3.5 h-[3px] w-[calc(100%-4.5rem)] -translate-y-1/2 rounded-full sm:left-[calc(50%+4.5rem)] sm:top-4 sm:w-[calc(100%-9rem)]",
-                    i < currentIndex ? "bg-foreground" : "bg-foreground/25",
-                  )}
-                />
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
+    <WizardSteps
+      className="py-3"
+      ariaLabel="Preparar el proceso"
+      current={current}
+      steps={steps.map((s, i) => ({
+        id: s.id,
+        label: s.label,
+        icon: icons[i] ?? ListChecks,
+        done: s.state === "done",
+        href: s.href,
+        onNavigate: s.onNavigate,
+      }))}
+    />
   );
 }
 

@@ -47,7 +47,6 @@ import {
 
 const TABS = [
   { value: "filas", label: "Filas" },
-  { value: "probar", label: "Probar una consulta" },
   { value: "columnas", label: "Columnas" },
 ] as const;
 
@@ -247,13 +246,10 @@ export default function TablaConsultaPage({
                 className="pt-5 outline-none data-[state=inactive]:hidden"
               >
                 <RowsGrid table={t} onCountChange={refreshTable} />
-              </TabsPrimitive.Content>
-              <TabsPrimitive.Content
-                value="probar"
-                forceMount
-                className="pt-5 outline-none data-[state=inactive]:hidden"
-              >
-                <TestPanel table={t} />
+                {/* El probador vive junto a las filas: se prueba una condición y se ve de inmediato qué fila gana. */}
+                <div className="mt-10 border-t border-border pt-8">
+                  <TestPanel table={t} />
+                </div>
               </TabsPrimitive.Content>
               <TabsPrimitive.Content
                 value="columnas"

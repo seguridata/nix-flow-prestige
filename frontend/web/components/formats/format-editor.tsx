@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, ClipboardCheck, Crosshair, FilePenLine, FileText, FileUp, Info, Paperclip, Save, Trash2, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Circle, CircleCheck, ClipboardCheck, Crosshair, FilePenLine, FileText, FileUp, Info, Paperclip, Save, Trash2, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { FormatAiAssistant } from "@/components/ai/format-ai-assistant";
@@ -49,13 +49,13 @@ const PREFILLS: { value: NonNullable<FormatField["prefill"]> | ""; label: string
   { value: "today", label: "Fecha de hoy" },
 ];
 
-/** Una línea por método, con los mismos textos del diálogo de firma. */
+/** Una frase corta por método: lo que hace quien firma. */
 const METHOD_HINT: Record<SignatureMethod, string> = {
-  DIGITAL: "Certificado PAdES emitido por la CA interna, hasta conectar el HSM.",
-  AUTOGRAFA: "Dibuja su firma. El trazo se incrusta en el PDF y en el manifiesto.",
-  BIOMETRICA: "Prueba de vida contra el motor de SeguriData (pendiente de proveedor).",
-  ACCEPT: "Confirma sobre el hash congelado. Sin trazo ni certificado.",
-  PASSKEY: "Verifica su identidad con la passkey de su dispositivo.",
+  DIGITAL: "Certificado PAdES de la CA interna.",
+  AUTOGRAFA: "Dibuja su firma sobre el PDF.",
+  BIOMETRICA: "Prueba de vida (proveedor pendiente).",
+  ACCEPT: "Confirma sobre el hash, sin trazo.",
+  PASSKEY: "Identidad con la passkey del dispositivo.",
 };
 
 function whoText(who: Who): string {
@@ -389,7 +389,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
     <div className="space-y-6">
       <fieldset>
         <legend className="text-sm font-medium">Métodos permitidos</legend>
-        <p className="mb-3 mt-0.5 text-sm text-muted-foreground">Quien firma elige uno de los que marques.</p>
+        <p className="mb-3 mt-0.5 text-sm text-muted-foreground">Quien firma elige uno.</p>
         <ul className="grid gap-2.5 sm:grid-cols-2">
           {ENVELOPE_METHOD_OPTIONS.filter((m) => !allowed || allowed.includes(m.value)).map((m) => {
             const on = chosenMethods.includes(m.value);
@@ -400,19 +400,18 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
                   aria-pressed={on}
                   onClick={() => touch(setMethods)(on ? chosenMethods.filter((x) => x !== m.value) : [...chosenMethods, m.value])}
                   className={cn(
-                    "flex min-h-16 w-full items-start gap-3 rounded-lg border p-3.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                    on ? "border-foreground bg-muted/60" : "border-border hover:bg-muted/50",
+                    "flex min-h-16 w-full items-center gap-3 rounded-lg border-2 px-4 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    on ? "border-foreground bg-accent" : "border-border hover:border-foreground/50",
                   )}
                 >
-                  <span
-                    aria-hidden
-                    className={cn("mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border", on ? "border-primary bg-primary text-primary-foreground" : "border-input bg-background")}
-                  >
-                    {on ? <Check className="size-3.5" /> : null}
-                  </span>
+                  {on ? (
+                    <CircleCheck aria-hidden className="size-6 shrink-0 text-[var(--brand-green-deep)]" strokeWidth={2.25} />
+                  ) : (
+                    <Circle aria-hidden className="size-6 shrink-0 text-foreground/40" strokeWidth={1.75} />
+                  )}
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium">{m.label}</span>
-                    <span className="block text-sm text-muted-foreground">{METHOD_HINT[m.value]}</span>
+                    <span className="block text-[15px] font-semibold">{m.label}</span>
+                    <span className="block text-sm text-foreground/75">{METHOD_HINT[m.value]}</span>
                   </span>
                 </button>
               </li>
@@ -582,7 +581,7 @@ export function FormatEditor({ initial, mode = "PDF", proposal }: { initial?: Fo
 
   return (
     <div className="flex flex-col gap-6">
-      <WizardSteps steps={wizardSteps} current={current} onSelect={go} ariaLabel="Pasos del formato" className="rounded-2xl border border-border bg-muted/50 px-4 py-3 sm:px-8 sm:py-4" />
+      <WizardSteps steps={wizardSteps} current={current} onSelect={go} ariaLabel="Pasos del formato" className="py-1" />
 
       {locked ? (
         <p role="status" className="rounded-md border border-border bg-muted/50 p-3 text-sm">

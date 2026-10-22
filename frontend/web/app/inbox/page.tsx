@@ -297,7 +297,7 @@ export default function InboxPage() {
             </div>
 
             {selected ? (
-              <aside aria-label="Detalle del sobre seleccionado" className="rounded-lg bg-muted/60 p-5 lg:sticky lg:top-6 lg:self-start">
+              <aside aria-label="Detalle del sobre seleccionado" className="rounded-2xl bg-secondary p-6 text-secondary-foreground lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
                 <EvidencePanel key={selected.signatureRequestId} row={selected} />
               </aside>
             ) : null}

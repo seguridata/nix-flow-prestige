@@ -16,8 +16,10 @@ export interface TemplateDraft {
 
 export const fetchTemplateDrafts = () => apiClient.get<TemplateDraft[]>("/chat/drafts/templates");
 
-export function TemplateDrafts({ compact = false }: { compact?: boolean }) {
+export function TemplateDrafts({ compact = false, hideWhenEmpty = false }: { compact?: boolean; hideWhenEmpty?: boolean }) {
   const drafts = useQuery({ queryKey: ["chat-template-drafts"], queryFn: fetchTemplateDrafts });
+  // En el catálogo no hace falta un recuadro que diga que no hay nada: aparece solo cuando hay borradores.
+  if (hideWhenEmpty && !drafts.isPending && !drafts.isError && !drafts.data?.length) return null;
   return (
     <section aria-label="Borradores de formato del asistente" className="mb-6 space-y-2 rounded-lg border border-border p-4">
       <h2 className="text-sm font-semibold">Mis borradores del asistente</h2>

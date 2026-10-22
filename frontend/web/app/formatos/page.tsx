@@ -62,6 +62,7 @@ function FormatosCatalog() {
 
   return (
     <AppShell title="Formatos">
+      <div className="mx-auto w-full min-w-0 max-w-6xl">
       <PageHeader
         title="Formatos"
         description="Elige un formato, llena tus datos y se envía a quien corresponda."
@@ -94,7 +95,7 @@ function FormatosCatalog() {
         </section>
       ) : null}
 
-      {isAdmin ? <TemplateDrafts /> : null}
+      {isAdmin ? <TemplateDrafts hideWhenEmpty /> : null}
 
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative sm:w-72">
@@ -180,6 +181,7 @@ function FormatosCatalog() {
           {formats.isFetchNextPageError ? <p role="alert" className="w-full text-sm">No se pudo cargar la siguiente página. Conservamos los formatos cargados; vuelve a pulsar Cargar más formatos para reintentar.</p> : null}
         </div>
       ) : null}
+      </div>
     </AppShell>
   );
 }
@@ -197,7 +199,7 @@ function FormatGroup({ title, note, formats, isAdmin }: { title?: string; note?:
           {note ? <p className="text-sm text-muted-foreground">{note}</p> : null}
         </div>
       ) : null}
-      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {formats.map((f) => (
           <FormatCard key={f.id} format={f} isAdmin={isAdmin} />
         ))}
@@ -208,24 +210,23 @@ function FormatGroup({ title, note, formats, isAdmin }: { title?: string; note?:
 
 function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: boolean }) {
   return (
-    <li className="relative">
-      <Link
-        href={`/formatos/${f.id}` as never}
-        className={cn(
-          "group flex h-full flex-col gap-3 rounded-lg border bg-background p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
-          f.published ? "border-border" : "border-dashed border-foreground/40",
-        )}
-      >
-        <span className="flex gap-3">
+    <li
+      className={cn(
+        "flex flex-col rounded-xl border bg-background p-5 transition-colors hover:border-foreground/30",
+        f.published ? "border-foreground/20" : "border-dashed border-foreground/40",
+      )}
+    >
+      <Link href={`/formatos/${f.id}` as never} className="group flex flex-1 flex-col gap-4 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="flex items-start gap-4">
           <DocumentIcon label={kindIconLabel(f.kind)} className="size-12 shrink-0" />
           <span className="min-w-0 flex-1">
-            <span className="block text-base font-medium leading-snug">{f.name}</span>
-            <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{f.description || "Sin descripción."}</span>
+            <span className="block text-base font-semibold leading-snug group-hover:underline">{f.name}</span>
+            {f.description ? <span className="mt-1 line-clamp-2 block text-sm text-foreground/70">{f.description}</span> : null}
           </span>
         </span>
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-foreground/70">
           {!f.published ? (
-            <span className="inline-flex items-center gap-1 font-medium text-foreground">
+            <span className="inline-flex items-center gap-1 font-semibold text-foreground">
               <CircleDashed className="size-3.5" aria-hidden /> Borrador
             </span>
           ) : null}
@@ -234,21 +235,24 @@ function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: bo
           <span className="tabular-nums">{plural(f.fieldCount, "dato", "datos")}</span>
           <span className="tabular-nums">{plural(f.stepCount, "paso de firma", "pasos de firma")}</span>
         </span>
-        <span className="mt-auto flex items-center justify-between pt-1">
-          <span className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-[filter] group-hover:brightness-95">
-            {f.published ? "Llenar" : "Abrir"} <ArrowRight className="size-4" aria-hidden />
-          </span>
-        </span>
       </Link>
-      {isAdmin ? (
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4">
         <Link
-          href={`/formatos/${f.id}/editar` as never}
-          aria-label={`Editar ${f.name}`}
-          className="absolute bottom-4 right-4 inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          href={`/formatos/${f.id}` as never}
+          className="inline-flex h-10 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground outline-none transition-[filter] hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Pencil className="size-4" aria-hidden /> Editar
+          {f.published ? "Llenar" : "Abrir"} <ArrowRight className="size-4" aria-hidden />
         </Link>
-      ) : null}
+        {isAdmin ? (
+          <Link
+            href={`/formatos/${f.id}/editar` as never}
+            aria-label={`Editar ${f.name}`}
+            className="inline-flex h-10 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-foreground/80 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Pencil className="size-4" aria-hidden /> Editar
+          </Link>
+        ) : null}
+      </div>
     </li>
   );
 }
