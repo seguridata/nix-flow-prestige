@@ -42,7 +42,8 @@ description = "Ejemplo documentado para una máquina puramente local"
 regexTarget = "secret"
 # `prestige-pki-dev` también aparece en prosa dentro de comentarios (con ` pegado) y el spec
 # de runtime-secrets usa una frase de relleno de prueba, no un secreto.
-regexes = ['''^prestige-pki-dev`?$''', '''^REPLACE_ME''', '''^frase-propia-del-entorno$''']
+# `${PKI_PASSPHRASE:?}` (docker-compose) y `${...}` en general son referencias a una variable, no un valor.
+regexes = ['''^prestige-pki-dev`?$''', '''^REPLACE_ME''', '''^frase-propia-del-entorno$''', '''^[$][{][A-Z_]+[^}]*[}]$''']
 
 [[rules]]
 id = "prestige-dotenv-committed"
