@@ -142,7 +142,14 @@ function CaseRow({ row, emphasis }: { row: OnboardingCaseView; emphasis: boolean
         )}
       >
         <div className="min-w-0 flex-1">
-          <p className={cn("truncate", emphasis ? "text-lg font-semibold" : "text-base font-medium")}>{row.fullName}</p>
+          <p className="flex min-w-0 items-baseline gap-2">
+            <span className={cn("truncate", emphasis ? "text-lg font-semibold" : "text-base font-medium")}>{row.fullName}</span>
+            {row.username ? (
+              <span className="shrink-0 font-mono text-sm text-muted-foreground" title="Usuario para entrar a Prestige">
+                {row.username}
+              </span>
+            ) : null}
+          </p>
           <p className="mt-0.5 truncate text-sm text-muted-foreground">
             {KIND_TEXT[row.kind] ?? row.kind} · {row.email}
           </p>
@@ -180,7 +187,9 @@ function NewCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     kind: "EMPLEADO" as "EMPLEADO" | "PROVEEDOR" | "CLIENTE",
-    fullName: "",
+    givenNames: "",
+    lastName: "",
+    secondLastName: "",
     email: "",
     curp: "",
     rfc: "",
@@ -193,9 +202,20 @@ function NewCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     enabled: open,
   });
   const create = useMutation({
-    mutationFn: () => apiClient.post<OnboardingCaseView>("/onboarding", buildOnboardingCreatePayload(form)),
+    mutationFn: () =>
+      apiClient.post<OnboardingCaseView>(
+        "/onboarding",
+        buildOnboardingCreatePayload({
+          ...form,
+          fullName: [form.givenNames, form.lastName, form.secondLastName].map((part) => part.trim()).filter(Boolean).join(" "),
+        }),
+      ),
     onSuccess: (row) => {
-      toast.success("Alta creada. Continúa con la INE y la prueba de vida.");
+      toast.success(
+        row.username
+          ? `Alta creada. Su usuario es ${row.username}. Continúa con la INE y la prueba de vida.`
+          : "Alta creada. Continúa con la INE y la prueba de vida.",
+      );
       queryClient.invalidateQueries({ queryKey: ["onboarding"] });
       onOpenChange(false);
       router.push(`/onboarding/${row.id}` as Route);
@@ -203,7 +223,12 @@ function NewCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     onError: (error) => toast.error(error instanceof Error ? error.message : "No se pudo crear el alta"),
   });
 
-  const ready = form.fullName.trim().length >= 3 && /.+@.+\..+/.test(form.email) && consent && !!notice.data;
+  const ready =
+    form.givenNames.trim().length >= 1 &&
+    form.lastName.trim().length >= 1 &&
+    /.+@.+\..+/.test(form.email) &&
+    consent &&
+    !!notice.data;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !create.isPending && onOpenChange(o)}>
@@ -228,9 +253,17 @@ function NewCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
               ))}
             </Select>
           </Field>
-          <Field label="Nombre completo" htmlFor="alta-nombre">
-            <Input id="alta-nombre" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+          <Field label="Nombre(s)" htmlFor="alta-nombre">
+            <Input id="alta-nombre" value={form.givenNames} onChange={(e) => setForm({ ...form, givenNames: e.target.value })} />
           </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Primer apellido" htmlFor="alta-apellido">
+              <Input id="alta-apellido" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+            </Field>
+            <Field label="Segundo apellido" htmlFor="alta-apellido2" optional>
+              <Input id="alta-apellido2" value={form.secondLastName} onChange={(e) => setForm({ ...form, secondLastName: e.target.value })} />
+            </Field>
+          </div>
           <Field label="Correo" htmlFor="alta-correo">
             <Input id="alta-correo" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </Field>

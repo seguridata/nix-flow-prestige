@@ -12,6 +12,22 @@ export class CreateOnboardingDto {
   @MaxLength(160)
   fullName!: string;
 
+  /** Nombre(s) de pila, apellidos por separado: con ellos el usuario de acceso no depende de adivinar el orden. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  givenNames?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  secondLastName?: string;
+
   @IsEmail()
   email!: string;
 

@@ -233,6 +233,12 @@ export default function OnboardingDetailPage({ params }: { params: Promise<{ id:
           meta={
             <>
               {KIND_TEXT[row.kind] ?? row.kind} · {row.email}
+              {row.username ? (
+                <>
+                  {" · Usuario "}
+                  <span className="font-mono">{row.username}</span>
+                </>
+              ) : null}
               {row.curp ? ` · CURP ${row.curp}` : ""}
               {row.rfc ? ` · RFC ${row.rfc}` : ""}
             </>
