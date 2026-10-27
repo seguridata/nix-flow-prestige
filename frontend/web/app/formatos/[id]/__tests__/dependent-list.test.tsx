@@ -25,15 +25,16 @@ vi.mock("@/components/formats/attachments-block", () => ({
  * Mismas agrupaciones que `CONCEPTOS_POR_TIPO` del BFF (hoja «Responsables Gasto»): los grupos cortos son los reales y los largos
  * se rellenan hasta las 68 opciones del formato publicado, para ejercitar tanto el select como la lista con búsqueda.
  */
+const BIENES = ["Nómina", "Asesoría Fiscal-Legal", ...Array.from({ length: 38 }, (_, i) => `Bien o servicio ${i + 1}`)];
 const POR_TIPO: Record<string, string[]> = {
-  "Bienes y servicios": ["Nómina", "Asesoría Fiscal-Legal", ...Array.from({ length: 38 }, (_, i) => `Bien o servicio ${i + 1}`)],
+  "Bienes y servicios": BIENES,
   "Costo de venta directo (Entrust)": ["Entrust", "HDW terceros", "SW terceros", "Aliados", "Azure"],
   "Gastos de oficina, seguros y comunicación": ["Renta oficinas", "Mantenimiento inmueble", ...Array.from({ length: 9 }, (_, i) => `Gasto de oficina ${i + 1}`)],
   Marketing: Array.from({ length: 11 }, (_, i) => `Marketing ${i + 1}`),
   Viaje: ["Gastos de Viaje"],
 };
 const TIPOS = Object.keys(POR_TIPO);
-const TODOS = TIPOS.flatMap((t) => POR_TIPO[t]);
+const TODOS = Object.values(POR_TIPO).flat();
 
 const formato = {
   id: "gastos",
@@ -120,9 +121,9 @@ describe("Formato de gastos: el concepto solo ofrece las opciones del tipo elegi
     await abrir();
     elegirTipo("Bienes y servicios");
     const opciones = Array.from(document.querySelectorAll("#f-concepto-options option")).map((o) => (o as HTMLOptionElement).value);
-    expect(opciones).toHaveLength(POR_TIPO["Bienes y servicios"].length);
+    expect(opciones).toHaveLength(BIENES.length);
     expect(opciones).toContain("Nómina");
     expect(opciones).not.toContain("Entrust");
-    expect(screen.getByText(`${POR_TIPO["Bienes y servicios"].length} opciones; escribe para filtrar.`)).toBeInTheDocument();
+    expect(screen.getByText(`${BIENES.length} opciones; escribe para filtrar.`)).toBeInTheDocument();
   });
 });
