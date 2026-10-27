@@ -147,3 +147,14 @@ Borrar notificaciones huérfanas; MinIO sin root y app limitada al bucket; Tempo
 
 ## Documentación del repo
 Índice y orden de lectura en `MasterPlan/README.md`. Se eliminaron por desfasados: el plan y el handoff de Fases A/B, el plan por sprints, el reporte de auditoría, el progreso por sprint, las fases, la guía de retoma, las continuidades de 16 y 17 oct y la página `Documentacion/07-estado-y-ruta.html`. Lo vigente de ellos (requerimiento original y decisiones D1–D10) quedó en `MasterPlan/REQUERIMIENTO-Y-DECISIONES.md`; el resto está en el historial de Git.
+
+### Dominios unificados (27 oct)
+- [x] Web: `https://prestige.seguridata.site` (principal). Keycloak: `https://prestige-auth.seguridata.site` (el host `kc-prestige` redirige 301). BFF: `https://api-prestige.seguridata.site`. Sin cambios de DNS (los tres ya existían en IONOS).
+- [x] Causa del error de ingreso: `OIDC_REDIRECT_URI` y `OIDC_POST_LOGOUT_REDIRECT` en Vercel apuntaban a `prestige-web-seguridata.vercel.app`; el callback caía en otro host que la cookie de sesión. Corregidas junto con `KEYCLOAK_ISSUER`; cliente `prestige-web` del realm con los URIs nuevos; `prestige.env` del servidor y BFF (CORS, `PUBLIC_WEB_URL`) alineados; redeploy de producción hecho.
+- Salud del BFF: `/operations/health`. Nota de operación: al editar el Caddyfile del servidor hay que reiniciar `zeus-caddy-1` (un `sed -i` rompe el bind mount y `caddy reload` dice «config is unchanged»).
+
+### Alta de onboarding crea la cuenta de acceso (27 oct)
+- [x] Quien se da de alta en onboarding recibe un usuario de Keycloak (roles `sender` y `signer`, `tenant` del alta). Usuario = inicial del nombre + primer apellido; si ya existe, inicial del segundo nombre + primer apellido; si no hay segundo nombre, inicial del nombre + segundo apellido; agotado eso, un número al final. Se muestra junto al nombre en la lista y en el detalle. El formulario pide nombre(s), primer apellido y segundo apellido por separado para no adivinar el orden.
+- [x] Correos apagados: contraseña inicial **temporal común** (Keycloak obliga a cambiarla en el primer ingreso), tomada de `ONBOARDING_DEFAULT_PASSWORD` en `prestige.env` del servidor, nunca del repo. Passwords por token se evaluaron y se difieren: requieren tabla y migración, endpoint público de activación, página nueva y, sobre todo, un canal de entrega que hoy no existe (sin correo).
+- [x] El BFF usa una cuenta de servicio de permisos mínimos (`prestige-onboarding-admin`: `manage-users`, `view-users`, `query-users`, `view-realm`), creada con `deploy/server/provision-onboarding-admin.sh` por la administración estándar de Keycloak. No toca el realm, sus flujos ni sus temas. Rechazar un alta deshabilita la cuenta (no la borra) y queda auditado.
+- Pendiente: al contar con relay SMTP real, pasar de contraseña común a enlace de activación; revisar si proveedores y clientes deben recibir cuenta (hoy todos los tipos de alta la reciben).
