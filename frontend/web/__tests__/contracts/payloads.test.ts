@@ -19,7 +19,7 @@ const COMMENT_KEYS = ["body"];
 // backend/bff/src/signature-requests/dto.ts (DelegateDto)
 const DELEGATE_KEYS = ["toSignerId", "toName"];
 // backend/bff/src/onboarding/dto.ts (CreateOnboardingDto)
-const ONBOARDING_CREATE_KEYS = ["kind", "fullName", "email", "curp", "rfc", "biometricConsent"];
+const ONBOARDING_CREATE_KEYS = ["kind", "fullName", "givenNames", "lastName", "secondLastName", "email", "curp", "rfc", "biometricConsent"];
 // backend/bff/src/onboarding/dto.ts (OnboardingActionDto) — verify-ine y reject
 const ONBOARDING_ACTION_KEYS = ["notes", "approve"];
 // backend/bff/src/onboarding/dto.ts (EnableOnboardingDto)
@@ -57,6 +57,19 @@ describe("contratos de payload hacia el BFF", () => {
     });
     expect(onlyAllowed(p, ONBOARDING_CREATE_KEYS)).toEqual([]);
     expect(p.biometricConsent).toBe(true);
+  });
+
+  it("onboarding create: nombre(s) y apellidos viajan separados y sin espacios sobrantes", () => {
+    const p = buildOnboardingCreatePayload({
+      fullName: "Maya Pamela Perez Flores",
+      givenNames: " Maya Pamela ",
+      lastName: "Perez",
+      secondLastName: "  ",
+      email: "m@x.mx",
+    });
+    expect(onlyAllowed(p, ONBOARDING_CREATE_KEYS)).toEqual([]);
+    expect(p).toMatchObject({ givenNames: "Maya Pamela", lastName: "Perez" });
+    expect(p).not.toHaveProperty("secondLastName");
   });
 
   it("onboarding verify-ine / reject: sin actorId/actorName", () => {

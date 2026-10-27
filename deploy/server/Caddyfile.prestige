@@ -7,10 +7,15 @@ api-prestige.seguridata.site {
     reverse_proxy prestige-bff:3000
 }
 
-kc-prestige.seguridata.site {
+prestige-auth.seguridata.site {
     # La consola de administración y el realm master no se publican: se administran por
     # `docker exec prestige-keycloak kcadm.sh ...` desde el servidor.
     @admin path /admin /admin/* /realms/master /realms/master/*
     respond @admin 404
     reverse_proxy prestige-keycloak:8080
+}
+
+# Host anterior de Keycloak: redirige al nuevo para no romper enlaces.
+kc-prestige.seguridata.site {
+    redir https://prestige-auth.seguridata.site{uri} permanent
 }

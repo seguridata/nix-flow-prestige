@@ -30,6 +30,8 @@ export interface OnboardingCaseView {
   faceMatchScore?: number | null;
   biometricEngine?: string | null;
   enabledSignerId?: string | null;
+  /** Usuario de acceso generado en el alta (inicial del nombre + primer apellido). */
+  username?: string | null;
   notes?: string | null;
   biometricConsentAt?: string | null;
   biometricConsentVersion?: string | null;

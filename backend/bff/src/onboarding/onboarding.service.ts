@@ -1,7 +1,8 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
 import type { OnboardingCase, OnboardingKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { runAsSystem } from '../prisma/tenant-guard';
 import { STABLE_ORDER, finishPage, mapPage, pageArgs, prismaPage, type PageQueryDto } from '../common/pagination';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { SigningRouter } from '../signing/signing.router';
@@ -14,6 +15,8 @@ import { BIOMETRIC_CONSENT_TEXT, BIOMETRIC_CONSENT_VERSION, biometricConsentHash
 import { OcrService } from '../identity/ocr.service';
 import { IDENTITY_VERIFIER, type IdentityVerifier } from '../identity/identity-verifier';
 import { BIOMETRIC_ENGINE, type BiometricEngine } from '../identity/biometric-engine';
+import { AccountConflictError, KeycloakAdminService } from './keycloak-admin.service';
+import { pickUsername, splitNames, type PersonNames } from './username';
 
 /** Referencia a un objeto cifrado en storage (lo que se guarda en las columnas Json). */
 interface StoredRef {
@@ -36,9 +39,9 @@ export function assertBiometricConsent(row: { biometricConsentAt: Date | null })
   }
 }
 
-/** Oculta las referencias de storage y expone banderas `has*`. */
+/** Oculta las referencias de storage y el id de la cuenta, y expone banderas `has*`. */
 function publicView(row: OnboardingCase) {
-  const { ineFront, ineBack, selfie, ...rest } = row;
+  const { ineFront, ineBack, selfie, accountId: _accountId, ...rest } = row;
   return {
     ...rest,
     hasIneFront: ineFront != null,
@@ -58,7 +61,59 @@ export class OnboardingService {
     private readonly ocr: OcrService,
     @Inject(IDENTITY_VERIFIER) private readonly identity: IdentityVerifier,
     @Inject(BIOMETRIC_ENGINE) private readonly biometrics: BiometricEngine,
+    @Optional() private readonly accounts?: KeycloakAdminService,
   ) {}
+
+  private readonly log = new Logger(OnboardingService.name);
+
+  /**
+   * Usuario de acceso de la persona dada de alta. Es único contra otras altas y contra Keycloak; si
+   * la creación de cuentas está configurada también crea la cuenta (contraseña temporal) y devuelve
+   * su id. Sin configurar, solo reserva el nombre de usuario.
+   */
+  private async provisionAccount(
+    body: PersonNames & { tenantId: string; email: string },
+  ): Promise<{ username: string; accountId: string | null }> {
+    const lost = new Set<string>(); // perdió la carrera en Keycloak entre la consulta y el alta
+    const isTaken = async (username: string): Promise<boolean> => {
+      if (lost.has(username)) return true;
+      // El usuario es único en todo el realm de Keycloak, no por tenant: la consulta es global a propósito.
+      const inOnboarding = await runAsSystem('Onboarding: el usuario de acceso es único en todo el realm', () =>
+        this.prisma.onboardingCase.count({ where: { username: { equals: username, mode: 'insensitive' } } }),
+      );
+      if (inOnboarding > 0) return true;
+      return this.accounts?.enabled ? this.accounts.usernameExists(username) : false;
+    };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const username = await pickUsername(body, isTaken);
+      if (!this.accounts?.enabled) return { username, accountId: null };
+      const { given, surnames } = splitNames(body);
+      const display = {
+        firstName: (body.givenNames?.trim() || body.fullName.trim().split(/\s+/).slice(0, Math.max(given.length, 1)).join(' ')),
+        lastName: [body.lastName, body.secondLastName].filter(Boolean).join(' ').trim() || surnames.join(' '),
+      };
+      try {
+        const { id } = await this.accounts.createUser({
+          username,
+          email: body.email,
+          firstName: display.firstName,
+          lastName: display.lastName,
+          tenant: body.tenantId,
+        });
+        return { username, accountId: id };
+      } catch (error) {
+        if (error instanceof AccountConflictError && error.field === 'username') {
+          lost.add(username);
+          continue;
+        }
+        if (error instanceof AccountConflictError) {
+          throw new ConflictException({ error: 'ACCOUNT_EMAIL_EXISTS', message: 'Ya existe una cuenta con ese correo' });
+        }
+        throw error;
+      }
+    }
+    throw new ConflictException({ error: 'USERNAME_UNAVAILABLE', message: 'No se pudo reservar un usuario para este nombre' });
+  }
 
   async list(tenantId: string, page?: PageQueryDto) {
     const args = pageArgs(page);
@@ -82,6 +137,9 @@ export class OnboardingService {
     tenantId: string;
     kind?: OnboardingKind;
     fullName: string;
+    givenNames?: string;
+    lastName?: string;
+    secondLastName?: string;
     email: string;
     curp?: string;
     rfc?: string;
@@ -101,25 +159,25 @@ export class OnboardingService {
       );
     }
     const now = new Date();
-    const created = await this.prisma.onboardingCase.create({
-      data: {
-        tenantId: body.tenantId,
-        kind: body.kind ?? 'EMPLEADO',
-        status: 'DATOS',
-        fullName: body.fullName.trim(),
-        email: body.email.trim().toLowerCase(),
-        curp: body.curp?.trim().toUpperCase(),
-        rfc: body.rfc?.trim().toUpperCase(),
-        requestedBy: body.requestedBy,
-        requestedByName: body.requestedByName,
-        biometricConsentAt: now,
-        biometricConsentVersion: BIOMETRIC_CONSENT_VERSION,
-        biometricConsentTextHash: biometricConsentHash(),
-        biometricConsentIp: body.ip,
-        biometricConsentUserAgent: body.userAgent,
-        biometricConsentActorId: body.requestedBy,
-      },
-    });
+    const email = body.email.trim().toLowerCase();
+    const account = await this.provisionAccount({ ...body, email });
+    let created: OnboardingCase;
+    try {
+      created = await this.createCase(body, email, account, now);
+    } catch (error) {
+      // El alta no se guardó: la cuenta recién creada no puede quedar suelta con acceso.
+      if (account.accountId) await this.accounts?.deleteUser(account.accountId).catch(() => undefined);
+      throw error;
+    }
+    if (account.accountId) {
+      await this.collab.audit({
+        onboardingId: created.id,
+        actorId: body.requestedBy,
+        actorName: body.requestedByName,
+        action: 'ACCOUNT_CREATED',
+        payload: { username: account.username, passwordTemporary: true },
+      });
+    }
     await this.collab.audit({
       onboardingId: created.id,
       actorId: body.requestedBy,
@@ -136,9 +194,38 @@ export class OnboardingService {
       actorId: body.requestedBy,
       actorName: body.requestedByName,
       action: 'ONBOARDING_CREATED',
-      payload: { kind: created.kind, email: created.email },
+      payload: { kind: created.kind, email: created.email, username: account.username },
     });
     return publicView(created);
+  }
+
+  private createCase(
+    body: Parameters<OnboardingService['create']>[0],
+    email: string,
+    account: { username: string; accountId: string | null },
+    now: Date,
+  ) {
+    return this.prisma.onboardingCase.create({
+      data: {
+        tenantId: body.tenantId,
+        kind: body.kind ?? 'EMPLEADO',
+        status: 'DATOS',
+        fullName: body.fullName.trim(),
+        email,
+        username: account.username,
+        accountId: account.accountId,
+        curp: body.curp?.trim().toUpperCase(),
+        rfc: body.rfc?.trim().toUpperCase(),
+        requestedBy: body.requestedBy,
+        requestedByName: body.requestedByName,
+        biometricConsentAt: now,
+        biometricConsentVersion: BIOMETRIC_CONSENT_VERSION,
+        biometricConsentTextHash: biometricConsentHash(),
+        biometricConsentIp: body.ip,
+        biometricConsentUserAgent: body.userAgent,
+        biometricConsentActorId: body.requestedBy,
+      },
+    });
   }
 
   /**
@@ -467,6 +554,24 @@ export class OnboardingService {
       action: 'ONBOARDING_REJECTED',
       payload: { notes: body.notes },
     });
+    if (updated.accountId && this.accounts?.enabled) {
+      // Un alta rechazada no debe dejar un acceso vivo. Se deshabilita (no se borra) y queda auditado;
+      // si Keycloak no responde, el rechazo ya está guardado y se avisa en el log para repetirlo.
+      await this.accounts
+        .disableUser(updated.accountId)
+        .then(() =>
+          this.collab.audit({
+            onboardingId: id,
+            actorId: body.actorId,
+            actorName: body.actorName,
+            action: 'ACCOUNT_DISABLED',
+            payload: { username: updated.username },
+          }),
+        )
+        .catch((error: unknown) =>
+          this.log.warn(`Alta ${id} rechazada, pero no se pudo deshabilitar la cuenta ${updated.username}: ${String(error)}`),
+        );
+    }
     return publicView(updated);
   }
 }

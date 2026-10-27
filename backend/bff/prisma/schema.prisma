@@ -767,6 +767,10 @@ model OnboardingCase {
   biometricConsentUserAgent String?
   biometricConsentActorId   String?
   enabledSignerId    String?
+  /// Usuario de acceso generado en el alta (inicial del nombre + primer apellido). Se muestra en la lista.
+  username           String?
+  /// Id de la cuenta en Keycloak; null si la creación de cuentas no está configurada.
+  accountId          String?
   notes              String?
   requestedBy        String
   requestedByName    String?
@@ -775,6 +779,7 @@ model OnboardingCase {
 
   @@index([tenantId, status])
   @@index([email])
+  @@index([username])
 }
 
 /// Formato reutilizable: un PDF base con campos que el usuario llena y el flujo de firma precargado.

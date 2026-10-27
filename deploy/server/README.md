@@ -19,7 +19,7 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 |---|---|
 | `docker-compose.yml` | Los seis servicios. El BFF y Keycloak se unen a la red del Caddy del servidor (`zeus_zeus_internal`). |
 | `.env.example` | Plantilla de variables. El archivo real (`prestige.env`) vive solo en el servidor. |
-| `Caddyfile.prestige` | Rutas a agregar al Caddy: `api-prestige` → BFF y `kc-prestige` → Keycloak. La consola de administración de Keycloak no se publica. |
+| `Caddyfile.prestige` | Rutas a agregar al Caddy: `api-prestige` → BFF y `prestige-auth` → Keycloak. La consola de administración de Keycloak no se publica. |
 | `create-multiple-dbs.sh` | Se copia de `backend/infra/`; crea las bases `keycloak`, `temporal` y `temporal_visibility`. |
 
 ## Pasos
@@ -44,12 +44,13 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 5. **Arrancar**: `docker compose --env-file prestige.env up -d`. El BFF aplica las migraciones pendientes al iniciar.
 6. **Caddy**: agregar `Caddyfile.prestige` al Caddyfile del servidor y recargar (`caddy reload`). Los dominios deben apuntar al servidor.
 7. **Usuarios de Keycloak** (consola no publicada): crearlos con `docker exec prestige-keycloak /opt/keycloak/bin/kcadm.sh`, con el atributo `tenant`, sus roles y una contraseña temporal que obligue a cambiarla.
+   **Alta desde onboarding**: el BFF crea la cuenta de quien se da de alta (usuario = inicial del nombre + primer apellido; si ya existe, inicial del segundo nombre + primer apellido, o inicial del nombre + segundo apellido). Necesita una cuenta de servicio con permisos mínimos de usuarios; se crea una vez, en el servidor, con `ONBOARDING_DEFAULT_PASSWORD='<temporal>' ./provision-onboarding-admin.sh` y luego `docker compose --env-file prestige.env up -d bff worker`. La contraseña inicial es temporal (Keycloak obliga a cambiarla en el primer ingreso) y vive solo en `prestige.env`, nunca en el repo. Sin esas variables el alta sigue funcionando y solo reserva el usuario.
 8. **Web**: variables en Vercel (`KEYCLOAK_ISSUER`, `OIDC_*`, `BFF_URL`, `NEXT_PUBLIC_API_URL`, `SESSION_SECRET`, `REDIS_URL`) y despliegue desde `main`. Quitar la protección de Vercel del proyecto: el portal de firma externa tiene que ser público.
 
 ## Verificación
 
 - `https://api-prestige.<dominio>/operations/health/ready` responde 200.
-- `https://kc-prestige.<dominio>/realms/prestige/.well-known/openid-configuration` responde 200 y `/admin/` responde 404.
+- `https://prestige-auth.<dominio>/realms/prestige/.well-known/openid-configuration` responde 200 y `/admin/` responde 404 (en `Caddyfile.prestige`; en el servidor real se permite `/admin` y `/realms/master` solo desde la IP del dueño con `not remote_ip`).
 - Inicio de sesión desde la web y una consulta autenticada al BFF.
 
 ## Límites conocidos

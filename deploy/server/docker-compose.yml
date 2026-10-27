@@ -13,6 +13,12 @@ x-bff-env: &bff-env
   PORT: "3000"
   DATABASE_URL: ${DATABASE_URL:?}
   KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:?}
+  # Alta de usuarios desde onboarding (opcional: sin estas variables el alta solo reserva el usuario).
+  # La cuenta de servicio se crea con provision-onboarding-admin.sh; la contraseña inicial es temporal.
+  KEYCLOAK_ADMIN_URL: http://keycloak:8080
+  KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-}
+  KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
+  ONBOARDING_DEFAULT_PASSWORD: ${ONBOARDING_DEFAULT_PASSWORD:-}
   MCP_ENABLED: "true"
   MCP_RESOURCE_URL: ${API_PUBLIC_URL:?}/mcp
   TEMPORAL_ADDRESS: temporal:7233

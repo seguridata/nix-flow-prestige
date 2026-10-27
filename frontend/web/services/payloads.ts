@@ -21,6 +21,9 @@ export function buildDelegatePayload(toSignerId: string, toName?: string) {
 /** DTO: backend/bff/src/onboarding/dto.ts (CreateOnboardingDto). */
 export function buildOnboardingCreatePayload(form: {
   fullName: string;
+  givenNames?: string;
+  lastName?: string;
+  secondLastName?: string;
   email: string;
   curp?: string;
   rfc?: string;
@@ -28,12 +31,18 @@ export function buildOnboardingCreatePayload(form: {
 }) {
   const out: {
     fullName: string;
+    givenNames?: string;
+    lastName?: string;
+    secondLastName?: string;
     email: string;
     curp?: string;
     rfc?: string;
     kind?: "EMPLEADO" | "PROVEEDOR" | "CLIENTE";
     biometricConsent: true;
   } = { fullName: form.fullName, email: form.email, biometricConsent: true };
+  if (form.givenNames?.trim()) out.givenNames = form.givenNames.trim();
+  if (form.lastName?.trim()) out.lastName = form.lastName.trim();
+  if (form.secondLastName?.trim()) out.secondLastName = form.secondLastName.trim();
   if (form.curp) out.curp = form.curp;
   if (form.rfc) out.rfc = form.rfc;
   if (form.kind) out.kind = form.kind;
