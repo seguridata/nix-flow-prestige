@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
-import { ADQUISICIONES_FLOW, AREAS, CONCEPTOS, PROVEEDORES_ESTRATEGICOS_FLOW, RENOVACION_LICENCIAS_FLOW, ROL_EJECUTIVO_AYT, TABLA_RESPONSABLES, TABLA_ROLES, TIPOS_GASTO } from './adquisiciones.flows';
-import { flowQueries, resolveFlow, validateFlow } from '../flow/flow';
+import { ADQUISICIONES_FLOW, AREAS, CONCEPTOS, CONCEPTOS_POR_TIPO, PROVEEDORES_ESTRATEGICOS_FLOW, RENOVACION_LICENCIAS_FLOW, ROL_EJECUTIVO_AYT, TABLA_RESPONSABLES, TABLA_ROLES, TIPOS_GASTO } from './adquisiciones.flows';
+import { flowQueries, optionsFor, resolveFlow, validateFlow } from '../flow/flow';
 import { runLookup, type LookupColumn } from '../lookup-tables/lookup-engine';
 import { MAX_STEPS } from '../flow/flow.types';
 import { PLATFORM_TENANT, ProcessService } from './process.service';
@@ -39,6 +39,29 @@ describe('flujos por defecto de Adquisiciones', () => {
     expect(v.concepto!.options).toHaveLength(68);
     expect(new Set(CONCEPTOS).size).toBe(CONCEPTOS.length);
     expect(v.monto).toMatchObject({ type: 'number', required: true });
+  });
+
+  it('el concepto depende del tipo de gasto: cada tipo ofrece solo sus conceptos y ninguno se repite entre tipos', () => {
+    const concepto = ADQUISICIONES_FLOW.variables.find((x) => x.key === 'concepto')!;
+    expect(concepto.dependsOn?.variable).toBe('tipoGasto');
+    expect(Object.keys(concepto.dependsOn!.options)).toEqual([...TIPOS_GASTO]);
+    expect(optionsFor(concepto, { tipoGasto: 'Gastos de oficina, seguros y comunicación' })).toEqual([
+      'Renta oficinas',
+      'Mantenimiento inmueble',
+      'Renta estacionamiento Externo',
+      'Energía electrica',
+      'Seguros corporativos (Multimodal)',
+      'Seguros corporativos: Empleados',
+      'Seguros corporativos: Corporativos',
+      'Telefonía Fija e Internet',
+      'Telefonos Moviles',
+      'Hosting Red IT (KIO )',
+      'Mensajería',
+    ]);
+    expect(optionsFor(concepto, { tipoGasto: 'Costo de venta directo (Entrust)' })).toEqual(['Entrust', 'HDW terceros', 'SW terceros', 'Aliados', 'Azure']);
+    expect(optionsFor(concepto, { tipoGasto: 'Viaje' })).toEqual(['Gastos de Viaje']);
+    expect(CONCEPTOS).toHaveLength(Object.values(CONCEPTOS_POR_TIPO).flat().length);
+    expect(validateFlow(ADQUISICIONES_FLOW)).toEqual([]);
   });
 
   it('las autorizaciones salen de la tabla responsables-gasto: área, tipo de gasto y, para bienes, factura y pago', () => {

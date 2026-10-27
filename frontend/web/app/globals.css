@@ -38,7 +38,7 @@
   --secondary-foreground: var(--brand-white);
 
   --muted: var(--brand-mist);
-  --muted-foreground: var(--brand-slate);
+  --muted-foreground: #48545c; /* slate de marca oscurecido: el texto secundario se lee sin esfuerzo (≈7.6:1) */
 
   --accent: #eaf3d6;
   --accent-foreground: var(--brand-carbon);
@@ -51,8 +51,8 @@
   --warning: #a15c00;
   --warning-foreground: var(--brand-white);
 
-  --border: #e3e3e3;
-  --input: #e3e3e3;
+  --border: #c9c9c9; /* bordes visibles sobre blanco */
+  --input: #9a9a9a; /* el borde de un campo debe distinguirse (≥3:1) */
   --ring: var(--brand-green);
 
   --sidebar: var(--brand-carbon);

@@ -4,13 +4,13 @@ import { use, useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Eye, EyeOff, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { AttachmentsBlock, useAttachments } from "@/components/formats/attachments-block";
 import { type Person } from "@/components/formats/person-picker";
 import { SendToSteps } from "@/components/formats/send-to-steps";
-import { PdfSurface, useContainerWidth } from "@/components/formats/pdf-surface";
+import { LivePreview } from "@/components/formats/live-preview";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,14 +20,13 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { attachmentErrorsFrom, attachmentStatus, unmetSpecs } from "@/libs/attachments";
-import { type FlowVariable } from "@/libs/flow";
+import { optionsFor, type FlowVariable } from "@/libs/flow";
 import { needsPerson } from "@/libs/format-steps";
 import { cn } from "@/libs/utils";
 import { useSession } from "@/store/session-store";
 import { ApiError } from "@/services/api-client";
 import {
   fetchFormat,
-  formatPdfUrl,
   instantiateFormat,
   previewFormatFlow,
   type AskedSigner,
@@ -36,8 +35,6 @@ import {
 } from "@/services/formats-service";
 
 const today = () => new Date().toISOString().slice(0, 10);
-/** El PDF final imprime las fechas como DD/MM/AAAA; la vista previa debe verse igual. */
-const shown = (type: string, v: string) => (type === "date" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split("-").reverse().join("/") : v);
 
 export default function UsarFormatoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -149,9 +146,9 @@ function UsarForm({ format }: { format: FormatDetail }) {
     },
   });
 
-  const { ref, width } = useContainerWidth(560);
-  const fontScale = width / 612;
-  const [showPreview, setShowPreview] = useState(false);
+  // Dato con el foco (resalta su lugar en el documento) y pestaña de la columna lateral.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [side, setSide] = useState<"doc" | "route">("doc");
 
   // Qué falta, dicho tal cual: «Falta: 3 cotizaciones del proveedor, monto y elegir a 1 persona».
   const blockers = [
@@ -166,17 +163,34 @@ function UsarForm({ format }: { format: FormatDetail }) {
       : "";
 
   const groups = groupVariables(format.flow.variables);
-  const setValue = (key: string, val: string) => setValues((s) => ({ ...s, [key]: val }));
+  const setValue = (key: string, val: string) =>
+    setValues((s) => {
+      const next = { ...s, [key]: val };
+      // Una lista dependiente solo conserva su valor si sigue siendo una opción del nuevo valor de la que depende.
+      for (const v of format.flow.variables) {
+        if (v.dependsOn?.variable === key && next[v.key] && !optionsFor(v, next).includes(next[v.key]!)) next[v.key] = "";
+      }
+      return next;
+    });
 
   return (
     <form
-      className="grid gap-8 pb-28 lg:grid-cols-[minmax(0,1fr)_22rem] lg:pb-0 xl:gap-12"
+      className="grid gap-8 pb-28 lg:grid-cols-[minmax(0,1fr)_24rem] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_28rem] xl:gap-12"
       onSubmit={(e) => {
         e.preventDefault();
         if (ready && !send.isPending) send.mutate();
       }}
     >
-      <div className="min-w-0 space-y-10">
+      <div
+        className="min-w-0 space-y-10"
+        onFocusCapture={(e) => {
+          const id = (e.target as HTMLElement).id;
+          setActiveKey(id.startsWith("f-") ? id.slice(2) : null);
+        }}
+        onBlurCapture={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActiveKey(null);
+        }}
+      >
         {groups.length === 0 ? <p className="text-sm text-muted-foreground">Este formato no pide datos.</p> : null}
         {groups.map((g) => (
           <section key={g.id} aria-labelledby={`sec-${g.id}`} className="space-y-4">
@@ -185,56 +199,44 @@ function UsarForm({ format }: { format: FormatDetail }) {
             </h2>
             <div className="grid gap-x-5 gap-y-5 sm:grid-cols-2">
               {g.items.map((v) => (
-                <VariableField key={v.key} variable={v} value={values[v.key] ?? ""} onChange={(val) => setValue(v.key, val)} />
+                <VariableField
+                  key={v.key}
+                  variable={v}
+                  options={optionsFor(v, values)}
+                  parentLabel={v.dependsOn ? (format.flow.variables.find((x) => x.key === v.dependsOn!.variable)?.label ?? v.dependsOn.variable) : undefined}
+                  value={values[v.key] ?? ""}
+                  onChange={(val) => setValue(v.key, val)}
+                />
               ))}
             </div>
           </section>
         ))}
 
         <AttachmentsBlock specs={specs} state={att} serverErrors={attachmentErrors} />
-
-        <section aria-labelledby="vista-previa" className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-            <h2 id="vista-previa" className="text-lg font-semibold">
-              Vista previa del documento
-            </h2>
-            <Button type="button" variant="outline" size="sm" aria-expanded={showPreview} onClick={() => setShowPreview((v) => !v)}>
-              {showPreview ? <EyeOff /> : <Eye />} {showPreview ? "Ocultar vista previa" : "Ver cómo quedará"}
-            </Button>
-          </div>
-          {showPreview ? (
-            <div ref={ref} className="min-w-0">
-              <PdfSurface file={formatPdfUrl(format.id)} page={1} width={width}>
-                {format.fields
-                  .filter((f) => f.page === 1 && values[f.key])
-                  .map((f) => (
-                    <span
-                      key={f.key}
-                      className="pointer-events-none absolute flex items-center overflow-hidden whitespace-nowrap leading-none text-black"
-                      style={{
-                        left: `${f.x * 100}%`,
-                        top: `${f.y * 100}%`,
-                        width: `${f.w * 100}%`,
-                        height: `${f.h * 100}%`,
-                        fontSize: `${(f.fontSize ?? 11) * fontScale}px`,
-                        justifyContent: f.align === "center" ? "center" : "flex-start",
-                        fontFamily: "Helvetica, Arial, sans-serif",
-                      }}
-                    >
-                      {shown(f.type, values[f.key] ?? "")}
-                    </span>
-                  ))}
-              </PdfSurface>
-              {format.pageCount > 1 ? <p className="mt-2 text-xs text-muted-foreground">Se muestra la primera página; el documento final lleva las {format.pageCount}.</p> : null}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Mira cómo se van llenando los datos sobre el documento.</p>
-          )}
-        </section>
       </div>
 
-      <aside className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start">
-        <section aria-label="Se enviará a" aria-busy={preview.isFetching}>
+      <aside className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+        <SideTabs
+          value={side}
+          onChange={setSide}
+          tabs={[
+            { id: "doc", label: "Documento" },
+            { id: "route", label: "Ruta de envío", note: missingPeople.length > 0 ? `${missingPeople.length} por elegir` : undefined },
+          ]}
+        />
+
+        <section id="side-panel-doc" role="tabpanel" aria-labelledby="side-tab-doc" hidden={side !== "doc"}>
+          <LivePreview format={format} values={values} activeKey={activeKey} />
+        </section>
+
+        <section
+          id="side-panel-route"
+          role="tabpanel"
+          aria-labelledby="side-tab-route"
+          hidden={side !== "route"}
+          aria-label="Se enviará a"
+          aria-busy={preview.isFetching}
+        >
           <SendToSteps
             steps={
               preview.data?.steps ??
@@ -269,6 +271,48 @@ function UsarForm({ format }: { format: FormatDetail }) {
         </div>
       </aside>
     </form>
+  );
+}
+
+/** Pestañas de la columna lateral (documento en vivo / ruta de envío); con un aviso cuando falta algo en la otra. */
+function SideTabs<T extends string>({
+  value,
+  onChange,
+  tabs,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  tabs: { id: T; label: string; note?: string }[];
+}) {
+  return (
+    <div role="tablist" aria-label="Vista lateral" className="flex gap-1 rounded-lg bg-muted p-1">
+      {tabs.map((t, i) => (
+        <button
+          key={t.id}
+          type="button"
+          id={`side-tab-${t.id}`}
+          role="tab"
+          aria-selected={value === t.id}
+          aria-controls={`side-panel-${t.id}`}
+          tabIndex={value === t.id ? 0 : -1}
+          onClick={() => onChange(t.id)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            const next = tabs[(i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]!;
+            onChange(next.id);
+            document.getElementById(`side-tab-${next.id}`)?.focus();
+          }}
+          className={cn(
+            "flex min-h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            value === t.id ? "bg-background font-semibold text-foreground shadow-subtle" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+          )}
+        >
+          {t.label}
+          {t.note ? <span className="text-xs font-medium text-[#8c2018]">· {t.note}</span> : null}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -328,10 +372,24 @@ function SearchableList({ id, value, options, onChange }: { id: string; value: s
   );
 }
 
-function VariableField({ variable: v, value, onChange }: { variable: FlowVariable; value: string; onChange: (v: string) => void }) {
+function VariableField({
+  variable: v,
+  options,
+  parentLabel,
+  value,
+  onChange,
+}: {
+  variable: FlowVariable;
+  /** Opciones vigentes: todas, o solo las del valor elegido en la lista de la que depende. */
+  options: string[];
+  parentLabel?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   const id = `f-${v.key}`;
   const label = v.label || v.key;
-  const searchable = v.type === "select" && (v.options?.length ?? 0) > SEARCHABLE_FROM;
+  const waiting = v.type === "select" && !!parentLabel && options.length === 0;
+  const searchable = v.type === "select" && options.length > SEARCHABLE_FROM;
   const long = isLongText(v);
   return (
     <Field
@@ -342,11 +400,11 @@ function VariableField({ variable: v, value, onChange }: { variable: FlowVariabl
       hint={long ? <span className="tabular-nums">{value.length}/500 caracteres</span> : undefined}
     >
       {searchable ? (
-        <SearchableList id={id} value={value} options={v.options ?? []} onChange={onChange} />
+        <SearchableList key={options.join("|")} id={id} value={value} options={options} onChange={onChange} />
       ) : v.type === "select" ? (
-        <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Elige una opción</option>
-          {(v.options ?? []).map((o) => (
+        <Select id={id} value={value} disabled={waiting} onChange={(e) => onChange(e.target.value)}>
+          <option value="">{waiting ? `Primero elige «${parentLabel}»` : "Elige una opción"}</option>
+          {options.map((o) => (
             <option key={o} value={o}>
               {o}
             </option>

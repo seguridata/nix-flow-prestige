@@ -8,7 +8,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { SignatureRequestsService } from '../signature-requests/signature-requests.service';
 import { SignatureFieldsService } from '../signature-fields/signature-fields.service';
 import { FoldersService } from '../folders/folders.service';
-import { flowToBpmn, missingForConditions, publicFlow, publicWho } from '../flow/flow';
+import { flowToBpmn, missingForConditions, optionsFor, publicFlow, publicWho } from '../flow/flow';
 import type { Flow, FlowValues, ResolvedStep, Who } from '../flow/flow.types';
 import { FlowResolverService, type AwaitingInput, type LookupPick } from '../lookup-tables/flow-resolver.service';
 import { countPages, fillPdf } from './pdf-fill';
@@ -583,6 +583,10 @@ export class DocumentTemplatesService {
       if (v.type === 'number' && Number.isNaN(Number(value))) errors.push(`«${v.label}» debe ser un número`);
       else if (v.type === 'date' && !ISO_DATE_RE.test(value.slice(0, 10))) errors.push(`«${v.label}» debe ser una fecha AAAA-MM-DD`);
       else if (v.type === 'select' && !(v.options ?? []).includes(value)) errors.push(`«${v.label}»: elige una de las opciones`);
+      else if (v.type === 'select' && v.dependsOn && !optionsFor(v, clean).includes(value)) {
+        const parent = flow.variables.find((x) => x.key === v.dependsOn!.variable);
+        errors.push(`«${v.label}»: elige una opción que corresponda a «${parent?.label ?? v.dependsOn.variable}»`);
+      }
       clean[v.key] = value;
     }
     if (errors.length) throw new BadRequestException({ message: 'Revisa los datos del formato', errors });

@@ -10,6 +10,11 @@ export interface FlowVariable {
   type: VarType;
   required: boolean;
   options?: string[];
+  /**
+   * Lista dependiente: las opciones que se ofrecen (y se aceptan) salen del valor de otra variable `select`
+   * (p. ej. el concepto de gasto según el tipo de gasto). `options` de esta variable es la unión de todas.
+   */
+  dependsOn?: { variable: string; options: Record<string, string[]> };
 }
 
 export type Op = '>' | '>=' | '<' | '<=' | '==' | '!=';
