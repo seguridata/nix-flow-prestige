@@ -2,7 +2,7 @@
 
 # Despliegue de Prestige en un servidor Docker pequeño
 
-Pensado para un servidor de 3-4 GB de RAM que **ya aloja otros sistemas** detrás de un Caddy. Reparte Prestige para que quepa:
+Pensado para un servidor de 3-4 GB de RAM que **ya aloja otros sistemas** detrás de un Caddy compartido. Prestige **no trae Caddy propio**: sus contenedores se unen a la red externa `proxy_net` y sus bloques se agregan al Caddy existente. Reparte Prestige para que quepa:
 
 | Pieza | Dónde | Por qué |
 |---|---|---|
@@ -17,35 +17,47 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 
 | Archivo | Para qué |
 |---|---|
-| `docker-compose.yml` | Los seis servicios. El BFF y Keycloak se unen a la red del Caddy del servidor (`zeus_zeus_internal`). |
-| `.env.example` | Plantilla de variables. El archivo real (`prestige.env`) vive solo en el servidor. |
-| `Caddyfile.prestige` | Rutas a agregar al Caddy: `api-prestige` → BFF y `prestige-auth` → Keycloak. La consola de administración de Keycloak no se publica. |
+| `docker-compose.yml` | Los seis servicios, contenedores `prestige-*`. El BFF y Keycloak se unen a la red externa `proxy_net` (cambiable con `PROXY_NETWORK`). |
+| `.env.server.example` | Plantilla de variables con leyenda (qué se genera, qué aporta el usuario, qué es opcional). El archivo real (`prestige.env`) vive solo en el servidor y está en `.gitignore`. |
+| `Caddyfile.prestige` | Bloques a agregar al Caddy compartido (dominios por confirmar): `api-prestige` → BFF y `prestige-auth` → Keycloak. La consola de administración de Keycloak no se publica. |
 | `create-multiple-dbs.sh` | Se copia de `backend/infra/`; crea las bases `keycloak`, `temporal` y `temporal_visibility`. |
 
-## Pasos
+## Pasos (en este orden)
 
-1. **Imágenes** (se construyen fuera del servidor, porque compilar Next y Nest en 3.8 GB es el pico más peligroso):
+0. **Red compartida**: debe existir `proxy_net` y el Caddy del servidor estar unido a ella. Si no existe: `docker network create proxy_net`.
+1. **Imágenes** (se construyen fuera del servidor, porque compilar Next y Nest en 3.8 GB es el pico más peligroso) y se suben sin registro:
    ```bash
    docker build -f backend/bff/Dockerfile -t prestige-bff:prod .
    docker build -f deploy/keycloak/Dockerfile -t prestige-keycloak:26.0 .
    docker save prestige-bff:prod prestige-keycloak:26.0 | gzip | ssh servidor 'gunzip | docker load'
    ```
-2. **`prestige.env` en el servidor**, con permisos 600 (el compose lo recibe con `--env-file prestige.env`). Los secretos aleatorios (`STORAGE_MASTER_KEY`, `WORKER_SHARED_SECRET`, `PKI_PASSPHRASE`, contraseñas de Postgres y de Keycloak) se generan allí con `openssl rand -base64 32` y no pasan por el repo.
-3. **Realm de Keycloak**: partir de `deploy/keycloak/prestige-realm.prod.json` (sin usuarios demo) y sustituir el origen de ejemplo por la URL pública de la web. Colocarlo como `prestige-realm.prod.json` junto al compose.
+2. **`prestige.env` en el servidor**, a partir de `.env.server.example`, con `chmod 600`. Los secretos se generan allí y no pasan por el repo: `POSTGRES_PASSWORD` con `openssl rand -hex 24`, `KC_BOOTSTRAP_ADMIN_PASSWORD` con `openssl rand -base64 24`, y `STORAGE_MASTER_KEY`, `WORKER_SHARED_SECRET` y `PKI_PASSPHRASE` con `openssl rand -base64 32`. Verifica que `DATABASE_URL` apunte a la base correcta de Supabase (paso 5 aplica migraciones sobre ella).
+3. **Realm de Keycloak**: genéralo con el dominio final de la web y cópialo junto al compose:
+   ```bash
+   node deploy/keycloak/make-prod-realm.mjs https://<web>
+   scp deploy/keycloak/prestige-realm.prod.json servidor:~/prestige/deploy/server/prestige-realm.prod.json
+   ```
+   (el archivo copiado está en `.gitignore`; la ruta se cambia con `KEYCLOAK_REALM_FILE`).
 4. **PKI** (una sola vez): genera la CA interna y la llave del manifiesto en el volumen `pki`, con el código del propio BFF:
    ```bash
-   docker compose run --rm --no-deps -e RUN_MIGRATIONS=false bff node -e "
+   docker compose --env-file prestige.env run --rm --no-deps -e RUN_MIGRATIONS=false bff node -e "
      require('./dist/src/signing/pki/ca').ensureCaChain('./pki/ca');
      const { generateKeyPairSync } = require('crypto'); const fs = require('fs');
      const k = generateKeyPairSync('ed25519');
      fs.writeFileSync('./pki/manifest-signing.key.pem', k.privateKey.export({type:'pkcs8',format:'pem'}), { mode: 0o600 });
      fs.writeFileSync('./pki/manifest-signing.pub.pem', k.publicKey.export({type:'spki',format:'pem'}));"
    ```
-5. **Arrancar**: `docker compose --env-file prestige.env up -d`. El BFF aplica las migraciones pendientes al iniciar.
-6. **Caddy**: agregar `Caddyfile.prestige` al Caddyfile del servidor y recargar (`caddy reload`). Los dominios deben apuntar al servidor.
-7. **Usuarios de Keycloak** (consola no publicada): crearlos con `docker exec prestige-keycloak /opt/keycloak/bin/kcadm.sh`, con el atributo `tenant`, sus roles y una contraseña temporal que obligue a cambiarla.
-   **Alta desde onboarding**: el BFF crea la cuenta de quien se da de alta (usuario = inicial del nombre + primer apellido; si ya existe, inicial del segundo nombre + primer apellido, o inicial del nombre + segundo apellido). Necesita una cuenta de servicio con permisos mínimos de usuarios; se crea una vez, en el servidor, con `ONBOARDING_DEFAULT_PASSWORD='<temporal>' ./provision-onboarding-admin.sh` y luego `docker compose --env-file prestige.env up -d bff worker`. La contraseña inicial es temporal (Keycloak obliga a cambiarla en el primer ingreso) y vive solo en `prestige.env`, nunca en el repo. Sin esas variables el alta sigue funcionando y solo reserva el usuario.
-8. **Web**: variables en Vercel (`KEYCLOAK_ISSUER`, `OIDC_*`, `BFF_URL`, `NEXT_PUBLIC_API_URL`, `SESSION_SECRET`, `REDIS_URL`) y despliegue desde `main`. Quitar la protección de Vercel del proyecto: el portal de firma externa tiene que ser público.
+5. **Arrancar**: `docker compose --env-file prestige.env up -d`. El BFF corre `prisma migrate deploy` al iniciar, contra Supabase.
+6. **Caddy**: agregar los bloques de `Caddyfile.prestige` al Caddyfile del Caddy compartido y recargar (`caddy reload`). Los dominios deben apuntar al servidor.
+7. **Alta de usuarios desde onboarding**: el BFF crea la cuenta de quien se da de alta (usuario = inicial del nombre + primer apellido; si ya existe, inicial del segundo nombre + primer apellido, o inicial del nombre + segundo apellido). Necesita una cuenta de servicio con permisos mínimos de usuarios; se crea una vez con `ONBOARDING_DEFAULT_PASSWORD='<temporal>' ./provision-onboarding-admin.sh`, que escribe `KEYCLOAK_ADMIN_CLIENT_ID` y `KEYCLOAK_ADMIN_CLIENT_SECRET` en `prestige.env`; luego `docker compose --env-file prestige.env up -d bff worker`. La contraseña inicial es temporal (Keycloak obliga a cambiarla en el primer ingreso) y vive solo en `prestige.env`. Sin esas variables el alta solo reserva el usuario.
+8. **Usuarios de Keycloak** (consola no publicada): crearlos con `docker exec prestige-keycloak /opt/keycloak/bin/kcadm.sh`, con el atributo `tenant`, sus roles y una contraseña temporal que obligue a cambiarla.
+9. **Web**: variables en Vercel (`KEYCLOAK_ISSUER`, `OIDC_*`, `BFF_URL`, `NEXT_PUBLIC_API_URL`, `SESSION_SECRET`, `REDIS_URL`) y despliegue desde `main`. Quitar la protección de Vercel del proyecto: el portal de firma externa tiene que ser público.
+
+### Advertencias
+
+- **Sin SMTP real, los correos no llegan a nadie**: se quedan en Mailpit (enlaces de firma incluidos).
+- **Supabase Storage no tiene Object Lock**: se pierde el candado de 30 días de MinIO.
+- **El realm y `KEYCLOAK_ISSUER` deben coincidir con el dominio final de la web.** Si la web cambia de dominio, hay que regenerar el realm y reimportarlo.
 
 ## Verificación
 

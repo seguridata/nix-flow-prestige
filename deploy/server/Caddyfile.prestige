@@ -1,6 +1,7 @@
-# Rutas de Prestige para agregar al Caddyfile del servidor (el Caddy ya existente de otro compose).
-# El Caddy y los contenedores prestige-bff / prestige-keycloak comparten la red zeus_zeus_internal.
-# Caddy obtiene y renueva los certificados TLS solo; los dominios deben apuntar al servidor.
+# Bloques de Prestige para AGREGAR al Caddyfile del Caddy compartido del servidor (Prestige no trae Caddy propio).
+# Ese Caddy y los contenedores prestige-bff / prestige-keycloak comparten la red externa `proxy_net`
+# (o la que se defina en PROXY_NETWORK). Caddy obtiene y renueva los certificados TLS solo.
+# Dominios POR CONFIRMAR: deben apuntar al servidor antes de recargar Caddy.
 
 api-prestige.seguridata.site {
     # Los WebSocket (Socket.IO de presencia) pasan por reverse_proxy sin configuración extra.
@@ -13,9 +14,4 @@ prestige-auth.seguridata.site {
     @admin path /admin /admin/* /realms/master /realms/master/*
     respond @admin 404
     reverse_proxy prestige-keycloak:8080
-}
-
-# Host anterior de Keycloak: redirige al nuevo para no romper enlaces.
-kc-prestige.seguridata.site {
-    redir https://prestige-auth.seguridata.site{uri} permanent
 }
