@@ -52,6 +52,9 @@ x-bff-env: &bff-env
   SMTP_PASS: ${SMTP_PASS:-}
   STEP_UP_ENFORCE: "false"
   BIOMETRIC_ENGINE: noop
+  # IA (xAI/Grok, backend/bff/src/ai/grok.provider.ts): sin XAI_API_KEY las funciones de IA no responden.
+  XAI_API_KEY: ${XAI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-grok-4.20-0309-non-reasoning}
 
 services:
   postgres:
