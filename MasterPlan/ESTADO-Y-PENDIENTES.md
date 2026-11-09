@@ -149,7 +149,7 @@ Borrar notificaciones huérfanas; MinIO sin root y app limitada al bucket; Tempo
 Índice y orden de lectura en `MasterPlan/README.md`. Se eliminaron por desfasados: el plan y el handoff de Fases A/B, el plan por sprints, el reporte de auditoría, el progreso por sprint, las fases, la guía de retoma, las continuidades de 16 y 17 oct y la página `Documentacion/07-estado-y-ruta.html`. Lo vigente de ellos (requerimiento original y decisiones D1–D10) quedó en `MasterPlan/REQUERIMIENTO-Y-DECISIONES.md`; el resto está en el historial de Git.
 
 ### Dominios unificados (27 oct)
-- [x] Web: `https://prestige.seguridata.site` (principal). Keycloak: `https://prestige-auth.seguridata.com` (el host `kc-prestige` redirige 301). BFF: `https://prestige-api.seguridata.com`. Sin cambios de DNS (los tres ya existían en IONOS).
+- [x] Web: `https://prestige.seguridata.com` (principal). Keycloak: `https://prestige-auth.seguridata.com` (el host `kc-prestige` redirige 301). BFF: `https://prestige-api.seguridata.com`. Sin cambios de DNS (los tres ya existían en IONOS).
 - [x] Causa del error de ingreso: `OIDC_REDIRECT_URI` y `OIDC_POST_LOGOUT_REDIRECT` en Vercel apuntaban a `prestige-web-seguridata.vercel.app`; el callback caía en otro host que la cookie de sesión. Corregidas junto con `KEYCLOAK_ISSUER`; cliente `prestige-web` del realm con los URIs nuevos; `prestige.env` del servidor y BFF (CORS, `PUBLIC_WEB_URL`) alineados; redeploy de producción hecho.
 - Salud del BFF: `/operations/health`. Nota de operación: al editar el Caddyfile del servidor hay que reiniciar `zeus-caddy-1` (un `sed -i` rompe el bind mount y `caddy reload` dice «config is unchanged»).
 
