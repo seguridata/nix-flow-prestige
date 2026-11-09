@@ -3,12 +3,12 @@
 # (o la que se defina en PROXY_NETWORK). Caddy obtiene y renueva los certificados TLS solo.
 # Dominios POR CONFIRMAR: deben apuntar al servidor antes de recargar Caddy.
 
-api-prestige.seguridata.site {
+prestige-api.seguridata.com {
     # Los WebSocket (Socket.IO de presencia) pasan por reverse_proxy sin configuración extra.
     reverse_proxy prestige-bff:3000
 }
 
-prestige-auth.seguridata.site {
+prestige-auth.seguridata.com {
     # La consola de administración y el realm master no se publican: se administran por
     # `docker exec prestige-keycloak kcadm.sh ...` desde el servidor.
     @admin path /admin /admin/* /realms/master /realms/master/*
