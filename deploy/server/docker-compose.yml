@@ -1,12 +1,18 @@
 name: prestige
 
-# Prestige en un servidor Docker pequeño (3-4 GB de RAM) que ya aloja otros sistemas detrás de un Caddy.
+# Prestige (solo backend) en un servidor Docker que ya aloja otros sistemas detrás de UN Caddy compartido.
+# El Caddy compartido vive en otro compose, escucha 80/443 y enruta por nombre de contenedor a través de la red
+# externa `proxy_net` (créala una vez: docker network create proxy_net). Este compose NO levanta Caddy ni publica
+# ningún puerto del host.
 # Qué corre aquí: BFF, worker de Temporal, Keycloak, Temporal, Postgres (solo para Keycloak y Temporal) y Redis.
 # Qué NO corre aquí: la base de Prestige y los documentos (Supabase), las sesiones de la web (Upstash) y la web (Vercel).
 # Detalle y pasos en deploy/server/README.md. Todos los secretos vienen del archivo `prestige.env` del servidor
 # (plantilla en .env.example); `${VAR:?}` hace fallar `docker compose` si falta alguno.
 #
 #   docker compose --env-file prestige.env up -d
+#
+# Nombres DNS: sobre proxy_net (compartida con otros sistemas) solo se usan los nombres con prefijo `prestige-`
+# (container_name), para que `redis`, `keycloak`, etc. de otros compose no se confundan con los de Prestige.
 
 x-bff-env: &bff-env
   NODE_ENV: production
@@ -15,13 +21,13 @@ x-bff-env: &bff-env
   KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:?}
   # Alta de usuarios desde onboarding (opcional: sin estas variables el alta solo reserva el usuario).
   # La cuenta de servicio se crea con provision-onboarding-admin.sh; la contraseña inicial es temporal.
-  KEYCLOAK_ADMIN_URL: http://keycloak:8080
+  KEYCLOAK_ADMIN_URL: http://prestige-keycloak:8080
   KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-}
   KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
   ONBOARDING_DEFAULT_PASSWORD: ${ONBOARDING_DEFAULT_PASSWORD:-}
   MCP_ENABLED: "true"
   MCP_RESOURCE_URL: ${API_PUBLIC_URL:?}/mcp
-  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_ADDRESS: prestige-temporal:7233
   TEMPORAL_NAMESPACE: default
   TEMPORAL_TASK_QUEUE: prestige
   S3_ENDPOINT: ${S3_ENDPOINT:?}
@@ -32,7 +38,7 @@ x-bff-env: &bff-env
   S3_FORCE_PATH_STYLE: "true"
   STORAGE_MASTER_KEY: ${STORAGE_MASTER_KEY:?}
   WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:?}
-  REDIS_URL: redis://redis:6379
+  REDIS_URL: redis://prestige-redis:6379
   CORS_ORIGINS: ${WEB_PUBLIC_URL:?}
   PUBLIC_WEB_URL: ${WEB_PUBLIC_URL:?}
   KEY_CUSTODIAN: software
@@ -46,10 +52,14 @@ x-bff-env: &bff-env
   SMTP_PASS: ${SMTP_PASS:-}
   STEP_UP_ENFORCE: "false"
   BIOMETRIC_ENGINE: noop
+  # IA (xAI/Grok, backend/bff/src/ai/grok.provider.ts): sin XAI_API_KEY las funciones de IA no responden.
+  XAI_API_KEY: ${XAI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-grok-4.20-0309-non-reasoning}
 
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: prestige-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-prestige}
@@ -69,6 +79,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: prestige-redis
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
@@ -86,6 +97,7 @@ services:
   # y retirar este servicio.
   mailpit:
     image: axllent/mailpit:v1.20
+    container_name: prestige-mailpit
     restart: unless-stopped
     environment:
       MP_MAX_MESSAGES: 500
@@ -96,13 +108,14 @@ services:
 
   temporal:
     image: temporalio/auto-setup:1.27.2
+    container_name: prestige-temporal
     restart: unless-stopped
     environment:
       DB: postgres12
       DB_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-prestige}
       POSTGRES_PWD: ${POSTGRES_PASSWORD:?}
-      POSTGRES_SEEDS: postgres
+      POSTGRES_SEEDS: prestige-postgres
       DBNAME: temporal
       VISIBILITY_DBNAME: temporal_visibility
     depends_on:
@@ -118,7 +131,7 @@ services:
     command: ["start", "--optimized", "--import-realm"]
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_URL: jdbc:postgresql://prestige-postgres:5432/keycloak
       KC_DB_USERNAME: ${POSTGRES_USER:-prestige}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?}
       KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:?}
@@ -130,7 +143,8 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?}
       JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx512m"
     volumes:
-      - ./prestige-realm.prod.json:/opt/keycloak/data/import/prestige-realm.json:ro
+      # Realm ya con el origen de la web sustituido (paso 3 del README); por defecto, junto al compose.
+      - ${KEYCLOAK_REALM_FILE:-./prestige-realm.prod.json}:/opt/keycloak/data/import/prestige-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,6 +172,7 @@ services:
 
   worker:
     image: prestige-bff:prod
+    container_name: prestige-worker
     restart: unless-stopped
     command: ["node", "dist/src/temporal/worker.js"]
     # La imagen trae un HEALTHCHECK del puerto 3000 que solo aplica al BFF; el worker no abre puertos
@@ -167,7 +182,7 @@ services:
     environment:
       <<: *bff-env
       RUN_MIGRATIONS: "false"
-      BFF_INTERNAL_URL: http://bff:3000
+      BFF_INTERNAL_URL: http://prestige-bff:3000
     volumes:
       - pki:/app/backend/bff/pki
     depends_on:
@@ -181,7 +196,7 @@ volumes:
 
 networks:
   internal:
-  # Red compartida con el Caddy del servidor (la crea otro compose): solo BFF y Keycloak entran.
+  # Red compartida con el Caddy del servidor (externa, la crea el administrador): solo BFF y Keycloak entran.
   edge:
     external: true
-    name: zeus_zeus_internal
+    name: ${PROXY_NETWORK:-proxy_net}
