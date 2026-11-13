@@ -1,7 +1,7 @@
 "use client";
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { ArrowUpFromLine, CircleCheck, CircleDot, Clock, ExternalLink, MoreHorizontal, Pencil, Send, Trash2 } from "lucide-react";
+import { ArrowUpFromLine, CircleCheck, CircleDot, Clock, Copy, Download, ExternalLink, MoreHorizontal, Pencil, Send, Trash2 } from "lucide-react";
 
 import { CaseIcon, DocumentIcon, FolderIcon } from "@/components/drive/drive-icons";
 import {
@@ -36,6 +36,8 @@ export interface TileActions {
   onDelete: (e: DriveEntry) => void;
   onMoveUp: (e: DriveEntry) => void;
   onSend: (e: DriveEntry) => void;
+  onCopy: (e: DriveEntry) => void;
+  onDownload: (e: DriveEntry) => void;
 }
 
 /** Encabezado de la lista (solo escritorio). Sin mayúsculas decorativas. */
@@ -103,7 +105,8 @@ export function DriveTile({
       onKeyDown={(e) => {
         if (e.key === "Enter") actions.onOpen(entry);
         if (e.key === "F2" && entry.kind !== "document") actions.onRename(entry);
-        if (e.key === "Delete" && entry.kind === "folder") actions.onDelete(entry);
+        if (e.key === "Delete") actions.onDelete(entry);
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && entry.kind !== "folder") actions.onCopy(entry);
       }}
       className={cn(
         "grid min-h-16 cursor-default select-none items-center gap-x-4 border-b border-border px-3 py-2 text-sm outline-none transition-colors last:border-b-0 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -158,19 +161,25 @@ export function DriveTile({
               <Pencil /> Cambiar nombre
             </DropdownMenuItem>
           ) : null}
+          {entry.kind !== "folder" ? (
+            <DropdownMenuItem className="min-h-11" onSelect={() => actions.onCopy(entry)}>
+              <Copy /> Copiar
+            </DropdownMenuItem>
+          ) : null}
+          {entry.kind !== "folder" && entry.item.firstDocument ? (
+            <DropdownMenuItem className="min-h-11" onSelect={() => actions.onDownload(entry)}>
+              <Download /> Descargar
+            </DropdownMenuItem>
+          ) : null}
           {canMoveUp ? (
             <DropdownMenuItem className="min-h-11" onSelect={() => actions.onMoveUp(entry)}>
               <ArrowUpFromLine /> Subir un nivel
             </DropdownMenuItem>
           ) : null}
-          {entry.kind === "folder" ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem destructive className="min-h-11" onSelect={() => actions.onDelete(entry)}>
-                <Trash2 /> Eliminar carpeta
-              </DropdownMenuItem>
-            </>
-          ) : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem destructive className="min-h-11" onSelect={() => actions.onDelete(entry)}>
+            <Trash2 /> {entry.kind === "folder" ? "Eliminar carpeta" : entry.kind === "case" ? "Eliminar expediente" : "Eliminar documento"}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
