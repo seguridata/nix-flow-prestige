@@ -8,6 +8,7 @@ import { ArrowRight, Check, CircleDashed, FilePlus2, FileText, Pencil, Search } 
 
 import { TemplateDrafts } from "@/components/chat/template-drafts";
 import { DocumentIcon } from "@/components/drive/drive-icons";
+import { DeleteFormatButton } from "@/components/formats/delete-format-button";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -244,13 +245,16 @@ function FormatCard({ format: f, isAdmin }: { format: FormatSummary; isAdmin: bo
           {f.published ? "Llenar" : "Abrir"} <ArrowRight className="size-4" aria-hidden />
         </Link>
         {isAdmin ? (
-          <Link
-            href={`/formatos/${f.id}/editar` as never}
-            aria-label={`Editar ${f.name}`}
-            className="inline-flex h-10 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-foreground/80 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Pencil className="size-4" aria-hidden /> Editar
-          </Link>
+          <div className="flex items-center gap-1">
+            <Link
+              href={`/formatos/${f.id}/editar` as never}
+              aria-label={`Editar ${f.name}`}
+              className="inline-flex h-10 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-foreground/80 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Pencil className="size-4" aria-hidden /> Editar
+            </Link>
+            <DeleteFormatButton id={f.id} name={f.name} className="h-10 px-3" />
+          </div>
         ) : null}
       </div>
     </li>
