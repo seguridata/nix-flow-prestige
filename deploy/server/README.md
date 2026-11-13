@@ -53,6 +53,10 @@ Estimación de memoria de este compose: ~1.6 GB (BFF 0.5, Keycloak 0.6, worker 0
 8. **Usuarios de Keycloak** (consola no publicada): crearlos con `docker exec prestige-keycloak /opt/keycloak/bin/kcadm.sh`, con el atributo `tenant`, sus roles y una contraseña temporal que obligue a cambiarla.
 9. **Web**: variables en Vercel (`KEYCLOAK_ISSUER`, `OIDC_*`, `BFF_URL`, `NEXT_PUBLIC_API_URL`, `SESSION_SECRET`, `REDIS_URL`) y despliegue desde `main`. Quitar la protección de Vercel del proyecto: el portal de firma externa tiene que ser público.
 
+### Proxy compartido (copia de referencia)
+
+`proxy/Caddyfile` y `proxy/docker-compose.yml` son copia de lo que corre en el servidor (`~/proxy`, 13 nov 2026), no parte del compose de Prestige. Destacan los **alias de red de Caddy** en `proxy_net` para los dominios públicos: el servidor no tiene hairpin NAT y sin ellos el BFF no alcanzaría `prestige-auth.seguridata.com` (el emisor OIDC) desde dentro de Docker. Si se agrega un dominio, hay que agregarlo también como alias.
+
 ### Advertencias
 
 - **Sin SMTP real, los correos no llegan a nadie**: se quedan en Mailpit (enlaces de firma incluidos).

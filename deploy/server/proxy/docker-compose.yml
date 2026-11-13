@@ -1,0 +1,40 @@
+# Caddy compartido del servidor (192.168.0.136, ~/proxy). Es el único que
+# escucha en 80/443; todos los proyectos (Gea, Themis, Nix, Kronos) se unen a
+# la red `proxy_net` y se enrutan por nombre de servicio desde el Caddyfile.
+# Imagen oficial de Caddy (TLS automático): no se escribe proxy propio.
+#
+#   docker network create proxy_net      # una sola vez
+#   cd ~/proxy && docker compose up -d
+#
+# Recargar tras editar el Caddyfile, sin cortar conexiones:
+#   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: proxy-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # Alias internos: los contenedores de proxy_net (p. ej. el BFF de Prestige) resuelven el nombre publico
+    # directo a Caddy, sin salir a la IP publica (el servidor no tiene hairpin NAT).
+    networks:
+      proxy_net:
+        aliases:
+          - prestige-auth.seguridata.com
+          - prestige-api.seguridata.com
+          - licity-api.seguridata.com
+          - contratos-api.seguridata.com
+          - docs.seguridata.com
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  proxy_net:
+    external: true

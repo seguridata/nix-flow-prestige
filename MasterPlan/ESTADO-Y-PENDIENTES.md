@@ -75,6 +75,13 @@
 - Frontend: 283/283 pruebas y tsc limpio al cierre. Falta revisión visual del asistente de formato y de «Probar una consulta» en móvil. El portal del firmante externo (`/firmar/[token]`) todavía no muestra adjuntos (el endpoint de adjuntos exige sesión).
 - Operación local: la VM de WSL se apaga si no queda una sesión de `wsl` abierta; lanzar `bun run dev` como sesión larga y no cerrarla. Si quedan `node` huérfanos de Windows, `prisma generate` falla (EPERM) hasta detenerlos.
 
+### Revisión servidor ↔ repo y acciones del gestor (13 nov)
+- [x] **Servidor revisado por SSH** (`seguridata@192.168.0.136`, alias `servidor`; en Windows funciona desde PowerShell, no desde Git Bash, por el agente de 1Password). Todos los contenedores `prestige-*` arriba. El árbol `~/nix/src` es una **copia de archivos sin `.git`** idéntica al commit `1542f53` (777 de 778 archivos); la imagen `prestige-bff:prod` se compiló de esa copia (5 nov). La diferencia es solo el realm de producción (el servidor lo tiene con `prestige.seguridata.site`).
+- [x] **Repo alineado con lo desplegado:** se versionó la copia del proxy compartido en `deploy/server/proxy/` (Caddyfile y compose con los alias de red). El compose, el Caddyfile.prestige y el `.env.server.example` del repo ya coincidían con el servidor.
+- **Hallazgo en producción:** `GET /document-templates/:id/pdf` responde 500 («Unsupported state or unable to authenticate data», al desenvolver la llave del objeto) para los dos formatos guardados (`Solicitud de gastos` y el borrador `ReglasDeProductos`): sus PDF se cifraron con otra `STORAGE_MASTER_KEY` (la llave del servidor no cambió entre sus respaldos). Hay que regenerar el PDF del formato de gastos con `seed:example-gastos --force` en el contenedor, o volver a subirlo. Pendiente, no se tocó producción.
+- [x] **Formatos:** botón Eliminar (solo admin, con confirmación) en la lista y el detalle, para retirar borradores como `ReglasDeProductos`.
+- [x] **Mis documentos (gestor):** ya permitía subir, crear/renombrar/mover/eliminar carpetas y arrastrar. Se agregan **Descargar**, **Copiar / Pegar aquí** (también Ctrl+C y Ctrl+V) y **Eliminar expediente o documento**. Eliminar solo procede en borradores: con solicitud de firma, evidencia o comentarios el BFF responde 409 y se conserva. Endpoints nuevos: `POST /drive/cases/:id/copy` y `DELETE /drive/cases/:id`. Pruebas: BFF 4 nuevas, web 300/300.
+
 ### Retirado el 17 oct
 - [x] **Collector OpenTelemetry del sandbox** (servicio de compose y `otel-collector.yaml`): no recibía tráfico ni había destino donde guardar datos. El SDK del BFF sigue apagado por defecto y el script `verify-tenant-otlp.ts` se conserva. Se retoma cuando se elija backend en staging.
 

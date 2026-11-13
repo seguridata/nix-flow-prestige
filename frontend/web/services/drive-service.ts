@@ -48,5 +48,12 @@ export const updateFolder = (id: string, patch: { name?: string; parentId?: stri
 
 export const deleteFolder = (id: string) => apiClient.delete<void>(`/drive/folders/${id}`);
 
+/** Copia un expediente o documento suelto a la carpeta destino (null = raíz). */
+export const copyCase = (id: string, folderId: string | null) =>
+  apiClient.post<{ id: string; title: string }>(`/drive/cases/${id}/copy`, { folderId });
+
+/** Elimina un borrador; con firma, evidencia o comentarios el servidor responde 409. */
+export const deleteCase = (id: string) => apiClient.delete<void>(`/drive/cases/${id}`);
+
 export const updateCase = (id: string, patch: { title?: string; folderId?: string | null }) =>
   apiClient.patch<unknown>(`/cases/${id}`, patch);
