@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FolderPlus, Search, Upload } from "lucide-react";
+import { ChevronRight, ClipboardPaste, FolderPlus, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { CaseIcon, DocumentIcon, FolderIcon } from "@/components/drive/drive-icons";
@@ -22,9 +22,11 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buildEntries, plural, type DriveEntry } from "@/libs/drive";
 import { fetchCase } from "@/services/cases-service";
-import { fetchCaseDocuments } from "@/services/documents-service";
+import { documentContentUrl, fetchCaseDocuments } from "@/services/documents-service";
 import {
+  copyCase,
   createFolder,
+  deleteCase,
   deleteFolder,
   fetchDriveContents,
   updateCase,
@@ -55,6 +57,8 @@ function Drive() {
   const [upload, setUpload] = useState<{ key: number; files: File[] } | null>(null);
   const [nameDialog, setNameDialog] = useState<{ mode: "create" | "rename"; entry?: DriveEntry } | null>(null);
   const [toDelete, setToDelete] = useState<DriveEntry | null>(null);
+  /** «Copiar»: el elemento queda en el portapapeles hasta «Pegar aquí» (o Ctrl+V). */
+  const [clipboard, setClipboard] = useState<DriveEntry | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -109,10 +113,10 @@ function Drive() {
   });
 
   const remove = useMutation({
-    mutationFn: (entry: DriveEntry) => deleteFolder(entry.id),
-    onSuccess: async () => {
+    mutationFn: (entry: DriveEntry) => (entry.kind === "folder" ? deleteFolder(entry.id) : deleteCase(entry.id)),
+    onSuccess: async (_d, entry) => {
       setToDelete(null);
-      toast.success("Carpeta eliminada.");
+      toast.success(entry.kind === "folder" ? "Carpeta eliminada." : entry.kind === "case" ? "Expediente eliminado." : "Documento eliminado.");
       await refresh();
     },
     onError: (e: Error) => {
@@ -121,7 +125,45 @@ function Drive() {
     },
   });
 
+  const paste = useMutation({
+    mutationFn: (entry: DriveEntry) => copyCase(entry.id, folderId),
+    onSuccess: async () => {
+      toast.success("Copia pegada.");
+      await refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const download = (e: DriveEntry) => {
+    if (e.kind === "folder" || !e.item.firstDocument) return;
+    const a = document.createElement("a");
+    a.href = documentContentUrl(e.item.firstDocument.id);
+    a.download = e.item.firstDocument.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  // Ctrl+V pega lo copiado en la carpeta abierta, salvo que se esté escribiendo en un campo.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "v" && clipboard && !caseId && !paste.isPending) {
+        ev.preventDefault();
+        paste.mutate(clipboard);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [clipboard, caseId, paste]);
+
   const actions: TileActions = {
+    onCopy: (e) => {
+      setClipboard(e);
+      toast.success(`«${e.name}» copiado. Abre la carpeta destino y elige «Pegar aquí».`);
+    },
+    onDownload: download,
     onOpen: (e) => {
       if (e.kind === "folder") go({ carpeta: e.id });
       else if (e.kind === "case") go({ expediente: e.id });
@@ -193,6 +235,11 @@ function Drive() {
           }
           actions={
             <>
+              {clipboard && !caseId ? (
+                <Button variant="outline" disabled={paste.isPending} onClick={() => paste.mutate(clipboard)}>
+                  <ClipboardPaste /> Pegar aquí
+                </Button>
+              ) : null}
               {caseId ? null : (
                 <Button variant="outline" onClick={() => setNameDialog({ mode: "create" })}>
                   <FolderPlus /> Nueva carpeta
@@ -341,9 +388,13 @@ function Drive() {
       <ConfirmDialog
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
-        title={`¿Eliminar la carpeta «${toDelete?.name ?? ""}»?`}
-        description="Solo se puede eliminar si está vacía. Tus expedientes y documentos nunca se borran desde aquí."
-        confirmLabel="Eliminar carpeta"
+        title={`¿Eliminar ${toDelete?.kind === "folder" ? "la carpeta" : toDelete?.kind === "case" ? "el expediente" : "el documento"} «${toDelete?.name ?? ""}»?`}
+        description={
+          toDelete?.kind === "folder"
+            ? "Solo se puede eliminar si está vacía."
+            : "Solo se puede eliminar mientras sea un borrador. Si ya se envió a firma o tiene evidencia, se conserva y el sistema no lo permitirá."
+        }
+        confirmLabel={toDelete?.kind === "folder" ? "Eliminar carpeta" : "Eliminar"}
         destructive
         pending={remove.isPending}
         onConfirm={() => toDelete && remove.mutate(toDelete)}

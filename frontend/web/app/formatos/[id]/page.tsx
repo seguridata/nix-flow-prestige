@@ -8,6 +8,7 @@ import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { AttachmentsBlock, useAttachments } from "@/components/formats/attachments-block";
+import { DeleteFormatButton } from "@/components/formats/delete-format-button";
 import { type Person } from "@/components/formats/person-picker";
 import { SendToSteps } from "@/components/formats/send-to-steps";
 import { LivePreview } from "@/components/formats/live-preview";
@@ -38,6 +39,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function UsarFormatoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const format = useQuery({ queryKey: ["format", id], queryFn: () => fetchFormat(id), retry: false });
   const { roles } = useSession();
 
@@ -51,12 +53,15 @@ export default function UsarFormatoPage({ params }: { params: Promise<{ id: stri
         description={format.data ? (format.data.description ?? "Llena los datos y envía. El documento se completa solo y la ruta de firmas ya viene definida.") : undefined}
         meta={format.data?.category ?? undefined}
         actions={
-          canEdit ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/formatos/${id}/editar` as never}>
-                <Pencil /> Editar formato
-              </Link>
-            </Button>
+          canEdit && format.data ? (
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/formatos/${id}/editar` as never}>
+                  <Pencil /> Editar formato
+                </Link>
+              </Button>
+              <DeleteFormatButton id={id} name={format.data.name} variant="outline" onDeleted={() => router.push("/formatos" as never)} />
+            </div>
           ) : undefined
         }
       />

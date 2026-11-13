@@ -1,0 +1,32 @@
+# Caddyfile compartido del servidor (192.168.0.136). Cada proyecto agrega aquí su bloque.
+# Requiere que el dominio apunte a este servidor y que los puertos 80 y 443
+# lleguen desde internet; si no, Caddy no puede emitir el certificado y lo
+# reintenta en el log sin afectar a los demás bloques.
+# Todos los servicios están en la red externa `proxy_net`.
+
+# Gea (licitaciones): API FastAPI.
+licity-api.seguridata.com {
+	reverse_proxy gea-api:8000
+}
+
+# Themis (contratos): API FastAPI. Su frontend vive en Vercel (contratos.seguridata.com).
+contratos-api.seguridata.com {
+	reverse_proxy themis-api:8000
+}
+
+# Nix / Prestige: BFF. Su web vive en Vercel (prestige.seguridata.com).
+prestige-api.seguridata.com {
+	reverse_proxy prestige-bff:3000
+}
+
+# Nix / Prestige: Keycloak. Se bloquea la consola de administración y el realm master.
+prestige-auth.seguridata.com {
+	@admin path /admin /admin/* /realms/master /realms/master/*
+	respond @admin 404
+	reverse_proxy prestige-keycloak:8080
+}
+
+# Kronos (documentación): Docmost completo (servidor + cliente).
+docs.seguridata.com {
+	reverse_proxy kronos:3010
+}
