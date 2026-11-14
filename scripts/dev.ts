@@ -271,7 +271,17 @@ async function up() {
   log("Levantando Postgres, Keycloak, Temporal, MinIO, Redis…");
   if ((await run([...COMPOSE, "up", "-d"])) !== 0) fail("docker compose up falló");
 
-  if ((await run([...COMPOSE, "wait", "minio-init"])) !== 0) fail("No se pudo provisionar la identidad de MinIO");
+  // `compose wait` puede fallar con "no containers" si minio-init termina justo al arrancar
+  // (carrera de Compose 2.40): en ese caso se confirma por el código de salida del contenedor.
+  if ((await run([...COMPOSE, "wait", "minio-init"], { quiet: true })) !== 0) {
+    let exitCode = "";
+    for (let i = 0; i < 30 && exitCode === ""; i++) {
+      const ps = await output([...COMPOSE, "ps", "-a", "--format", "{{.State}}:{{.ExitCode}}", "minio-init"]);
+      if (ps.text.startsWith("exited:")) exitCode = ps.text.slice("exited:".length);
+      else await Bun.sleep(1000);
+    }
+    if (exitCode !== "0") fail("No se pudo provisionar la identidad de MinIO");
+  }
 
   await waitFor("Postgres", postgresReady, 90_000, true);
   await waitFor("Redis", redisReady, 30_000, true);
